@@ -4039,12 +4039,42 @@ extern "C" WIN_ABI void* meinos_CreateMutexW(void* lpMutexAttributes, bool bInit
 }
 
 extern "C" WIN_ABI bool meinos_AllocateAndInitializeSid(void* pIdentifierAuthority, uint8_t nSubAuthorityCount, uint32_t nSubAuthority0, uint32_t nSubAuthority1, uint32_t nSubAuthority2, uint32_t nSubAuthority3, uint32_t nSubAuthority4, uint32_t nSubAuthority5, uint32_t nSubAuthority6, uint32_t nSubAuthority7, void** pSid) {
-    if (pSid) *pSid = (void*)1;
+    if (pSid) {
+        uint8_t* sid = (uint8_t*)malloc(8 + 4 * nSubAuthorityCount);
+        sid[0] = 1; // Revision
+        sid[1] = nSubAuthorityCount;
+        if (pIdentifierAuthority) {
+            uint8_t* auth = (uint8_t*)pIdentifierAuthority;
+            for(int i=0; i<6; i++) sid[2+i] = auth[i];
+        }
+        uint32_t* sub_auth = (uint32_t*)(sid + 8);
+        if (nSubAuthorityCount > 0) sub_auth[0] = nSubAuthority0;
+        if (nSubAuthorityCount > 1) sub_auth[1] = nSubAuthority1;
+        if (nSubAuthorityCount > 2) sub_auth[2] = nSubAuthority2;
+        if (nSubAuthorityCount > 3) sub_auth[3] = nSubAuthority3;
+        if (nSubAuthorityCount > 4) sub_auth[4] = nSubAuthority4;
+        if (nSubAuthorityCount > 5) sub_auth[5] = nSubAuthority5;
+        if (nSubAuthorityCount > 6) sub_auth[6] = nSubAuthority6;
+        if (nSubAuthorityCount > 7) sub_auth[7] = nSubAuthority7;
+        *pSid = sid;
+    }
     return true;
 }
 
 extern "C" WIN_ABI bool meinos_CheckTokenMembership(void* TokenHandle, void* SidToCheck, int* IsMember) {
-    if (IsMember) *IsMember = 1;
+    if (IsMember) *IsMember = 0; // Default to false
+    if (SidToCheck) {
+        uint8_t* sid = (uint8_t*)SidToCheck;
+        uint8_t sub_count = sid[1];
+        if (sub_count > 0) {
+            uint32_t* sub_auth = (uint32_t*)(sid + 8);
+            uint32_t last_rid = sub_auth[sub_count - 1];
+            printf("[WIN32] CheckTokenMembership checking RID: %u\n", last_rid);
+            if (last_rid == 544 || last_rid == 0x2000) { // DOMAIN_ALIAS_RID_ADMINS or SECURITY_MANDATORY_HIGH_RID
+                if (IsMember) *IsMember = 1;
+            }
+        }
+    }
     return true;
 }
 
@@ -4251,7 +4281,6 @@ extern "C" WIN_ABI void* meinos_CreateWindowExA(uint32_t dwExStyle, const char* 
                 windows[parent_slot].controls[c_idx].num_items = 0;
                 windows[parent_slot].controls[c_idx].selected_item = 0;
                 windows[parent_slot].controls[c_idx].is_dropped = 0;
-                windows[parent_slot].num_controls++;
                 
                 return (void*)(0x10000ULL | ((parent_slot & 0xFF) << 8) | (c_idx & 0xFF)); // Fake HWND
             }
@@ -4267,8 +4296,8 @@ extern "C" WIN_ABI void* meinos_CreateWindowExA(uint32_t dwExStyle, const char* 
 
     windows[slot].open = true;
     windows[slot].minimized = false;
-    windows[slot].x = (x == (int)0x80000000 || x <= 0) ? (100 + (slot - 16) * 30) : x;
-    windows[slot].y = (y == (int)0x80000000 || y <= 0) ? (100 + (slot - 16) * 30) : y;
+    windows[slot].x = (x == (int)0x80000000 || x < 0) ? 100 : x;
+    windows[slot].y = (y == (int)0x80000000 || y < 0) ? 100 : y;
     windows[slot].w = (nWidth == (int)0x80000000 || nWidth <= 0) ? 400 : nWidth;
     windows[slot].h = (nHeight == (int)0x80000000 || nHeight <= 0) ? 300 : nHeight;
     if (windows[slot].w > 1024) windows[slot].w = 1024;
@@ -4285,7 +4314,7 @@ extern "C" WIN_ABI void* meinos_CreateWindowExA(uint32_t dwExStyle, const char* 
     windows[slot].pixel_h = windows[slot].h;
     windows[slot].pixels = new uint32_t[windows[slot].pixel_w * windows[slot].pixel_h];
     for (int i = 0; i < windows[slot].pixel_w * windows[slot].pixel_h; i++) {
-        windows[slot].pixels[i] = 0x000000; // default black background
+        windows[slot].pixels[i] = 0xF0F0F0; // Windows dialog background gray
     }
 
     if (lpWindowName) {
@@ -4331,7 +4360,8 @@ extern "C" WIN_ABI void* meinos_CreateWindowExA(uint32_t dwExStyle, const char* 
 extern "C" WIN_ABI int meinos_GetMessageA(void* lpMsg, void* hWnd, uint32_t wMsgFilterMin, uint32_t wMsgFilterMax) {
     sleep_ms(5);
     if (lpMsg) memset(lpMsg, 0, 48);
-    for (int i = 0; i < 20; i++) {
+    // Only check Win32 app windows (slots 16-19), not MeinOS system windows
+    for (int i = 16; i < 20; i++) {
         if (windows[i].open && windows[i].msg_msg != 0) {
             if (lpMsg) {
                 *(uint64_t*)lpMsg = (uint64_t)i; // hwnd
@@ -4398,6 +4428,9 @@ extern "C" WIN_ABI uint64_t meinos_DispatchMessageA(void* lpMsg) {
             uint32_t msg = *(uint32_t*)((uint8_t*)lpMsg + 8);
             uint64_t wParam = *(uint64_t*)((uint8_t*)lpMsg + 16);
             uint64_t lParam = *(uint64_t*)((uint8_t*)lpMsg + 24);
+            
+            // Skip WM_NULL - don't call WndProc for empty messages
+            if (msg == 0) return 0;
             
             if (msg == 0x0111) { // WM_COMMAND
                 char buf[128];
@@ -4494,7 +4527,10 @@ extern "C" WIN_ABI int meinos_ShowWindow(void* hWnd, int nCmdShow) {
     if (slot >= 0 && slot < 20) {
         // valid window
         if (nCmdShow == 0) windows[slot].minimized = _128;
-        else windows[slot].minimized = _86;
+        else {
+            windows[slot].minimized = _86;
+            windows[slot].needs_paint = _128; // Trigger WM_PAINT when showing
+        }
         return 1;
     } else if (slot >= 0x10000) {
         uint64_t parent_slot = (slot >> 8) & 0xFF;
@@ -4518,86 +4554,6 @@ extern "C" WIN_ABI void* meinos_GetDlgItem(void* hDlg, int nIDDlgItem) {
     }
     // Return a plausible fake HWND so callers don't crash on NULL
     return (void*)(0x20000ULL | (uint64_t)(nIDDlgItem & 0xFFFF));
-}
-
-extern "C" WIN_ABI uint32_t meinos_GetLogicalDrives() {
-    return 0x0C; // C: and D:
-}
-
-extern "C" WIN_ABI uint32_t meinos_GetLogicalDriveStringsA(uint32_t nBufferLength, char* lpBuffer) {
-    if (lpBuffer && nBufferLength >= 9) {
-        lpBuffer[0] = 'C'; lpBuffer[1] = ':'; lpBuffer[2] = '\\'; lpBuffer[3] = 0;
-        lpBuffer[4] = 'D'; lpBuffer[5] = ':'; lpBuffer[6] = '\\'; lpBuffer[7] = 0;
-        lpBuffer[8] = 0;
-        return 8;
-    }
-    return 9;
-}
-
-extern "C" WIN_ABI uint32_t meinos_GetLogicalDriveStringsW(uint32_t nBufferLength, uint16_t* lpBuffer) {
-    if (lpBuffer && nBufferLength >= 9) {
-        lpBuffer[0] = 'C'; lpBuffer[1] = ':'; lpBuffer[2] = '\\'; lpBuffer[3] = 0;
-        lpBuffer[4] = 'D'; lpBuffer[5] = ':'; lpBuffer[6] = '\\'; lpBuffer[7] = 0;
-        lpBuffer[8] = 0;
-        return 8;
-    }
-    return 9;
-}
-
-extern "C" WIN_ABI uint32_t meinos_GetDriveTypeA(const char* lpRootPathName) {
-    return 2; // DRIVE_REMOVABLE
-}
-
-extern "C" WIN_ABI uint32_t meinos_GetDriveTypeW(const uint16_t* lpRootPathName) {
-    return 2; // DRIVE_REMOVABLE
-}
-
-extern "C" WIN_ABI int meinos_GetVolumeInformationW(const uint16_t* lpRootPathName, uint16_t* lpVolumeNameBuffer, uint32_t nVolumeNameSize, uint32_t* lpVolumeSerialNumber, uint32_t* lpMaximumComponentLength, uint32_t* lpFileSystemFlags, uint16_t* lpFileSystemNameBuffer, uint32_t nFileSystemNameSize) {
-    if (lpVolumeNameBuffer && nVolumeNameSize > 5) {
-        lpVolumeNameBuffer[0] = 'U'; lpVolumeNameBuffer[1] = 'S'; lpVolumeNameBuffer[2] = 'B'; lpVolumeNameBuffer[3] = 0;
-    }
-    if (lpFileSystemNameBuffer && nFileSystemNameSize > 5) {
-        lpFileSystemNameBuffer[0] = 'F'; lpFileSystemNameBuffer[1] = 'A'; lpFileSystemNameBuffer[2] = 'T'; lpFileSystemNameBuffer[3] = '3'; lpFileSystemNameBuffer[4] = '2'; lpFileSystemNameBuffer[5] = 0;
-    }
-    if (lpVolumeSerialNumber) *lpVolumeSerialNumber = 0x12345678;
-    if (lpMaximumComponentLength) *lpMaximumComponentLength = 255;
-    if (lpFileSystemFlags) *lpFileSystemFlags = 0;
-    return 1;
-}
-
-extern "C" WIN_ABI int meinos_DeviceIoControl(void* hDevice, uint32_t dwIoControlCode, void* lpInBuffer, uint32_t nInBufferSize, void* lpOutBuffer, uint32_t nOutBufferSize, uint32_t* lpBytesReturned, void* lpOverlapped) {
-    if (lpBytesReturned) *lpBytesReturned = 0;
-    return 1; // Success
-}
-
-
-
-extern "C" WIN_ABI uint64_t meinos_SendDlgItemMessageA(void* hDlg, int nIDDlgItem, uint32_t Msg, uint64_t wParam, uint64_t lParam) {
-    void* hItem = meinos_GetDlgItem(hDlg, nIDDlgItem);
-    return meinos_SendMessageA(hItem, Msg, wParam, lParam);
-}
-
-extern "C" WIN_ABI uint64_t meinos_SendDlgItemMessageW(void* hDlg, int nIDDlgItem, uint32_t Msg, uint64_t wParam, uint64_t lParam) {
-    void* hItem = meinos_GetDlgItem(hDlg, nIDDlgItem);
-    return meinos_SendMessageW(hItem, Msg, wParam, lParam);
-}
-
-extern "C" WIN_ABI uint32_t meinos_GetDlgItemTextA(void* hDlg, int nIDDlgItem, char* lpString, int cchMax) {
-    if (lpString && cchMax > 0) lpString[0] = 0;
-    return 0;
-}
-
-extern "C" WIN_ABI uint32_t meinos_GetDlgItemTextW(void* hDlg, int nIDDlgItem, uint16_t* lpString, int cchMax) {
-    if (lpString && cchMax > 0) lpString[0] = 0;
-    return 0;
-}
-
-extern "C" WIN_ABI int meinos_SetDlgItemTextA(void* hDlg, int nIDDlgItem, const char* lpString) {
-    return 1;
-}
-
-extern "C" WIN_ABI int meinos_SetDlgItemTextW(void* hDlg, int nIDDlgItem, const uint16_t* lpString) {
-    return 1;
 }
 
 extern "C" WIN_ABI int meinos_CheckDlgButton(void* hDlg, int nIDButton, uint32_t uCheck) {
@@ -5828,16 +5784,39 @@ WIN_ABI uint32_t meinos_WaitForMultipleObjects(uint32_t nCount, void** lpHandles
     return meinos_WaitForSingleObject(lpHandles ? lpHandles[0] : 0, dwMilliseconds);
 }
 extern "C" WIN_ABI uint32_t meinos_MsgWaitForMultipleObjects(uint32_t nCount, void** pHandles, bool fWaitAll, uint32_t dwMilliseconds, uint32_t dwWakeMask) {
-    for (int i = 0; i < 20; i++) {
-        if (windows[i].open && (windows[i].msg_msg != 0 || windows[i].needs_paint)) {
-            return nCount; // WAIT_OBJECT_0 + nCount
+    uint32_t elapsed = 0;
+    while (true) {
+        // 1. Check for messages first
+        for (int i = 16; i < 20; i++) {
+            if (windows[i].open && (windows[i].msg_msg != 0 || windows[i].needs_paint)) {
+                return nCount; // WAIT_OBJECT_0 + nCount (indicates message arrived)
+            }
         }
+        
+        // 2. Check handles
+        if (nCount > 0 && pHandles) {
+            for (uint32_t h = 0; h < nCount; h++) {
+                uintptr_t handle = (uintptr_t)pHandles[h];
+                bool active = false;
+                for (int i = 0; i < 128; i++) {
+                    if (thread_pool[i].active && thread_pool[i].handle == handle) {
+                        active = true;
+                        break;
+                    }
+                }
+                if (!active) return h; // Thread finished, return WAIT_OBJECT_0 + h
+            }
+        }
+        
+        // 3. Handle timeout
+        if (dwMilliseconds != 0xFFFFFFFF && elapsed >= dwMilliseconds) {
+            return 0x102; // WAIT_TIMEOUT
+        }
+        
+        // Sleep and increment elapsed time
+        sleep_ms(10);
+        if (dwMilliseconds != 0xFFFFFFFF) elapsed += 10;
     }
-    if (nCount > 0 && pHandles) {
-        return 0; // WAIT_OBJECT_0 to let it proceed
-    }
-    sleep_ms(5);
-    return 0x102; // WAIT_TIMEOUT for message loop with no messages
 }
 }
 
@@ -5867,12 +5846,6 @@ uint64_t resolve_windows_api_internal(const char* dll_name, const char* func_nam
         if (str_iequals(func_name, "MoveWindow")) return (uint64_t)meinos_MoveWindow;
         if (str_iequals(func_name, "DestroyWindow")) return (uint64_t)meinos_DestroyWindow;
         if (str_iequals(func_name, "GetDlgItem")) return (uint64_t)meinos_GetDlgItem;
-        if (str_iequals(func_name, "SendDlgItemMessageA")) return (uint64_t)meinos_SendDlgItemMessageA;
-        if (str_iequals(func_name, "SendDlgItemMessageW")) return (uint64_t)meinos_SendDlgItemMessageW;
-        if (str_iequals(func_name, "GetDlgItemTextA")) return (uint64_t)meinos_GetDlgItemTextA;
-        if (str_iequals(func_name, "GetDlgItemTextW")) return (uint64_t)meinos_GetDlgItemTextW;
-        if (str_iequals(func_name, "SetDlgItemTextA")) return (uint64_t)meinos_SetDlgItemTextA;
-        if (str_iequals(func_name, "SetDlgItemTextW")) return (uint64_t)meinos_SetDlgItemTextW;
         if (str_iequals(func_name, "CheckDlgButton")) return (uint64_t)meinos_CheckDlgButton;
         if (str_iequals(func_name, "IsDlgButtonChecked")) return (uint64_t)meinos_IsDlgButtonChecked;
         if (str_iequals(func_name, "EnableWindow")) return (uint64_t)meinos_EnableWindow;
@@ -5887,14 +5860,6 @@ uint64_t resolve_windows_api_internal(const char* dll_name, const char* func_nam
         if (str_iequals(func_name, "DefWindowProcW")) return (uint64_t)meinos_DefWindowProcW;
         if (str_iequals(func_name, "SendMessageA")) return (uint64_t)meinos_SendMessageA;
         if (str_iequals(func_name, "SendMessageW")) return (uint64_t)meinos_SendMessageW;
-        if (str_iequals(func_name, "GetLogicalDrives")) return (uint64_t)meinos_GetLogicalDrives;
-        if (str_iequals(func_name, "GetLogicalDriveStringsA")) return (uint64_t)meinos_GetLogicalDriveStringsA;
-        if (str_iequals(func_name, "GetLogicalDriveStringsW")) return (uint64_t)meinos_GetLogicalDriveStringsW;
-        if (str_iequals(func_name, "GetDriveTypeA")) return (uint64_t)meinos_GetDriveTypeA;
-        if (str_iequals(func_name, "GetDriveTypeW")) return (uint64_t)meinos_GetDriveTypeW;
-        if (str_iequals(func_name, "GetVolumeInformationW")) return (uint64_t)meinos_GetVolumeInformationW;
-        if (str_iequals(func_name, "DeviceIoControl")) return (uint64_t)meinos_DeviceIoControl;
-
         if (str_iequals(func_name, "PostQuitMessage")) return (uint64_t)meinos_PostQuitMessage;
         if (str_iequals(func_name, "RegisterClassA")) return (uint64_t)meinos_RegisterClassA;
         if (str_iequals(func_name, "RegisterClassExA")) return (uint64_t)meinos_RegisterClassExA;
