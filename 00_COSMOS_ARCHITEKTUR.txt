@@ -1,0 +1,46 @@
+================================================================================
+PROJEKT: COSMOS OS - BARE METAL EDITION
+ARCHITEKT: TOBIAS SCHNEIDER
+================================================================================
+
+1. DIE PHILOSOPHIE (CORE RULES)
+--------------------------------------------------------------------------------
+Dieses Betriebssystem ist "Bare Metal". Das bedeutet für jede Code-Generierung:
+- KEINE C++ Standardbibliothek (<iostream>, <vector>, etc. sind streng verboten).
+- KEIN QEMU-Emulator-Code. Alles muss auf echter Intel/Nvidia Hardware (Workstation/Laptop) laufen.
+- KEINE asynchronen Threads. Alles läuft absolut synchron in der Main-Loop.
+- Speicherverwaltung passiert direkt über Puffer und feste Speicheradressen.
+- "Trampolin-Architektur": Bei großen Kernel-Sprüngen werden absolute Pointer genutzt, um Code-Abstürze durch zu weite relative Sprünge zu verhindern.
+
+2. DIE SCHNEIDER-SPRACHE (schneider_lang.h)
+--------------------------------------------------------------------------------
+Dieses OS nutzt einen eigenen, kryptischen C++ Dialekt, um den Code kompakt zu halten, visuelles Rauschen zu minimieren und eine eigene Signatur zu tragen. 
+C++ Schlüsselwörter werden in eindeutige IDs übersetzt.
+
+Die Basis-Formel:
+Jedes Wort wird durch die Summe seiner Buchstaben-Positionen im Alphabet (A=1 ... Z=26) definiert.
+Beispiel: i(9) + f(6) = 15 -> _15 (if)
+Beispiel: v(22) + o(15) + i(9) + d(4) = 50 -> _50 (void)
+
+Die Schneider-Korrektur (Kollisionsschutz):
+Bei Wörtern mit identischen Summen greifen feste Multiplikatoren:
+- Faktor 2 (x2): Gilt für 'while', 'class', 'friend', 'public', 'struct', 'short'.
+- Faktor 3 (x3): Exklusiv für 'goto' (ID 171).
+- Ausnahmen: _172 bedeutet 'extern' (Brücke für den Linker).
+
+3. DER BOOT-ABLAUF (CHRONOLOGIE)
+--------------------------------------------------------------------------------
+1. Bootloader (GRUB) lädt die kernel_main via boot.s.
+2. Das Trampolin wird initialisiert.
+3. pci_scan_all(): Der PCI-Bus wird dynamisch gescannt, um die echten Hardware-Adressen (ABAR) von SATA-Controllern, GPUs etc. zu finden.
+4. ahci_init(): Der Festplattentreiber wird mit der gefundenen ABAR-Adresse initialisiert.
+5. ahci_mount_drive(): Das System sucht physisch nach angeschlossenen Laufwerken.
+6. Die Main-UI-Loop startet (Desktop mit N-Körper Physik-Simulation der Planeten).
+
+4. DATEISTRUKTUR & MODUL-MAPPING
+--------------------------------------------------------------------------------
+- kernel.cpp        : Die Hauptschleife, UI-Rendern, Desktop-Physik, Trampolin. Beinhaltet KEINE .cpp Includes!
+- pci.h / .cpp      : Low-Level PCI Konfiguration (inkl. outl/inl Befehle).
+- cosmos_ahci.cpp   : Der Bare-Metal Festplattentreiber (Lesen/Schreiben von Sektoren, CFS/FAT32 Parsing).
+- cosmos_tba.cpp    : Das ArShiva-Stream-System (Nimmt 26-Byte Live-Frames auf und packt sie in 512-Byte Sektoren).
+- build.sh          : Kompiliert jede .cpp einzeln zu .o Dateien und verlinkt sie am Ende strikt zusammen.

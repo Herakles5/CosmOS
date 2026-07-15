@@ -1,0 +1,6 @@
+acmdln
+argc
+argv_ptr
+commode
+env_ptr
+fmode

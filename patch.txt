@@ -1,0 +1,18 @@
+                                        uint64_t final_entry = load_and_resolve_pe((uint8_t*)file_ram_addr, cfs_files[i].size);
+                                        if (final_entry != 0) {
+                                            print_win(&windows[15], "[SYS] EXE READY. STARTING NATIVE TASK...\n");
+#ifdef __linux__
+                                            print_win(&windows[15], "[WRN] SIMULATOR DOES NOT EXECUTE NATIVE TASKS.\n");
+#endif
+                                            create_task((void (*)()) final_entry);
+                                        } else {
+                                            print_win(&windows[15], "[ERR] HYBRID: FAILED TO LOAD PE.\n");
+                                        }
+                                        input_cooldown = 25;
+                                        need_ui_refresh = _128;
+                                    }
+                                    _41 _15(is_jpg_png) {
+                                        print_win(win, "\n[SYS] DECODING JPG/PNG IN MEMORY...\n");
+                                        uint64_t raw_ram_addr = get_ram_addr_raw();
+                                        uint32_t total_sectors = (cfs_files[i].size / 512) + 1;
+                                        _39(uint32_t sec = 0; sec < total_sectors; sec++) {

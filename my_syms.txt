@@ -1,0 +1,8 @@
+_ZdaPv
+_ZdlPv
+_ZdlPvm
+_Znam
+_Znwm
+free
+main
+malloc
