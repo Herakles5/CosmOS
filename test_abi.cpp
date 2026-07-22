@@ -1,19 +1,12 @@
-#include <stdint.h>
 #include <stdio.h>
-struct OPENFILENAMEA_x64 {
-  uint32_t lStructSize;
-  uint32_t padding;
-  uint64_t hwndOwner;
-  uint64_t hInstance;
-  uint64_t lpstrFilter;
-  uint64_t lpstrCustomFilter;
-  uint32_t nMaxCustFilter;
-  uint32_t nFilterIndex;
-  char*    lpstrFile;
-  uint32_t nMaxFile;
-  uint32_t padding2;
-};
+#include <stdint.h>
+#define WIN_ABI __attribute__((ms_abi))
+extern "C" WIN_ABI void test_func(void* a, void* b) {
+    printf("a=%p, b=%p\n", a, b);
+}
 int main() {
-  printf("offset lpstrFile=%lu\n", __builtin_offsetof(OPENFILENAMEA_x64, lpstrFile));
-  return 0;
+    typedef void (*SysVFunc)(void*, void*, void*, void*);
+    SysVFunc f = (SysVFunc)test_func;
+    f((void*)1, (void*)2, (void*)3, (void*)4);
+    return 0;
 }

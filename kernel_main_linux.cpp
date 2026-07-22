@@ -1,5 +1,6 @@
 #include "stb_image.h"
 #include <malloc.h>
+#include "d3d9_surreal.h"
 /// kernel_main.cpp (Cosmos OS V2 - Windows & Live RTC FIXED)
 #include "boot_info.h"
 #include <stdint.h>
@@ -26,35 +27,596 @@ extern volatile int os_app_h;
 #include <asm/prctl.h>
 #include <string.h>
 #include <ucontext.h>
+#include <sys/mman.h>
+#include <asm/ldt.h>
 
 static __thread sigjmp_buf jump_env;
 static __thread bool in_exe_thread = false;
+extern "C" {
+    uint64_t wow64_api_table[4096];
+    int wow64_api_table_count = 0;
+    uint32_t wow64_arg_bytes_table[16384];
+    char* wow64_api_name_table[16384];
+    uint64_t saved_fs_base = 0;
+    uint32_t wow64_pop_bytes_global = 0;
 
-void segfault_handler(int sig, siginfo_t *si, void *arg) {
+#ifndef WIN_ABI
+#define WIN_ABI __attribute__((ms_abi, force_align_arg_pointer))
+#endif
+
+    uint64_t wow64_dispatch(uint32_t api_id, uint32_t* stack_ptr, uint32_t* out_pop_bytes) {
+        const char* name = wow64_api_name_table[api_id] ? wow64_api_name_table[api_id] : "???";
+        uint64_t target = wow64_api_table[api_id];
+        uint32_t arg_bytes = wow64_arg_bytes_table[api_id];
+        uint64_t ebx_val;
+        asm volatile("mov %%rbx, %0" : "=r"(ebx_val));
+        printf("[WOW64] %s (args=%u) EBX=0x%lx\n", name, arg_bytes, ebx_val);
+        fflush(stdout);
+        if (out_pop_bytes) *out_pop_bytes = arg_bytes;
+        
+        uint64_t ret_val = 0;
+        // Up to 16 arguments (64 bytes)
+        typedef uint64_t (WIN_ABI *func_t)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+        func_t func = (func_t)target;
+        
+        // In MS ABI, the first 4 arguments are in RCX, RDX, R8, R9. The rest are on the stack.
+        // It's safe to always pass 16 arguments, because the callee will only read what it needs!
+        // We just need to make sure we don't read past the end of the 32-bit stack.
+        // But stack_ptr points to the 32-bit stack which has at least 1MB of space. Reading past args is safe.
+        int len = 0; while(name[len]) len++;
+        if ((len == 19 && name[0]=='W' && name[4]=='C') || (len == 19 && name[0]=='M' && name[1]=='u') || (len == 12 && name[0]=='S' && name[1]=='e') || (len == 12 && name[0]=='G' && name[1]=='e')) {
+            printf("[WOW64] %s called from ret_addr=0x%x\n", name, stack_ptr[0]);
+            
+            // Walk the EBP chain!
+            // The 32-bit EBP was saved in wow64_bridge.S. We can't access it easily here unless we pass it!
+            // But wait! We can just walk the stack upwards and look for return addresses!
+            printf("  [STACK SCAN]: ");
+            for(int i=1; i<24; i++) {
+                uint32_t val = stack_ptr[i];
+                if (val > 0x400000 && val < 0x500000) {
+                    printf("0x%x ", val);
+                }
+            }
+            printf("\n");
+        }
+
+        ret_val = func(
+            stack_ptr[1], stack_ptr[2], stack_ptr[3], stack_ptr[4],
+            stack_ptr[5], stack_ptr[6], stack_ptr[7], stack_ptr[8],
+            stack_ptr[9], stack_ptr[10], stack_ptr[11], stack_ptr[12],
+            stack_ptr[13], stack_ptr[14], stack_ptr[15], stack_ptr[16]
+        );
+        
+        printf("[WOW64] %s returned 0x%lx\n", name, ret_val);
+        fflush(stdout);
+        return ret_val;
+        
+        return 0;
+    }
+}
+uint64_t glibc_fs_base = 0;
+bool is_pe_32bit = false;
+
+// Win32 API stdcall argument byte counts for WoW64 bridge dispatch
+uint32_t get_api_arg_bytes(const char* name) {
+    if (!name) return 0;
+    // Struct for fast lookup
+    struct { const char* name; uint32_t bytes; } table[] = {
+        // KERNEL32 - Process/Thread
+        {"GetCurrentProcess", 0},
+        {"GetCurrentProcessId", 0},
+        {"GetCurrentThreadId", 0},
+        {"GetCurrentThread", 0},
+        {"ExitProcess", 4},
+        {"TerminateProcess", 8},
+        {"CreateProcessW", 40},
+        {"CreateProcessA", 40},
+        {"CreateThread", 24},
+        {"ExitThread", 4},
+        {"ResumeThread", 4},
+        {"SuspendThread", 4},
+        {"GetExitCodeThread", 8},
+        {"GetExitCodeProcess", 8},
+        {"WaitForSingleObject", 8},
+        {"WaitForMultipleObjects", 16},
+        {"Sleep", 4},
+        {"SleepEx", 8},
+        {"SwitchToThread", 0},
+        {"GetProcessId", 4},
+        {"OpenProcess", 12},
+        {"IsProcessorFeaturePresent", 4},
+        {"GetStartupInfoW", 4},
+        {"GetStartupInfoA", 4},
+        {"FlsAlloc", 4},
+        {"FlsSetValue", 8},
+        {"FlsGetValue", 4},
+        {"FlsFree", 4},
+        {"TlsAlloc", 0},
+        {"TlsSetValue", 8},
+        {"TlsGetValue", 4},
+        {"TlsFree", 4},
+        {"ProcessIdToSessionId", 8},
+        {"SetThreadExecutionState", 4},
+        // KERNEL32 - Memory
+        {"GetProcessHeap", 0},
+        {"HeapCreate", 12},
+        {"HeapDestroy", 4},
+        {"HeapAlloc", 12},
+        {"HeapReAlloc", 16},
+        {"HeapFree", 12},
+        {"HeapSize", 12},
+        {"HeapSetInformation", 16},
+        {"VirtualAlloc", 16},
+        {"VirtualFree", 12},
+        {"VirtualProtect", 16},
+        {"VirtualQuery", 12},
+        {"GlobalAlloc", 8},
+        {"GlobalFree", 4},
+        {"GlobalLock", 4},
+        {"GlobalUnlock", 4},
+        {"LocalAlloc", 8},
+        {"LocalFree", 4},
+        // KERNEL32 - File I/O
+        {"CreateFileW", 28},
+        {"CreateFileA", 28},
+        {"ReadFile", 20},
+        {"WriteFile", 20},
+        {"CloseHandle", 4},
+        {"SetFilePointer", 16},
+        {"SetFilePointerEx", 20},
+        {"GetFileSize", 8},
+        {"GetFileSizeEx", 8},
+        {"GetFileType", 4},
+        {"FlushFileBuffers", 4},
+        {"SetEndOfFile", 4},
+        {"DeleteFileW", 4},
+        {"DeleteFileA", 4},
+        {"MoveFileW", 8},
+        {"MoveFileExW", 12},
+        {"CopyFileW", 12},
+        {"CopyFileExW", 24},
+        {"CreateDirectoryW", 8},
+        {"CreateDirectoryA", 8},
+        {"RemoveDirectoryW", 4},
+        {"GetCurrentDirectoryW", 8},
+        {"SetCurrentDirectoryW", 4},
+        {"GetTempPathW", 8},
+        {"GetTempPathA", 8},
+        {"GetTempFileNameW", 16},
+        {"GetFullPathNameW", 16},
+        {"GetFileAttributesW", 4},
+        {"GetFileAttributesA", 4},
+        {"GetFileAttributesExW", 12},
+        {"SetFileAttributesW", 8},
+        {"SetFileTime", 16},
+        {"GetFileTime", 16},
+        {"FindFirstFileW", 8},
+        {"FindFirstFileExW", 24},
+        {"FindNextFileW", 8},
+        {"FindClose", 4},
+        {"GetVolumePathNameW", 12},
+        {"DuplicateHandle", 28},
+        {"SetFileValidData", 8},
+        // KERNEL32 - Module
+        {"GetModuleHandleW", 4},
+        {"GetModuleHandleA", 4},
+        {"GetModuleHandleExW", 12},
+        {"GetModuleFileNameW", 12},
+        {"GetModuleFileNameA", 12},
+        {"LoadLibraryW", 4},
+        {"LoadLibraryA", 4},
+        {"LoadLibraryExW", 12},
+        {"LoadLibraryExA", 12},
+        {"FreeLibrary", 4},
+        {"GetProcAddress", 8},
+        // KERNEL32 - String/Locale
+        {"MultiByteToWideChar", 24},
+        {"WideCharToMultiByte", 32},
+        {"GetACP", 0},
+        {"GetOEMCP", 0},
+        {"GetCPInfo", 8},
+        {"IsValidCodePage", 4},
+        {"LCMapStringW", 24},
+        {"CompareStringW", 24},
+        {"CompareStringA", 24},
+        {"GetStringTypeW", 16},
+        {"GetLocaleInfoW", 16},
+        {"GetUserDefaultLCID", 0},
+        {"GetUserDefaultLangID", 0},
+        {"GetSystemDefaultLangID", 0},
+        {"GetUserDefaultUILanguage", 0},
+        {"GetThreadLocale", 0},
+        {"SetThreadLocale", 4},
+        {"GetDateFormatW", 24},
+        // KERNEL32 - Sync
+        {"InitializeCriticalSection", 4},
+        {"InitializeCriticalSectionAndSpinCount", 8},
+        {"InitializeCriticalSectionEx", 12},
+        {"DeleteCriticalSection", 4},
+        {"EnterCriticalSection", 4},
+        {"LeaveCriticalSection", 4},
+        {"TryEnterCriticalSection", 4},
+        {"CreateEventW", 16},
+        {"CreateEventA", 16},
+        {"SetEvent", 4},
+        {"ResetEvent", 4},
+        {"CreateMutexW", 12},
+        {"CreateMutexA", 12},
+        {"ReleaseMutex", 4},
+        {"CreateSemaphoreW", 16},
+        {"ReleaseSemaphore", 12},
+        {"CreateFileMappingW", 24},
+        {"MapViewOfFile", 20},
+        {"UnmapViewOfFile", 4},
+        {"InterlockedIncrement", 4},
+        {"InterlockedDecrement", 4},
+        {"InterlockedExchange", 8},
+        {"InterlockedCompareExchange", 12},
+        {"InitializeSListHead", 4},
+        // KERNEL32 - Error/Debug
+        {"GetLastError", 0},
+        {"LCMapStringEx", 36},
+        {"SetDefaultDllDirectories", 4},
+        {"SetLastError", 4},
+        {"RaiseException", 16},
+        {"UnhandledExceptionFilter", 4},
+        {"SetUnhandledExceptionFilter", 4},
+        {"IsDebuggerPresent", 0},
+        {"OutputDebugStringW", 4},
+        {"OutputDebugStringA", 4},
+        {"RtlUnwind", 16},
+        // KERNEL32 - Time
+        {"GetSystemTimeAsFileTime", 4},
+        {"GetSystemTime", 4},
+        {"GetLocalTime", 4},
+        {"QueryPerformanceCounter", 4},
+        {"QueryPerformanceFrequency", 4},
+        {"GetTickCount", 0},
+        {"GetTickCount64", 0},
+        {"SystemTimeToFileTime", 8},
+        {"FileTimeToSystemTime", 8},
+        {"FileTimeToLocalFileTime", 8},
+        {"LocalFileTimeToFileTime", 8},
+        {"SystemTimeToTzSpecificLocalTime", 12},
+        {"GetTimeZoneInformation", 4},
+        {"DosDateTimeToFileTime", 12},
+        // KERNEL32 - Console
+        {"GetStdHandle", 4},
+        {"SetStdHandle", 8},
+        {"WriteConsoleW", 20},
+        {"GetConsoleCP", 0},
+        {"GetConsoleMode", 8},
+        // KERNEL32 - Environment/System
+        {"GetEnvironmentStringsW", 0},
+        {"FreeEnvironmentStringsW", 4},
+        {"GetEnvironmentVariableW", 12},
+        {"SetEnvironmentVariableW", 8},
+        {"GetCommandLineW", 0},
+        {"GetCommandLineA", 0},
+        {"GetSystemDirectoryW", 8},
+        {"GetSystemDirectoryA", 8},
+        {"GetWindowsDirectoryW", 8},
+        {"GetSystemWow64DirectoryW", 8},
+        {"GetComputerNameW", 8},
+        {"GetSystemInfo", 4},
+        {"GetNativeSystemInfo", 4},
+        {"GetVersionExW", 4},
+        {"GetVersionExA", 4},
+        {"GetVersion", 0},
+        {"VerifyVersionInfoW", 16},
+        {"VerSetConditionMask", 16},  // Actually returns ULONGLONG, but 3 args on 32-bit
+        {"ExpandEnvironmentStringsW", 12},
+        // KERNEL32 - Encoding/Pointer
+        {"EncodePointer", 4},
+        {"DecodePointer", 4},
+        {"FormatMessageW", 28},
+        {"FormatMessageA", 28},
+        // KERNEL32 - Pipe
+        {"CreateNamedPipeW", 32},
+        {"ConnectNamedPipe", 8},
+        {"SetNamedPipeHandleState", 16},
+        // KERNEL32 - Misc
+        {"GetComputerNameW", 8},
+        {"lstrlenA", 4},
+        {"lstrlenW", 4},
+        {"lstrcmpiW", 8},
+        {"lstrcmpW", 8},
+        {"CreateMutex", 12},
+        {"PostThreadMessageW", 16},
+        // USER32
+        {"MessageBoxW", 16},
+        {"MessageBoxA", 16},
+        {"CreateWindowExW", 48},
+        {"CreateWindowExA", 48},
+        {"DestroyWindow", 4},
+        {"ShowWindow", 8},
+        {"UpdateWindow", 4},
+        {"MoveWindow", 24},
+        {"SetWindowPos", 28},
+        {"GetWindowRect", 8},
+        {"GetClientRect", 8},
+        {"SetWindowTextW", 8},
+        {"SetWindowTextA", 8},
+        {"GetWindowTextW", 12},
+        {"GetWindowTextA", 12},
+        {"GetWindowTextLengthW", 4},
+        {"DefWindowProcW", 16},
+        {"DefWindowProcA", 16},
+        {"RegisterClassW", 4},
+        {"RegisterClassExW", 4},
+        {"UnregisterClassW", 8},
+        {"GetMessageW", 16},
+        {"GetMessageA", 16},
+        {"PeekMessageW", 20},
+        {"PeekMessageA", 20},
+        {"TranslateMessage", 4},
+        {"DispatchMessageW", 4},
+        {"DispatchMessageA", 4},
+        {"PostMessageW", 16},
+        {"PostMessageA", 16},
+        {"SendMessageW", 16},
+        {"SendMessageA", 16},
+        {"PostQuitMessage", 4},
+        {"SetTimer", 16},
+        {"KillTimer", 8},
+        {"InvalidateRect", 12},
+        {"BeginPaint", 8},
+        {"EndPaint", 8},
+        {"GetDC", 4},
+        {"ReleaseDC", 8},
+        {"SetWindowLongW", 12},
+        {"GetWindowLongW", 8},
+        {"SetWindowLongPtrW", 12},
+        {"GetWindowLongPtrW", 8},
+        {"EnableWindow", 8},
+        {"IsWindowVisible", 4},
+        {"IsWindow", 4},
+        {"GetParent", 4},
+        {"SetParent", 8},
+        {"GetDlgItem", 8},
+        {"SetDlgItemTextW", 12},
+        {"GetDlgItemTextW", 16},
+        {"LoadCursorW", 8},
+        {"LoadCursorA", 8},
+        {"LoadIconW", 8},
+        {"LoadIconA", 8},
+        {"LoadBitmapW", 8},
+        {"GetCursorPos", 4},
+        {"GetSystemMetrics", 4},
+        {"AdjustWindowRectEx", 16},
+        {"GetDesktopWindow", 0},
+        {"GetForegroundWindow", 0},
+        {"SetForegroundWindow", 4},
+        {"GetFocus", 0},
+        {"SetFocus", 4},
+        {"IsDialogMessageW", 8},
+        {"MsgWaitForMultipleObjects", 20},
+        {"WaitForInputIdle", 8},
+        {"GetMonitorInfoW", 8},
+        {"MonitorFromPoint", 12},
+        {"MonitorFromWindow", 8},
+        {"ScreenToClient", 8},
+        {"ClientToScreen", 8},
+        {"MapWindowPoints", 16},
+        // GDI32
+        {"CreateCompatibleDC", 4},
+        {"DeleteDC", 4},
+        {"SelectObject", 8},
+        {"DeleteObject", 4},
+        {"GetObjectW", 12},
+        {"GetObjectA", 12},
+        {"BitBlt", 36},
+        {"StretchBlt", 44},
+        {"CreateSolidBrush", 4},
+        {"SetBkMode", 8},
+        {"SetTextColor", 8},
+        {"TextOutW", 20},
+        // ADVAPI32
+        {"RegOpenKeyExW", 20},
+        {"RegCloseKey", 4},
+        {"RegQueryValueExW", 24},
+        {"RegSetValueExW", 24},
+        {"RegCreateKeyExW", 36},
+        {"RegDeleteKeyW", 8},
+        {"RegEnumKeyExW", 32},
+        {"RegEnumValueW", 32},
+        {"RegQueryInfoKeyW", 48},
+        {"OpenProcessToken", 12},
+        {"GetTokenInformation", 20},
+        {"CheckTokenMembership", 12},
+        {"AllocateAndInitializeSid", 44},
+        {"FreeSid", 4},
+        {"InitializeSecurityDescriptor", 8},
+        {"SetSecurityDescriptorDacl", 16},
+        {"SetSecurityDescriptorOwner", 12},
+        {"SetSecurityDescriptorGroup", 12},
+        {"SetEntriesInAclA", 16},
+        {"CryptAcquireContextW", 20},
+        {"CryptReleaseContext", 8},
+        {"CryptCreateHash", 20},
+        {"CryptHashData", 16},
+        {"CryptGetHashParam", 20},
+        {"CryptDestroyHash", 4},
+        {"QueryServiceConfigW", 16},
+        {"AdjustTokenPrivileges", 24},
+        {"LookupPrivilegeValueW", 12},
+        {"InitiateSystemShutdownExW", 24},
+        {"GetUserNameW", 8},
+        {"RegDeleteValueW", 8},
+        {"CloseEventLog", 4},
+        {"OpenEventLogW", 8},
+        {"ReportEventW", 36},
+        {"ConvertStringSecurityDescriptorToSecurityDescriptorW", 16},
+        {"DecryptFileW", 8},
+        {"CreateWellKnownSid", 16},
+        {"InitializeAcl", 12},
+        {"SetEntriesInAclW", 16},
+        {"ChangeServiceConfigW", 44},
+        {"CloseServiceHandle", 4},
+        {"ControlService", 12},
+        {"OpenSCManagerW", 12},
+        {"OpenServiceW", 12},
+        {"QueryServiceStatus", 8},
+        {"SetNamedSecurityInfoW", 24},
+        // OLE32
+        {"CoInitialize", 4},
+        {"CoInitializeEx", 8},
+        {"CoUninitialize", 0},
+        {"CoCreateInstance", 20},
+        {"CoTaskMemFree", 4},
+        {"CoTaskMemAlloc", 4},
+        {"CLSIDFromProgID", 8},
+        {"StringFromGUID2", 12},
+        {"CoInitializeSecurity", 36},
+        // OLEAUT32
+        {"SysAllocString", 4},
+        {"SysFreeString", 4},
+        {"SysStringLen", 4},
+        {"SysAllocStringLen", 8},
+        {"VariantInit", 4},
+        {"VariantClear", 4},
+        // SHELL32
+        {"ShellExecuteExW", 4},
+        {"SHGetFolderPathW", 20},
+        {"CommandLineToArgvW", 8},
+        // RPCRT4
+        {"UuidCreate", 4},
+        // SHLWAPI
+        {"PathCombineW", 12},
+        {"PathFileExistsW", 4},
+        // WS2_32
+        {"WSAStartup", 8},
+        {"WSACleanup", 0},
+        {"WSAGetLastError", 0},
+        {"socket", 12},
+        {"connect", 12},
+        {"send", 16},
+        {"recv", 16},
+        {"closesocket", 4},
+        {"bind", 12},
+        {"listen", 8},
+        {"accept", 12},
+        {"select", 20},
+        {"htons", 4},
+        {"htonl", 4},
+        {"ntohs", 4},
+        {"ntohl", 4},
+        {"inet_addr", 4},
+        {"gethostbyname", 4},
+        // WININET
+        {"InternetOpenW", 20},
+        {"InternetConnectW", 32},
+        {"HttpOpenRequestW", 32},
+        {"HttpSendRequestW", 20},
+        {"InternetReadFile", 16},
+        {"InternetCloseHandle", 4},
+        // MSVCRT
+        {"_beginthreadex", 24},
+        {"_time64", 4},
+        {"_localtime64_s", 8},
+        {NULL, 0}
+    };
+    for (int i = 0; table[i].name; i++) {
+        if (strcmp(name, table[i].name) == 0) return table[i].bytes;
+    }
+    // Default: assume 0 args (stub/dummy functions)
+    printf("[WOW64] WARNING: Unknown arg bytes for '%s', defaulting to 0\n", name);
+    return 0;
+}
+
+// pe_execute moved down
+extern "C" void segfault_handler(int sig, siginfo_t *si, void *arg) {
+    static volatile int in_handler = 0;
     ucontext_t *uc = (ucontext_t *)arg;
     uint64_t rip = uc->uc_mcontext.gregs[REG_RIP];
+    if (sig == SIGTRAP) {
+        dprintf(1, "[SIGTRAP] EIP: 0x%x\n", (uint32_t)rip);
+        uc->uc_mcontext.gregs[REG_EFL] &= ~0x100; // Clear TF
+        return;
+    }
+
+    // Prevent recursive crashes in signal handler
+    if (in_handler) {
+        // Already in handler - just longjmp out
+        if (in_exe_thread) {
+            in_handler = 0;
+            siglongjmp(jump_env, 1);
+        }
+        signal(SIGSEGV, SIG_DFL);
+        raise(SIGSEGV);
+        return;
+    }
+    in_handler = 1;
+
     if (in_exe_thread) {
         char msg[256];
         extern char last_proc_name[128];
         if (rip == 0) {
             snprintf(msg, sizeof(msg), "[SYS] EXE CRASHED AT RIP: 0x0. Probable cause: Missing function '%s'\n", last_proc_name);
         } else {
-            snprintf(msg, sizeof(msg), "[SYS] EXE CRASHED AT RIP: 0x%llx. SAFELY CAUGHT.\n", (unsigned long long)rip);
+            snprintf(msg, sizeof(msg), "[SYS] EXE CRASHED AT RIP: 0x%llx. SIG: %d, ADDR: %p. SAFELY CAUGHT.\n", (unsigned long long)rip, sig, si->si_addr);
         }
         printf("%s", msg);
+
+        if (rip != 0) {
+            // Safe memory read: check if page is mapped using mincore
+            uintptr_t page = rip & ~0xFFF;
+            unsigned char vec[1];
+            bool readable = (mincore((void*)page, 4096, vec) == 0);
+            if (readable) {
+                printf("[SYS] Bytes around RIP: ");
+                uint8_t* p = (uint8_t*)rip;
+                for (int i = 0; i < 32; i++) {
+                    printf("%02X ", p[i]);
+                }
+                printf("\n");
+            } else {
+                printf("[SYS] Cannot read bytes at RIP (unmapped page 0x%lx)\n", page);
+            }
+
+            // Print registers
+            printf("[SYS] RAX: 0x%llx, RCX: 0x%llx, RDX: 0x%llx, RBX: 0x%llx\n",
+                uc->uc_mcontext.gregs[REG_RAX], uc->uc_mcontext.gregs[REG_RCX],
+                uc->uc_mcontext.gregs[REG_RDX], uc->uc_mcontext.gregs[REG_RBX]);
+            printf("[SYS] RSP: 0x%llx, RBP: 0x%llx, RSI: 0x%llx, RDI: 0x%llx\n",
+                uc->uc_mcontext.gregs[REG_RSP], uc->uc_mcontext.gregs[REG_RBP],
+                uc->uc_mcontext.gregs[REG_RSI], uc->uc_mcontext.gregs[REG_RDI]);
+
+            // 32-bit EBP chain stack walk
+            uint32_t ebp = (uint32_t)uc->uc_mcontext.gregs[REG_RBP];
+            printf("[SYS] STACK WALK:\n");
+            for (int frame = 0; frame < 8 && ebp > 0x400000 && ebp < 0x42000000; frame++) {
+                uintptr_t ebp_page = ebp & ~0xFFF;
+                if (mincore((void*)ebp_page, 4096, vec) != 0) break;
+                uint32_t* fp = (uint32_t*)(uintptr_t)ebp;
+                uint32_t ret_addr = fp[1];
+                uint32_t next_ebp = fp[0];
+                printf("  Frame %d: EBP=0x%x, RET=0x%x, ARGS=(0x%x, 0x%x, 0x%x, 0x%x)\n",
+                    frame, ebp, ret_addr, fp[2], fp[3], fp[4], fp[5]);
+                ebp = next_ebp;
+            }
+        }
+        fflush(stdout);
+        in_handler = 0;
+        printf("[SYS] THREAD TERMINATED SAFELY.\n");
         siglongjmp(jump_env, 1);
     }
+    in_handler = 0;
     signal(SIGSEGV, SIG_DFL);
     raise(SIGSEGV);
 }
 
+extern "C" void jump_to_32bit(uint32_t entry_point, uint32_t stack32_ptr);
+extern "C" void my_sig_wrapper();
+extern void* meinos_alloc32(size_t size);
+
 void* linux_exe_thread(void* arg) {
-    void (*entry)() = (void (*)())arg;
+    uint32_t entry = (uint32_t)(uint64_t)arg;
     in_exe_thread = true;
-    
+
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
-    sa.sa_sigaction = segfault_handler;
+    sa.sa_sigaction = (void(*)(int, siginfo_t*, void*))my_sig_wrapper;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_NODEFER | SA_SIGINFO | SA_ONSTACK;
 
@@ -69,17 +631,41 @@ void* linux_exe_thread(void* arg) {
     sigaction(SIGFPE, &sa, NULL);  // Catch floating point exceptions
     sigaction(SIGABRT, &sa, NULL);
 
-    // WINE Magic: Set up dummy TEB & PEB
-    void* teb = calloc(1, 4096);
-    void* peb = calloc(1, 4096);
-    *(void**)((char*)teb + 0x30) = teb; // 64-bit TEB->Self
-    *(void**)((char*)teb + 0x60) = peb; // 64-bit TEB->PEB
-    // Set some random PEB values the CRT might check
-    *(void**)((char*)peb + 0x10) = (void*)0x400000; // ImageBase
-    syscall(SYS_arch_prctl, ARCH_SET_GS, (unsigned long)teb);
+    // WINE Magic: Set up dummy TEB & PEB in lower 2GB
+    void* teb = meinos_alloc32(4096);
+    void* peb = meinos_alloc32(4096);
+    *(uint32_t*)((char*)teb + 0x18) = (uint32_t)(uint64_t)teb; // 32-bit TEB->Self
+    *(uint32_t*)((char*)teb + 0x30) = (uint32_t)(uint64_t)peb; // 32-bit TEB->PEB
+    *(uint32_t*)((char*)peb + 0x08) = 0x400000; // ImageBase
+
+    // 32-bit stack in lower 2GB
+    void* stack = meinos_alloc32(1024 * 1024); // 1MB stack
+    uint32_t stack_ptr = (uint32_t)(uint64_t)stack + 1024 * 1024 - 4096;
+
+    // Save glibc FS_BASE
+    extern uint64_t glibc_fs_base;
+    syscall(SYS_arch_prctl, ARCH_GET_FS, &glibc_fs_base);
+
+    // Pass TEB base to wow64_api_thunk so it can restore FS on signals
+    extern uint64_t saved_fs_base;
+    saved_fs_base = (uint64_t)teb;
+
+    // Set up LDT entry 1 for TEB
+    struct user_desc u_info;
+    memset(&u_info, 0, sizeof(u_info));
+    u_info.entry_number = 1;
+    u_info.base_addr = (uint32_t)(uint64_t)teb;
+    u_info.limit = 0xFFFFF;
+    u_info.seg_32bit = 1;
+    u_info.contents = 0; // Data
+    u_info.read_exec_only = 0;
+    u_info.limit_in_pages = 1;
+    u_info.seg_not_present = 0;
+    u_info.useable = 1;
+    syscall(SYS_modify_ldt, 1, &u_info, sizeof(u_info));
 
     if (sigsetjmp(jump_env, 1) == 0) {
-        entry();
+        jump_to_32bit(entry, stack_ptr);
     } else {
         printf("[SYS] THREAD TERMINATED SAFELY.\n");
     }
@@ -168,6 +754,9 @@ void* linux_exe_thread(void* arg) {
 #define windows os2_windows
 #define z_blocked os2_z_blocked
 #endif
+
+// alloc32 moved down
+
 #include "schneider_lang.h"
 #include "cosmos_partition.h"
 #include "arcade.h"
@@ -178,6 +767,36 @@ void* linux_exe_thread(void* arg) {
 #include "cosmos_fat32.h"
 #include "elf_loader.h"
 #include "pe_loader.h"
+
+static uint8_t* heap32_base = nullptr;
+static uint32_t heap32_offset = 0;
+static pthread_mutex_t heap32_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void* meinos_alloc32(size_t size) {
+    pthread_mutex_lock(&heap32_mutex);
+    if (!heap32_base) {
+        heap32_base = (uint8_t*)mmap(NULL, 1024*1024*500, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_32BIT, -1, 0);
+    }
+    size = (size + 15) & ~15;
+    if (heap32_offset + size + 16 > 1024*1024*500) {
+        pthread_mutex_unlock(&heap32_mutex);
+        return nullptr;
+    }
+    void* ret = heap32_base + heap32_offset;
+    *(size_t*)ret = size; // Store the original requested size (aligned)
+    heap32_offset += size + 16;
+    pthread_mutex_unlock(&heap32_mutex);
+    return (uint8_t*)ret + 16;
+}
+
+void pe_execute(uint8_t* pe_data, uint32_t pe_sz) {
+    uint64_t entry = load_and_resolve_pe(pe_data, pe_sz);
+    if (entry) {
+        printf("[SYS] EXE READY. STARTING NATIVE TASK...\n");
+        extern void* linux_exe_thread(void* arg);
+        linux_exe_thread((void*)entry);
+    }
+}
 
 #ifdef __linux__
 #include <dirent.h>
@@ -3140,6 +3759,45 @@ struct LoadedDLL {
 static LoadedDLL g_loaded_dlls[32];
 static int g_num_loaded_dlls = 0;
 
+struct TEB32 {
+    uint32_t ExceptionList;
+    uint32_t StackBase;
+    uint32_t StackLimit;
+    uint32_t SubSystemTib;
+    uint32_t FiberData;
+    uint32_t ArbitraryUserPointer;
+    uint32_t Self;
+    uint32_t EnvironmentPointer;
+    uint32_t ProcessGroupId;
+    uint32_t ThreadId;
+    uint32_t ActiveRpcHandle;
+    uint32_t ThreadLocalStoragePointer;
+    uint32_t ProcessEnvironmentBlock;
+};
+
+struct PEB32 {
+    uint8_t  InheritedAddressSpace;
+    uint8_t  ReadImageFileExecOptions;
+    uint8_t  BeingDebugged;
+    uint8_t  BitField;
+    uint32_t Mutant;
+    uint32_t ImageBaseAddress;
+    uint32_t Ldr;
+    uint32_t ProcessParameters;
+};
+
+static TEB32 g_teb32;
+static PEB32 g_peb32;
+
+static void init_teb32(uint64_t image_base) {
+    memset(&g_teb32, 0, sizeof(TEB32));
+    memset(&g_peb32, 0, sizeof(PEB32));
+
+    g_peb32.ImageBaseAddress = (uint32_t)image_base;
+    g_teb32.Self = (uint32_t)(uintptr_t)&g_teb32;
+    g_teb32.ProcessEnvironmentBlock = (uint32_t)(uintptr_t)&g_peb32;
+}
+
 static uint64_t load_windows_dll(const char* dll_name) {
     // Check cache
     for(int i=0; i<g_num_loaded_dlls; i++) {
@@ -3187,6 +3845,7 @@ static uint64_t load_windows_dll(const char* dll_name) {
     free(buf);
     
     if (image_base) {
+        init_teb32(image_base);
         g_loaded_dlls[slot].image_base = image_base;
         char logmsg[128];
         snprintf(logmsg, 128, "[HYBRID] LOADED NATIVE DLL: %s\n", dll_name);
@@ -3326,15 +3985,39 @@ extern "C" WIN_ABI void* meinos_GetProcessHeap() {
 }
 
 extern "C" WIN_ABI void* meinos_HeapAlloc(void* hHeap, uint32_t dwFlags, size_t dwBytes) {
+    extern bool is_pe_32bit;
+    extern void* meinos_alloc32(size_t size);
+    if (is_pe_32bit) {
+        void* ptr = meinos_alloc32(dwBytes);
+        if (ptr) memset(ptr, 0, dwBytes);
+        return ptr;
+    }
     return calloc(1, dwBytes);
 }
 
 extern "C" WIN_ABI bool meinos_HeapFree(void* hHeap, uint32_t dwFlags, void* lpMem) {
+    extern bool is_pe_32bit;
+    if (is_pe_32bit) return true; // bump allocator doesn't free
     free(lpMem);
     return true;
 }
 
+extern "C" WIN_ABI uint32_t meinos_HeapSize(void* hHeap, uint32_t dwFlags, void* lpMem) {
+    extern bool is_pe_32bit;
+    if (!lpMem) return 0;
+    if (is_pe_32bit) {
+        uint32_t* header = (uint32_t*)((char*)lpMem - 16);
+        return *header;
+    }
+    // We can't query size for standard malloc portably without malloc_usable_size, so just return a dummy
+    // But 64-bit MeinOS natively uses standard allocator. For now return 0.
+    return 0;
+}
+
+extern "C" WIN_ABI void meinos_InitializeCriticalSection(void* lpCriticalSection);
+
 extern "C" WIN_ABI void meinos_InitializeCriticalSectionEx(void* lpCriticalSection, uint32_t dwSpinCount, uint32_t Flags) {
+    meinos_InitializeCriticalSection(lpCriticalSection);
 }
 
 extern "C" WIN_ABI void* meinos_EncodePointer(void* ptr) {
@@ -3385,22 +4068,131 @@ extern "C" WIN_ABI uint32_t meinos_TlsFree(uint32_t dwTlsIndex) {
     return 0;
 }
 
+
 extern "C" WIN_ABI bool meinos_InitializeCriticalSectionAndSpinCount(void* lpCriticalSection, uint32_t dwSpinCount) {
+    meinos_InitializeCriticalSection(lpCriticalSection);
     return true;
 }
 
+extern "C" WIN_ABI void* meinos_HeapReAlloc(void* hHeap, uint32_t dwFlags, void* lpMem, uint32_t dwBytes) {
+    if (!lpMem) return meinos_alloc32(dwBytes);
+    uint32_t old_size = meinos_HeapSize(hHeap, 0, lpMem);
+    void* new_mem = meinos_alloc32(dwBytes);
+    if (new_mem) {
+        uint32_t copy_size = (old_size < dwBytes) ? old_size : dwBytes;
+        memcpy(new_mem, lpMem, copy_size);
+    }
+    return new_mem;
+}
+
+extern "C" WIN_ABI void* meinos_HeapCreate(uint32_t flOptions, uint32_t dwInitialSize, uint32_t dwMaximumSize) {
+    return (void*)0x8888;
+}
+
+extern "C" WIN_ABI bool meinos_HeapDestroy(void* hHeap) {
+    return true;
+}
+
+
 extern "C" WIN_ABI const char* meinos_GetCommandLineA() {
+    static char* cmd32 = 0;
+    extern bool is_pe_32bit;
+    extern void* meinos_alloc32(size_t size);
+    if (is_pe_32bit) {
+        if (!cmd32) {
+            cmd32 = (char*)meinos_alloc32(256);
+            strcpy(cmd32, "\"C:\\program.exe\"");
+        }
+        return cmd32;
+    }
     return "\"C:\\program.exe\"";
 }
 
 extern "C" WIN_ABI const uint16_t* meinos_GetCommandLineW() {
+    static uint16_t* cmd32 = 0;
+    extern bool is_pe_32bit;
+    extern void* meinos_alloc32(size_t size);
+    if (is_pe_32bit) {
+        if (!cmd32) {
+            cmd32 = (uint16_t*)meinos_alloc32(256);
+            const uint16_t c[] = {'"','C',':','\\','p','r','o','g','r','a','m','.','e','x','e','"',0};
+            for(int i=0; i<16; i++) cmd32[i] = c[i];
+        }
+        return cmd32;
+    }
     static const uint16_t cmd[] = {'"','C',':','\\','p','r','o','g','r','a','m','.','e','x','e','"',0};
     return cmd;
 }
 
 extern "C" WIN_ABI const uint16_t* meinos_GetEnvironmentStringsW() {
+    static uint16_t* env32 = 0;
+    extern bool is_pe_32bit;
+    extern void* meinos_alloc32(size_t size);
+    if (is_pe_32bit) {
+        if (!env32) {
+            env32 = (uint16_t*)meinos_alloc32(256);
+            // double null terminated
+            env32[0] = 'P'; env32[1] = 'A'; env32[2] = 'T'; env32[3] = 'H'; env32[4] = '='; env32[5] = 'C'; env32[6] = ':'; env32[7] = '\\'; env32[8] = 0;
+            env32[9] = 0;
+        }
+        return env32;
+    }
     static const uint16_t env[] = {'P','A','T','H','=','C',':','\\',0,0};
     return env;
+}
+
+extern "C" WIN_ABI void meinos_GetLocalTime(void* lpSystemTime) {
+    if (lpSystemTime) {
+        // SYSTEMTIME is 16 bytes: wYear, wMonth, wDayOfWeek, wDay, wHour, wMinute, wSecond, wMilliseconds
+        uint16_t* st = (uint16_t*)lpSystemTime;
+        st[0] = 2026; // Year
+        st[1] = 7;    // Month
+        st[2] = 1;    // DayOfWeek (Monday)
+        st[3] = 20;   // Day
+        st[4] = 12;   // Hour
+        st[5] = 0;    // Minute
+        st[6] = 0;    // Second
+        st[7] = 0;    // Milliseconds
+    }
+}
+
+extern "C" WIN_ABI int meinos_lstrlenA(const char* lpString) {
+    if (!lpString) return 0;
+    int len = 0;
+    while (lpString[len]) len++;
+    return len;
+}
+
+extern "C" WIN_ABI int meinos_lstrlenW(const uint16_t* lpString) {
+    if (!lpString) return 0;
+    int len = 0;
+    while (lpString[len]) len++;
+    return len;
+}
+
+extern "C" WIN_ABI int meinos_LCMapStringEx(const uint16_t* lpLocaleName, uint32_t dwMapFlags, const uint16_t* lpSrcStr, int cchSrc, uint16_t* lpDestStr, int cchDest, void* lpVersionInformation, void* lpReserved, void* sortHandle) {
+    int req = cchSrc;
+    if (req < 0) {
+        req = 0;
+        if (lpSrcStr) {
+            while (lpSrcStr[req]) req++;
+            req++; // include null terminator
+        }
+    }
+    if (cchDest == 0) return req;
+    if (cchDest > 0 && lpDestStr) {
+        int copy_len = req < cchDest ? req : cchDest;
+        for (int i=0; i<copy_len; i++) {
+            lpDestStr[i] = lpSrcStr[i];
+        }
+        if (copy_len < cchDest) lpDestStr[copy_len] = 0;
+        return copy_len;
+    }
+    return 0; // Failure
+}
+
+extern "C" WIN_ABI uint32_t meinos_GetVersion() {
+    return 0x00000000;
 }
 
 extern "C" WIN_ABI bool meinos_FreeEnvironmentStringsW(void* penv) {
@@ -3430,9 +4222,11 @@ extern "C" WIN_ABI void meinos_GetStartupInfoW(void* lpStartupInfo) {
     // lpStartupInfo is a STARTUPINFOW struct.
     // Set cb (size) and other fields to 0
     if (lpStartupInfo) {
+        extern bool is_pe_32bit;
+        uint32_t size = is_pe_32bit ? 68 : 104;
         uint8_t* p = (uint8_t*)lpStartupInfo;
-        for (int i = 0; i < 104; i++) p[i] = 0;
-        *(uint32_t*)p = 104; // cb
+        for (uint32_t i = 0; i < size; i++) p[i] = 0;
+        *(uint32_t*)p = size; // cb
     }
 }
 
@@ -3462,12 +4256,19 @@ extern "C" WIN_ABI uint32_t meinos_GetModuleFileNameA(void* hModule, char* lpFil
             printf("[SYS] GetModuleFileNameA returning: %s\n", dsk_mgr_picked_file);
             return len;
         }
-        lpFilename[0] = 0; 
+        
+        // Fallback if no file picked
+        const char* fallback = "C:\\program.exe";
+        strncpy(lpFilename, fallback, nSize - 1);
+        lpFilename[nSize - 1] = 0;
+        int len = 0; while(lpFilename[len]) len++;
+        return len;
     }
     return 0;
 }
 
 extern "C" WIN_ABI uint32_t meinos_GetModuleFileNameW(void* hModule, uint16_t* lpFilename, uint32_t nSize) {
+    printf("[SYS] GetModuleFileNameW(hModule=%p, lpFilename=%p, nSize=%u)\n", hModule, lpFilename, nSize);
     if (nSize > 0 && lpFilename) { 
         extern char dsk_mgr_picked_file[256];
         if (dsk_mgr_picked_file[0] != 0) {
@@ -3480,7 +4281,16 @@ extern "C" WIN_ABI uint32_t meinos_GetModuleFileNameW(void* hModule, uint16_t* l
             printf("[SYS] GetModuleFileNameW returning: %s\n", dsk_mgr_picked_file);
             return len;
         }
-        lpFilename[0] = 0; 
+        
+        // Fallback if no file picked
+        const char* fallback = "C:\\program.exe";
+        int len = 0;
+        while(fallback[len] && len < (int)nSize - 1) {
+            lpFilename[len] = (uint16_t)fallback[len];
+            len++;
+        }
+        lpFilename[len] = 0;
+        return len;
     }
     return 0;
 }
@@ -3610,16 +4420,89 @@ extern "C" WIN_ABI bool meinos_GlobalMemoryStatusEx(void* lpBuffer) {
 }
 
 
-extern "C" WIN_ABI uint32_t meinos_RegQueryValueExA(void* hKey, const char* lpValueName, uint32_t* lpReserved, uint32_t* lpType, uint8_t* lpData, uint32_t* lpcbData) {
-    return 2; // ERROR_FILE_NOT_FOUND
-}
+struct WinRegEntry {
+    char key_path[256];
+    char value_name[128];
+    uint32_t type; // 1 = REG_SZ, 4 = REG_DWORD
+    char data_str[256];
+    uint32_t data_dword;
+};
+
+static WinRegEntry g_virtual_registry[32] = {
+    {"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "ProductName", 1, "Windows 10 Pro (MeinOS Hybrid Engine)", 0},
+    {"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "CurrentBuild", 1, "19045", 0},
+    {"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "CSDVersion", 1, "Service Pack 1", 0},
+    {"SOFTWARE\\Microsoft\\Windows\\CurrentVersion", "ProgramFilesDir", 1, "C:\\Program Files", 0},
+    {"SYSTEM\\CurrentControlSet\\Control", "SystemStartOptions", 1, "NOEXEC", 0},
+    {"SOFTWARE\\MeinOS", "Version", 1, "2.2.0", 0}
+};
+static int g_num_reg_entries = 6;
+
 extern "C" WIN_ABI uint32_t meinos_RegOpenKeyExA(void* hKey, const char* lpSubKey, uint32_t ulOptions, uint32_t samDesired, void** phkResult) {
-    if (phkResult) *phkResult = 0;
+    if (phkResult) *phkResult = (void*)0x80000001; // Valid pseudo HKEY
+    return 0; // ERROR_SUCCESS
+}
+
+extern "C" WIN_ABI uint32_t meinos_RegOpenKeyExW(void* hKey, const uint16_t* lpSubKey, uint32_t ulOptions, uint32_t samDesired, void** phkResult) {
+    if (phkResult) *phkResult = (void*)0x80000001;
+    return 0; // ERROR_SUCCESS
+}
+
+extern "C" WIN_ABI uint32_t meinos_RegQueryValueExA(void* hKey, const char* lpValueName, uint32_t* lpReserved, uint32_t* lpType, uint8_t* lpData, uint32_t* lpcbData) {
+    if (!lpValueName) return 2; // ERROR_FILE_NOT_FOUND
+    for (int i = 0; i < g_num_reg_entries; i++) {
+        if (str_iequals(g_virtual_registry[i].value_name, lpValueName)) {
+            if (lpType) *lpType = g_virtual_registry[i].type;
+            if (g_virtual_registry[i].type == 1) { // REG_SZ
+                uint32_t len = (uint32_t)strlen(g_virtual_registry[i].data_str) + 1;
+                if (lpcbData) *lpcbData = len;
+                if (lpData) strncpy((char*)lpData, g_virtual_registry[i].data_str, len);
+            } else if (g_virtual_registry[i].type == 4) { // REG_DWORD
+                if (lpcbData) *lpcbData = sizeof(uint32_t);
+                if (lpData) *(uint32_t*)lpData = g_virtual_registry[i].data_dword;
+            }
+            return 0; // ERROR_SUCCESS
+        }
+    }
     return 2; // ERROR_FILE_NOT_FOUND
 }
+
+extern "C" WIN_ABI uint32_t meinos_RegQueryValueExW(void* hKey, const uint16_t* lpValueName, uint32_t* lpReserved, uint32_t* lpType, uint8_t* lpData, uint32_t* lpcbData) {
+    if (!lpValueName) return 2;
+    char valA[128] = {0};
+    for (int i = 0; i < 127 && lpValueName[i]; i++) valA[i] = (char)lpValueName[i];
+    return meinos_RegQueryValueExA(hKey, valA, lpReserved, lpType, lpData, lpcbData);
+}
+
 extern "C" WIN_ABI uint32_t meinos_RegCreateKeyExA(void* hKey, const char* lpSubKey, uint32_t Reserved, char* lpClass, uint32_t dwOptions, uint32_t samDesired, void* lpSecurityAttributes, void** phkResult, uint32_t* lpdwDisposition) {
-    if (phkResult) *phkResult = 0;
-    return 2; // ERROR_FILE_NOT_FOUND
+    if (phkResult) *phkResult = (void*)0x80000001;
+    if (lpdwDisposition) *lpdwDisposition = 1; // REG_CREATED_NEW_KEY
+    return 0; // ERROR_SUCCESS
+}
+
+extern "C" WIN_ABI uint32_t meinos_RegSetValueExA(void* hKey, const char* lpValueName, uint32_t Reserved, uint32_t dwType, const uint8_t* lpData, uint32_t cbData) {
+    if (!lpValueName || !lpData) return 0;
+    for (int i = 0; i < g_num_reg_entries; i++) {
+        if (str_iequals(g_virtual_registry[i].value_name, lpValueName)) {
+            g_virtual_registry[i].type = dwType;
+            if (dwType == 1) strncpy(g_virtual_registry[i].data_str, (const char*)lpData, 255);
+            else if (dwType == 4) g_virtual_registry[i].data_dword = *(const uint32_t*)lpData;
+            return 0;
+        }
+    }
+    if (g_num_reg_entries < 32) {
+        strncpy(g_virtual_registry[g_num_reg_entries].key_path, "SOFTWARE\\Custom", 255);
+        strncpy(g_virtual_registry[g_num_reg_entries].value_name, lpValueName, 127);
+        g_virtual_registry[g_num_reg_entries].type = dwType;
+        if (dwType == 1) strncpy(g_virtual_registry[g_num_reg_entries].data_str, (const char*)lpData, 255);
+        else if (dwType == 4) g_virtual_registry[g_num_reg_entries].data_dword = *(const uint32_t*)lpData;
+        g_num_reg_entries++;
+    }
+    return 0; // ERROR_SUCCESS
+}
+
+extern "C" WIN_ABI uint32_t meinos_RegCloseKey(void* hKey) {
+    return 0; // ERROR_SUCCESS
 }
 extern "C" WIN_ABI int meinos_GetDeviceCaps(void* hdc, int index) {
     return 0;
@@ -4900,6 +5783,19 @@ extern "C" WIN_ABI void* meinos_LoadLibraryA(const char* lpLibFileName) {
 
 uint64_t resolve_windows_api_internal(const char* dll_name, const char* func_name, bool silent = false);
 
+// Helper: wrap a 64-bit function address in a 32-bit wow64 thunk
+uint32_t wrap_64bit_func_as_thunk(uint64_t func_addr, const char* func_name) {
+    extern uint64_t wow64_api_table[4096];
+    extern int wow64_api_table_count;
+    extern uint32_t wow64_arg_bytes_table[16384];
+    extern char* wow64_api_name_table[16384];
+    int api_id = wow64_api_table_count++;
+    wow64_api_table[api_id] = func_addr;
+    wow64_arg_bytes_table[api_id] = get_api_arg_bytes(func_name);
+    wow64_api_name_table[api_id] = strdup(func_name);
+    return generate_wow64_thunk(api_id);
+}
+
 extern "C" WIN_ABI void* meinos_GetProcAddress(void* hModule, const char* lpProcName) {
     if (!lpProcName) return 0;
     if ((uint64_t)lpProcName < 0xFFFF) {
@@ -4908,7 +5804,9 @@ extern "C" WIN_ABI void* meinos_GetProcAddress(void* hModule, const char* lpProc
         char msg[128];
         snprintf(msg, sizeof(msg), "\n[WIN32 GetProcAddress]: %s\n", last_proc_name);
         print_win(&windows[15], msg);
-        return (void*)generate_dummy_stub(last_proc_name);
+        uint64_t stub = generate_dummy_stub(last_proc_name);
+        if (is_pe_32bit) return (void*)(uint64_t)wrap_64bit_func_as_thunk(stub, last_proc_name);
+        return (void*)stub;
     }
     snprintf(last_proc_name, sizeof(last_proc_name), "%s", lpProcName);
     char msg[128];
@@ -4918,14 +5816,19 @@ extern "C" WIN_ABI void* meinos_GetProcAddress(void* hModule, const char* lpProc
     const char* dlls_to_check[] = {
         "kernel32.dll", "user32.dll", "gdi32.dll", "shlwapi.dll",
         "shell32.dll", "advapi32.dll", "comctl32.dll", "msvcrt.dll",
-        "ole32.dll", "ws2_32.dll", "gdiplus.dll", nullptr
+        "ole32.dll", "ws2_32.dll", "gdiplus.dll", "d3d9.dll", nullptr
     };
     for (int i = 0; dlls_to_check[i] != nullptr; i++) {
         uint64_t addr = resolve_windows_api_internal(dlls_to_check[i], lpProcName, true);
-        if (addr != 0 && addr != (uint64_t)dummy_stub_array[999]) return (void*)addr;
+        if (addr != 0 && addr != (uint64_t)dummy_stub_array[999]) {
+            if (is_pe_32bit) return (void*)(uint64_t)wrap_64bit_func_as_thunk(addr, lpProcName);
+            return (void*)addr;
+        }
     }
 
-    return (void*)generate_dummy_stub(last_proc_name);
+    uint64_t stub = generate_dummy_stub(last_proc_name);
+    if (is_pe_32bit) return (void*)(uint64_t)wrap_64bit_func_as_thunk(stub, last_proc_name);
+    return (void*)stub;
 }
 
 extern "C" {
@@ -4934,10 +5837,44 @@ WIN_ABI void* meinos_memset(void* s, int c, size_t n) { return memset(s, c, n); 
 WIN_ABI void* meinos_memmove(void* dest, const void* src, size_t n) { return memmove(dest, src, n); }
 WIN_ABI int meinos_memcmp(const void* s1, const void* s2, size_t n) { return memcmp(s1, s2, n); }
 
-WIN_ABI void* meinos_malloc(size_t size) { return malloc(size); }
-WIN_ABI void meinos_free(void* ptr) { free(ptr); }
-WIN_ABI void* meinos_calloc(size_t nmemb, size_t size) { return calloc(nmemb, size); }
-WIN_ABI void* meinos_realloc(void* ptr, size_t size) { return realloc(ptr, size); }
+WIN_ABI void* meinos_malloc(size_t size) { 
+    extern bool is_pe_32bit;
+    extern void* meinos_alloc32(size_t size);
+    if (is_pe_32bit) return meinos_alloc32(size);
+    return malloc(size); 
+}
+WIN_ABI void meinos_free(void* ptr) { 
+    extern bool is_pe_32bit;
+    if (is_pe_32bit) return;
+    free(ptr); 
+}
+WIN_ABI void* meinos_calloc(size_t nmemb, size_t size) { 
+    extern bool is_pe_32bit;
+    extern void* meinos_alloc32(size_t size);
+    if (is_pe_32bit) {
+        void* ptr = meinos_alloc32(nmemb * size);
+        if (ptr) memset(ptr, 0, nmemb * size);
+        return ptr;
+    }
+    return calloc(nmemb, size); 
+}
+WIN_ABI void* meinos_realloc(void* ptr, size_t size) { 
+    extern bool is_pe_32bit;
+    extern void* meinos_alloc32(size_t size);
+    if (is_pe_32bit) {
+        void* new_ptr = meinos_alloc32(size);
+        if (new_ptr && ptr) {
+            size_t* metadata = (size_t*)((uint8_t*)ptr - 16);
+            size_t old_size = *metadata;
+            size_t copy_size = old_size < size ? old_size : size;
+            memcpy(new_ptr, ptr, copy_size);
+        } else if (new_ptr && !ptr) {
+            memset(new_ptr, 0, size);
+        }
+        return new_ptr;
+    }
+    return realloc(ptr, size); 
+}
 
 WIN_ABI size_t meinos_strlen(const char* s) { return strlen(s); }
 WIN_ABI char* meinos_strchr(const char* s, int c) { return (char*)strchr(s, c); }
@@ -4983,6 +5920,7 @@ void* meinos_thread_runner(void* arg) {
     sigaction(SIGILL, &sa, NULL);
     sigaction(SIGFPE, &sa, NULL);
     sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGTRAP, &sa, NULL);
 
     meinos_thread_args* args = (meinos_thread_args*)arg;
     int slot = args->slot;
@@ -5329,18 +6267,77 @@ extern "C" WIN_ABI int meinos_EnumChildWindows(uint64_t hWndParent, void* lpEnum
     return 1;
 }
 
+// Windows RTL_CRITICAL_SECTION is 24 bytes. pthread_mutex_t is 40 bytes on Linux x86_64.
+// We CANNOT embed pthread_mutex_t inline or it overflows into adjacent memory!
+// Instead, use indirection: store a pointer + magic cookie in the first 8 bytes of the
+// 24-byte struct, and heap-allocate the actual pthread_mutex_t.
+#define CS_MAGIC 0xCA5ECB01
+
+struct MeinOSCSInternal {
+    pthread_mutex_t mutex;
+    uint32_t magic;
+};
+
+static MeinOSCSInternal* cs_get_internal(void* lpCriticalSection) {
+    uint32_t* words = (uint32_t*)lpCriticalSection;
+    if (words[1] == CS_MAGIC) {
+        // Already initialized - word[0] is a pointer (low 32 bits, since alloc32 returns <4GB)
+        return (MeinOSCSInternal*)(uintptr_t)words[0];
+    }
+    return nullptr;
+}
+
 extern "C" WIN_ABI void meinos_InitializeCriticalSection(void* lpCriticalSection) {
-    // Zero out the CRITICAL_SECTION struct to prevent garbage from causing crashes in Enter/Leave
-    if (lpCriticalSection) memset(lpCriticalSection, 0, 40);
+    if (!lpCriticalSection) return;
+    uint32_t* words = (uint32_t*)lpCriticalSection;
+    // Allocate the internal struct in 32-bit addressable memory
+    extern void* meinos_alloc32(size_t size);
+    MeinOSCSInternal* internal = (MeinOSCSInternal*)meinos_alloc32(sizeof(MeinOSCSInternal));
+    if (!internal) {
+        internal = (MeinOSCSInternal*)malloc(sizeof(MeinOSCSInternal));
+    }
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&internal->mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+    internal->magic = CS_MAGIC;
+    // Store pointer in first DWORD, magic in second DWORD
+    words[0] = (uint32_t)(uintptr_t)internal;
+    words[1] = CS_MAGIC;
+    // Zero the rest of the 24-byte struct to not corrupt anything
+    words[2] = 0;
+    words[3] = 0;
+    words[4] = 0;
+    words[5] = 0;
 }
 
 extern "C" WIN_ABI void meinos_EnterCriticalSection(void* lpCriticalSection) {
+    if (!lpCriticalSection) return;
+    MeinOSCSInternal* internal = cs_get_internal(lpCriticalSection);
+    if (!internal) {
+        meinos_InitializeCriticalSection(lpCriticalSection);
+        internal = cs_get_internal(lpCriticalSection);
+    }
+    if (internal) pthread_mutex_lock(&internal->mutex);
 }
 
 extern "C" WIN_ABI void meinos_LeaveCriticalSection(void* lpCriticalSection) {
+    if (!lpCriticalSection) return;
+    MeinOSCSInternal* internal = cs_get_internal(lpCriticalSection);
+    if (internal) pthread_mutex_unlock(&internal->mutex);
 }
 
 extern "C" WIN_ABI void meinos_DeleteCriticalSection(void* lpCriticalSection) {
+    if (!lpCriticalSection) return;
+    MeinOSCSInternal* internal = cs_get_internal(lpCriticalSection);
+    if (internal) {
+        pthread_mutex_destroy(&internal->mutex);
+        internal->magic = 0;
+    }
+    uint32_t* words = (uint32_t*)lpCriticalSection;
+    words[0] = 0;
+    words[1] = 0;
 }
 
 extern "C" WIN_ABI uint64_t meinos_fread(void* ptr, uint64_t size, uint64_t count, void* stream) {
@@ -5432,7 +6429,19 @@ extern "C" WIN_ABI int meinos_WideCharToMultiByte(uint32_t CodePage, uint32_t dw
         cchWideChar = 0;
         const uint16_t* p = lpWideCharStr;
         while(*p++) cchWideChar++;
+        cchWideChar++; // include null terminator
     }
+    
+    // Debug print
+    printf("[WC2MB] Converting cch=%d, cb=%d. Str hex: %04x %04x %04x %04x %04x %04x %04x %04x\n", 
+             cchWideChar, cbMultiByte, 
+             lpWideCharStr[0], lpWideCharStr[1], 
+             lpWideCharStr[2], lpWideCharStr[3],
+             lpWideCharStr[4], lpWideCharStr[5],
+             lpWideCharStr[6], lpWideCharStr[7]);
+
+    if (lpUsedDefaultChar) *lpUsedDefaultChar = 0; // FALSE
+
     if (cbMultiByte == 0) return cchWideChar;
     int len = cchWideChar < cbMultiByte ? cchWideChar : cbMultiByte;
     if (lpMultiByteStr && lpWideCharStr) {
@@ -5447,6 +6456,7 @@ extern "C" WIN_ABI int meinos_MultiByteToWideChar(uint32_t CodePage, uint32_t dw
         cbMultiByte = 0;
         const char* p = lpMultiByteStr;
         while(*p++) cbMultiByte++;
+        cbMultiByte++; // include null terminator
     }
     if (cchWideChar == 0) return cbMultiByte;
     int len = cbMultiByte < cchWideChar ? cbMultiByte : cchWideChar;
@@ -5499,6 +6509,57 @@ extern "C" WIN_ABI void* meinos_GetModuleHandleW(const uint16_t* lpModuleName) {
     if (!lpModuleName) return (void*)meinos_main_exe_base;
     return (void*)0;
 }
+
+extern "C" WIN_ABI int meinos_GetModuleHandleExW(uint32_t dwFlags, const uint16_t* lpModuleName, uint32_t* phModule) {
+    if (phModule) {
+        *phModule = (uint32_t)meinos_main_exe_base;
+    }
+    return 1;
+}
+
+extern "C" WIN_ABI uint32_t meinos_GetCurrentPackageId(uint32_t* bufferLength, uint8_t* buffer) {
+    return 15700; // APPMODEL_ERROR_NO_PACKAGE
+}
+
+extern "C" WIN_ABI int meinos_HeapSetInformation(void* HeapHandle, int HeapInformationClass, void* HeapInformation, uint64_t HeapInformationLength) {
+    return 1; // TRUE
+}
+
+extern "C" WIN_ABI int meinos_GetStringTypeW(uint32_t dwInfoType, const uint16_t* lpSrcStr, int cchSrc, uint16_t* lpCharType) {
+    if (lpCharType) {
+        int len = cchSrc;
+        if (len < 0) {
+            len = 0;
+            while(lpSrcStr[len] != 0) len++;
+        }
+        for (int i = 0; i < len; i++) {
+            lpCharType[i] = 0x01; // C1_UPPER or whatever, just dummy valid type
+        }
+    }
+    return 1; // TRUE
+}
+
+extern "C" WIN_ABI int meinos_FreeLibrary(void* hLibModule) {
+    return 1; // TRUE
+}
+
+extern "C" WIN_ABI void* meinos_GlobalAlloc(uint32_t uFlags, uint64_t dwBytes);
+extern "C" WIN_ABI void* meinos_CommandLineToArgvW(const uint16_t* lpCmdLine, int* pNumArgs) {
+    if (pNumArgs) *pNumArgs = 1;
+    void** arr = (void**)meinos_GlobalAlloc(0, 2 * sizeof(void*));
+    if (arr) {
+        extern const uint16_t* meinos_GetCommandLineW();
+        arr[0] = (void*)meinos_GetCommandLineW();
+        arr[1] = 0;
+    }
+    return arr;
+}
+
+extern "C" WIN_ABI void meinos_CorExitProcess(uint32_t exitCode) {
+    void meinos_ExitProcess(uint32_t uExitCode);
+    meinos_ExitProcess(exitCode);
+}
+
 extern "C" WIN_ABI void* meinos_GlobalAlloc(uint32_t uFlags, uint64_t dwBytes) {
     return malloc(dwBytes);
 }
@@ -5839,6 +6900,9 @@ uint64_t resolve_windows_api_internal(const char* dll_name, const char* func_nam
     }
 
     // 0. The API Translator (MeinOS-WINE)
+    if (str_iequals(dll_name, "d3d9.dll")) {
+        if (str_iequals(func_name, "Direct3DCreate9")) return (uint64_t)Direct3DCreate9;
+    }
     if (str_iequals(dll_name, "user32.dll")) {
         if (str_iequals(func_name, "MessageBoxA")) return (uint64_t)meinos_MessageBoxA;
         if (str_iequals(func_name, "CreateWindowExA")) return (uint64_t)meinos_CreateWindowExA;
@@ -5970,9 +7034,14 @@ uint64_t resolve_windows_api_internal(const char* dll_name, const char* func_nam
         if (str_iequals(func_name, "TlsGetValue")) return (uint64_t)meinos_TlsGetValue;
         if (str_iequals(func_name, "TlsSetValue")) return (uint64_t)meinos_TlsSetValue;
         if (str_iequals(func_name, "TlsFree")) return (uint64_t)meinos_TlsFree;
+        if (str_iequals(func_name, "GetLocalTime")) return (uint64_t)meinos_GetLocalTime;
         if (str_iequals(func_name, "GetProcessHeap")) return (uint64_t)meinos_GetProcessHeap;
         if (str_iequals(func_name, "HeapAlloc")) return (uint64_t)meinos_HeapAlloc;
         if (str_iequals(func_name, "HeapFree")) return (uint64_t)meinos_HeapFree;
+        if (str_iequals(func_name, "HeapSize")) return (uint64_t)meinos_HeapSize;
+        if (str_iequals(func_name, "HeapReAlloc")) return (uint64_t)meinos_HeapReAlloc;
+        if (str_iequals(func_name, "HeapCreate")) return (uint64_t)meinos_HeapCreate;
+        if (str_iequals(func_name, "HeapDestroy")) return (uint64_t)meinos_HeapDestroy;
         if (str_iequals(func_name, "InitializeCriticalSectionEx")) return (uint64_t)meinos_InitializeCriticalSectionEx;
         if (str_iequals(func_name, "InitializeCriticalSectionAndSpinCount")) return (uint64_t)meinos_InitializeCriticalSectionAndSpinCount;
         if (str_iequals(func_name, "EncodePointer")) return (uint64_t)meinos_EncodePointer;
@@ -6012,6 +7081,14 @@ uint64_t resolve_windows_api_internal(const char* dll_name, const char* func_nam
         if (str_iequals(func_name, "GlobalMemoryStatusEx")) return (uint64_t)meinos_GlobalMemoryStatusEx;
     } else if (str_iequals(dll_name, "shlwapi.dll")) {
         if (str_iequals(func_name, "PathFileExistsW")) return (uint64_t)meinos_PathFileExistsW;
+    } else if (str_iequals(dll_name, "advapi32.dll")) {
+        if (str_iequals(func_name, "RegOpenKeyExA")) return (uint64_t)meinos_RegOpenKeyExA;
+        if (str_iequals(func_name, "RegOpenKeyExW")) return (uint64_t)meinos_RegOpenKeyExW;
+        if (str_iequals(func_name, "RegQueryValueExA")) return (uint64_t)meinos_RegQueryValueExA;
+        if (str_iequals(func_name, "RegQueryValueExW")) return (uint64_t)meinos_RegQueryValueExW;
+        if (str_iequals(func_name, "RegCreateKeyExA")) return (uint64_t)meinos_RegCreateKeyExA;
+        if (str_iequals(func_name, "RegSetValueExA")) return (uint64_t)meinos_RegSetValueExA;
+        if (str_iequals(func_name, "RegCloseKey")) return (uint64_t)meinos_RegCloseKey;
     } else if (strncmp(dll_name, "api-ms-win-crt", 14) == 0 || str_iequals(dll_name, "ucrtbase.dll") || str_iequals(dll_name, "msvcrt.dll")) {
         if (str_iequals(func_name, "memcpy")) return (uint64_t)meinos_memcpy;
         if (str_iequals(func_name, "memset")) return (uint64_t)meinos_memset;
@@ -6138,6 +7215,9 @@ uint64_t resolve_windows_api_internal(const char* dll_name, const char* func_nam
         if (str_iequals(func_name, "GetDC")) return (uint64_t)meinos_GetDC;
         if (str_iequals(func_name, "GetVersionExA")) return (uint64_t)meinos_GetVersionExA;
         if (str_iequals(func_name, "GetVersionExW")) return (uint64_t)meinos_GetVersionExW;
+        if (str_iequals(func_name, "LCMapStringEx")) return (uint64_t)meinos_LCMapStringEx;
+        if (str_iequals(func_name, "lstrlenA")) return (uint64_t)meinos_lstrlenA;
+        if (str_iequals(func_name, "lstrlenW")) return (uint64_t)meinos_lstrlenW;
         if (str_iequals(func_name, "GetFileVersionInfoSizeW")) return (uint64_t)meinos_GetFileVersionInfoSizeW;
         if (str_iequals(func_name, "GetFileVersionInfoW")) return (uint64_t)meinos_GetFileVersionInfoW;
         if (str_iequals(func_name, "VerQueryValueW")) return (uint64_t)meinos_VerQueryValueW;
@@ -6213,6 +7293,13 @@ uint64_t resolve_windows_api_internal(const char* dll_name, const char* func_nam
         if (str_iequals(func_name, "CreateFontA")) return (uint64_t)meinos_CreateFontA;
         if (str_iequals(func_name, "GetModuleHandleA")) return (uint64_t)meinos_GetModuleHandleA;
         if (str_iequals(func_name, "GetModuleHandleW")) return (uint64_t)meinos_GetModuleHandleW;
+        if (str_iequals(func_name, "GetModuleHandleExW")) return (uint64_t)meinos_GetModuleHandleExW;
+        if (str_iequals(func_name, "GetCurrentPackageId")) return (uint64_t)meinos_GetCurrentPackageId;
+        if (str_iequals(func_name, "HeapSetInformation")) return (uint64_t)meinos_HeapSetInformation;
+        if (str_iequals(func_name, "GetStringTypeW")) return (uint64_t)meinos_GetStringTypeW;
+        if (str_iequals(func_name, "FreeLibrary")) return (uint64_t)meinos_FreeLibrary;
+        if (str_iequals(func_name, "CommandLineToArgvW")) return (uint64_t)meinos_CommandLineToArgvW;
+        if (str_iequals(func_name, "CorExitProcess")) return (uint64_t)meinos_CorExitProcess;
         if (str_iequals(func_name, "GlobalAlloc")) return (uint64_t)meinos_GlobalAlloc;
         if (str_iequals(func_name, "GlobalFree")) return (uint64_t)meinos_GlobalFree;
         if (str_iequals(func_name, "GlobalLock")) return (uint64_t)meinos_GlobalLock;
@@ -6304,6 +7391,32 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
     uint8_t* bss = __bss_start;
     while (bss < __bss_end) {
         *bss++ = 0;
+    }
+#endif
+
+#ifdef __linux__
+    // AUTO-LAUNCH EAappInstaller.exe
+    {
+        extern bool disk_read_file(const char* name, uint8_t* buf, uint32_t buf_sz);
+        uint32_t fsize = 0;
+        FILE* fsize_f = fopen("/opt/meinos/virtual_hdd/EAappInstaller.exe", "rb");
+        if (fsize_f) {
+            fseek(fsize_f, 0, SEEK_END);
+            fsize = ftell(fsize_f);
+            fclose(fsize_f);
+        }
+        if (fsize > 0 && fsize < 100*1024*1024) {
+            uint8_t* exe_buf = (uint8_t*)malloc(fsize);
+            if (exe_buf) {
+                FILE* f = fopen("/opt/meinos/virtual_hdd/EAappInstaller.exe", "rb");
+                if (f) {
+                    fread(exe_buf, 1, fsize, f);
+                    fclose(f);
+                    extern void pe_execute(uint8_t* pe_data, uint32_t pe_sz);
+                    pe_execute(exe_buf, fsize);
+                }
+            }
+        }
     }
 #endif
     

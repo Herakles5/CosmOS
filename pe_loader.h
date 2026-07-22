@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 #include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
+#include "wow64_trampoline.h"
 
 extern "C" void* malloc(size_t);
 // External function that MeinOS must provide to resolve Windows APIs
@@ -153,11 +157,14 @@ static uint64_t load_and_resolve_pe(uint8_t* pe_data, uint32_t size) {
     uint32_t import_dir_size = 0;
     uint64_t image_base = 0;
 
-    if (magic == 0x010B) { // 32-bit
+    extern bool is_pe_32bit;
+    if (magic == 0x010B) { // 32-bit PE32
+        is_pe_32bit = true;
         import_dir_rva = *(uint32_t*)(&pe_data[pe_offset + 128]);
         import_dir_size = *(uint32_t*)(&pe_data[pe_offset + 132]);
         image_base = *(uint32_t*)(&pe_data[pe_offset + 52]);
-    } else if (magic == 0x020B) { // 64-bit
+    } else if (magic == 0x020B) { // 64-bit PE32+
+        is_pe_32bit = false;
         import_dir_rva = *(uint32_t*)(&pe_data[pe_offset + 144]);
         import_dir_size = *(uint32_t*)(&pe_data[pe_offset + 148]);
         image_base = *(uint64_t*)(&pe_data[pe_offset + 48]);
@@ -165,26 +172,62 @@ static uint64_t load_and_resolve_pe(uint8_t* pe_data, uint32_t size) {
         return 0;
     }
     
+    PE_IMAGE_SECTION_HEADER* section_headers = (PE_IMAGE_SECTION_HEADER*)(&pe_data[pe_offset + 24 + size_of_opt_header]);
+    uint32_t calc_image_size = size_of_image;
+    for (int i = 0; i < num_sections; i++) {
+        char sec_name[9] = {0};
+        memcpy(sec_name, section_headers[i].Name, 8);
+        uint32_t sec_size = section_headers[i].VirtualSize ? section_headers[i].VirtualSize : section_headers[i].SizeOfRawData;
+        uint32_t sec_end = section_headers[i].VirtualAddress + sec_size;
+        FILE* logf = fopen("pe_loader.log", "a");
+        if (logf) {
+            fprintf(logf, "[PE SECTION %d] %s: VA=0x%X, VSiz=0x%X, RawSiz=0x%X\n",
+                   i, sec_name, section_headers[i].VirtualAddress, section_headers[i].VirtualSize,
+                   section_headers[i].SizeOfRawData);
+            fclose(logf);
+        }
+        if (sec_end > calc_image_size) {
+            calc_image_size = sec_end;
+        }
+    }
+    // Add 1MB padding for BSS and uninitialized memory
+    calc_image_size += 0x100000;
+    calc_image_size = (calc_image_size + 0xFFF) & ~0xFFF;
+    size_of_image = calc_image_size;
+    
+#ifndef MAP_FIXED_NOREPLACE
+#define MAP_FIXED_NOREPLACE 0x100000
+#endif
+
     // Allocate memory for the virtual image, try to allocate at preferred ImageBase
-    uint8_t* image_base_ptr = (uint8_t*)mmap((void*)image_base, size_of_image, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    int mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS;
+#ifdef MAP_32BIT
+    if (magic == 0x010B) mmap_flags |= MAP_32BIT;
+#endif
+    uint8_t* image_base_ptr = (uint8_t*)mmap((void*)image_base, size_of_image, PROT_READ|PROT_WRITE|PROT_EXEC, mmap_flags | MAP_FIXED_NOREPLACE, -1, 0);
+    if (image_base_ptr == MAP_FAILED || image_base_ptr != (uint8_t*)image_base) {
+        image_base_ptr = (uint8_t*)mmap((void*)image_base, size_of_image, PROT_READ|PROT_WRITE|PROT_EXEC, mmap_flags | MAP_FIXED, -1, 0);
+    }
     if (image_base_ptr == MAP_FAILED) {
         // Fallback to anywhere
         image_base_ptr = (uint8_t*)mmap(NULL, size_of_image, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
     }
     if (image_base_ptr == MAP_FAILED || !image_base_ptr) return 0;
     
-    memset_pe(image_base_ptr, 0, size_of_image);
-
-    // If we couldn't allocate at image_base and we don't handle relocations, it might crash!
-    // But let's try to apply Base Relocations if possible!
     uint64_t delta = (uint64_t)image_base_ptr - image_base;
+    FILE* logf = fopen("pe_loader.log", "a");
+    if (logf) {
+        fprintf(logf, "[PE LOADER] Base: 0x%llX, Map: 0x%llX (Size: 0x%X)\n",
+               (unsigned long long)image_base, (unsigned long long)image_base_ptr, size_of_image);
+        fclose(logf);
+    }
+    memset_pe(image_base_ptr, 0, size_of_image);
     
     // Copy Headers
     uint32_t size_of_headers = *(uint32_t*)(&pe_data[pe_offset + 84]);
     memcpy_pe(image_base_ptr, pe_data, size_of_headers);
     
     // Copy Sections to their VirtualAddress
-    PE_IMAGE_SECTION_HEADER* section_headers = (PE_IMAGE_SECTION_HEADER*)(&pe_data[pe_offset + 24 + size_of_opt_header]);
     for (int i = 0; i < num_sections; i++) {
         if (section_headers[i].SizeOfRawData > 0) {
             uint8_t* dest = image_base_ptr + section_headers[i].VirtualAddress;
@@ -193,6 +236,9 @@ static uint64_t load_and_resolve_pe(uint8_t* pe_data, uint32_t size) {
         }
     }
     
+    uint32_t ptr_before_iat = *(uint32_t*)(image_base_ptr + 0x4A0E8);
+    printf("[SYS] POINTER AT 0x44A0E8 (BEFORE IAT): 0x%X\n", ptr_before_iat);
+
     // Resolve Imports (IAT)
     if (import_dir_rva > 0 && import_dir_size > 0) {
         PE_IMAGE_IMPORT_DESCRIPTOR* import_desc = (PE_IMAGE_IMPORT_DESCRIPTOR*)(image_base_ptr + import_dir_rva);
@@ -212,7 +258,30 @@ static uint64_t load_and_resolve_pe(uint8_t* pe_data, uint32_t size) {
                         func_name = (char*)(image_base_ptr + thunk32[i] + 2);
                     }
                     uint64_t resolved_addr = resolve_windows_api(dll_name, func_name);
-                    iat32[i] = (uint32_t)resolved_addr;
+                    
+                    // We need to keep track of the API mapping for the WoW64 dispatcher.
+                    extern uint64_t wow64_api_table[4096];
+                    extern int wow64_api_table_count;
+                    extern uint32_t wow64_arg_bytes_table[16384];
+                    extern char* wow64_api_name_table[16384];
+                    uint32_t get_api_arg_bytes(const char* name);
+                    
+                    int api_id = wow64_api_table_count++;
+                    wow64_api_table[api_id] = resolved_addr;
+                    wow64_api_name_table[api_id] = strdup(func_name ? func_name : "Ordinal");
+                    wow64_arg_bytes_table[api_id] = get_api_arg_bytes(func_name);
+
+                    // Print IAT entry resolution ONLY for 0x4A0E8!
+                    uint32_t current_iat_rva = import_desc->FirstThunk + i * 4;
+                    if (current_iat_rva == 0x4A0E8) {
+                        printf("[SYS] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+                        printf("[SYS] FOUND CRASH IAT: 0x4A0E8 -> %s::%s\n", dll_name, func_name ? func_name : "Ordinal");
+                        printf("[SYS] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+                    }
+                    
+                    // The 32-bit program jumps to wow64_api_thunk with api_id in EAX
+                    uint32_t thunk_addr = generate_wow64_thunk(api_id);
+                    iat32[i] = thunk_addr;
                     i++;
                 }
             } else { // 64-bit IAT
@@ -238,11 +307,11 @@ static uint64_t load_and_resolve_pe(uint8_t* pe_data, uint32_t size) {
         uint32_t reloc_dir_rva = 0;
         uint32_t reloc_dir_size = 0;
         if (magic == 0x010B) {
-            reloc_dir_rva = *(uint32_t*)(&pe_data[pe_offset + 120 + 5 * 8]);
-            reloc_dir_size = *(uint32_t*)(&pe_data[pe_offset + 120 + 5 * 8 + 4]);
+            reloc_dir_rva = *(uint32_t*)(&pe_data[pe_offset + 160]);
+            reloc_dir_size = *(uint32_t*)(&pe_data[pe_offset + 164]);
         } else {
-            reloc_dir_rva = *(uint32_t*)(&pe_data[pe_offset + 136 + 5 * 8]);
-            reloc_dir_size = *(uint32_t*)(&pe_data[pe_offset + 136 + 5 * 8 + 4]);
+            reloc_dir_rva = *(uint32_t*)(&pe_data[pe_offset + 176]);
+            reloc_dir_size = *(uint32_t*)(&pe_data[pe_offset + 180]);
         }
 
         if (reloc_dir_rva > 0 && reloc_dir_size > 0) {
@@ -275,6 +344,32 @@ static uint64_t load_and_resolve_pe(uint8_t* pe_data, uint32_t size) {
         meinos_main_exe_base = (uint64_t)image_base_ptr;
     }
     
+    // SCAN FOR CRASH SIGNATURE
+    uint8_t sig[] = {0x87, 0x07, 0x8B, 0xC6, 0xEB, 0x0C, 0x6A, 0xFF};
+    for (uint32_t i = 0; i < size_of_image - sizeof(sig); i++) {
+        if (memcmp(image_base_ptr + i, sig, sizeof(sig)) == 0) {
+            printf("[SYS] Found crash signature at RVA: 0x%X\n", i);
+            // Find section
+            for (int s = 0; s < num_sections; s++) {
+                if (i >= section_headers[s].VirtualAddress && 
+                    i < section_headers[s].VirtualAddress + section_headers[s].VirtualSize) {
+                    char sname[9] = {0};
+                    memcpy(sname, section_headers[s].Name, 8);
+                    printf("[SYS] Crash signature belongs to section: %s\n", sname);
+                }
+            }
+        }
+    }
+    
+    // Dump the value at 0x4A0E8
+    uint32_t ptr_44a0e8 = *(uint32_t*)(image_base_ptr + 0x4A0E8);
+    printf("[SYS] POINTER AT 0x44A0E8: 0x%X\n", ptr_44a0e8);
+    if (ptr_44a0e8 >= 0x400000 && ptr_44a0e8 < 0x400000 + size_of_image) {
+        printf("[SYS]  -> Points inside the image at RVA: 0x%X\n", ptr_44a0e8 - 0x400000);
+    } else {
+        printf("[SYS]  -> Points outside the image!\n");
+    }
+
     return (uint64_t)(image_base_ptr + entry_point_rva);
 }
 
