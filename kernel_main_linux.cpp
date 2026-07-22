@@ -514,6 +514,11 @@ uint32_t get_api_arg_bytes(const char* name) {
         {"_beginthreadex", 24},
         {"_time64", 4},
         {"_localtime64_s", 8},
+        // newly added
+        {"GetCurrentPackageId", 8},
+        {"GetModuleHandleExW", 12},
+        {"CommandLineToArgvW", 8},
+        {"CorExitProcess", 4},
         {NULL, 0}
     };
     for (int i = 0; table[i].name; i++) {
