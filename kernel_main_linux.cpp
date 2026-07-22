@@ -4378,13 +4378,15 @@ extern "C" WIN_ABI uint32_t meinos_GetFileSize(void* hFile, uint32_t* lpFileSize
     return (uint32_t)size;
 }
 
-extern "C" WIN_ABI bool meinos_SetFilePointerEx(void* hFile, int64_t liDistanceToMove, int64_t* lpNewFilePointer, uint32_t dwMoveMethod) {
+extern "C" WIN_ABI bool meinos_SetFilePointerEx(void* hFile, uint32_t liDistanceLow, int32_t liDistanceHigh, int64_t* lpNewFilePointer, uint32_t dwMoveMethod) {
     uint64_t handle = (uint64_t)hFile;
     if (handle < 1 || handle >= 100 || !meinos_file_handles[handle]) return false;
     
     int origin = SEEK_SET;
     if (dwMoveMethod == 1) origin = SEEK_CUR;
     if (dwMoveMethod == 2) origin = SEEK_END;
+    
+    int64_t liDistanceToMove = ((int64_t)liDistanceHigh << 32) | (uint64_t)liDistanceLow;
     
     fseek(meinos_file_handles[handle], liDistanceToMove, origin);
     if (lpNewFilePointer) *lpNewFilePointer = ftell(meinos_file_handles[handle]);
