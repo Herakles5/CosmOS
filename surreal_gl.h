@@ -27,14 +27,14 @@ extern "C" {
     void sglScalef(float x, float y, float z);
     
     void sglViewport(int x, int y, int width, int height);
+
+    // Epic Helper Functions
+    void sglDrawCube(float size);
+    void sglDrawPyramid(float size);
+    void sglDrawSphere(float radius, int segments);
+    void sglPerspective(float fov, float aspect, float zNear, float zFar);
 }
 
 // Helper structures for 3D
 struct sglVec3 { float x, y, z; };
 struct sglColor { uint8_t r, g, b; };
-
-// Epic Helper Functions
-void sglDrawCube(float size);
-void sglDrawPyramid(float size);
-void sglDrawSphere(float radius, int segments);
-void sglPerspective(float fov, float aspect, float zNear, float zFar);

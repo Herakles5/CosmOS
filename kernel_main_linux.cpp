@@ -6546,6 +6546,16 @@ extern "C" WIN_ABI int meinos_FreeLibrary(void* hLibModule) {
 extern "C" WIN_ABI void* meinos_GlobalAlloc(uint32_t uFlags, uint64_t dwBytes);
 extern "C" WIN_ABI void* meinos_CommandLineToArgvW(const uint16_t* lpCmdLine, int* pNumArgs) {
     if (pNumArgs) *pNumArgs = 1;
+    extern bool is_pe_32bit;
+    if (is_pe_32bit) {
+        uint32_t* arr = (uint32_t*)meinos_GlobalAlloc(0, 2 * sizeof(uint32_t));
+        if (arr) {
+            extern const uint16_t* meinos_GetCommandLineW();
+            arr[0] = (uint32_t)(uint64_t)meinos_GetCommandLineW();
+            arr[1] = 0;
+        }
+        return arr;
+    }
     void** arr = (void**)meinos_GlobalAlloc(0, 2 * sizeof(void*));
     if (arr) {
         extern const uint16_t* meinos_GetCommandLineW();
@@ -6561,6 +6571,9 @@ extern "C" WIN_ABI void meinos_CorExitProcess(uint32_t exitCode) {
 }
 
 extern "C" WIN_ABI void* meinos_GlobalAlloc(uint32_t uFlags, uint64_t dwBytes) {
+    extern bool is_pe_32bit;
+    extern void* meinos_alloc32(size_t size);
+    if (is_pe_32bit) return meinos_alloc32(dwBytes);
     return malloc(dwBytes);
 }
 extern "C" WIN_ABI void* meinos_GlobalFree(void* hMem) {
