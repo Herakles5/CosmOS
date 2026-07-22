@@ -1,4 +1,5 @@
 #include "surreal_gl.h"
+#include <math.h>
 
 extern "C" void Put(int x, int y, uint32_t c);
 extern uint32_t* bb;
@@ -456,7 +457,8 @@ void sglDrawSphere(float radius, int segments) {
             
             float nx = (x0+x1)/2.0f; float ny = (y0+y1)/2.0f; float nz = (z0+z1)/(2.0f*radius);
             float light = nx*0.4f + ny*0.7f + nz*0.6f; 
-            if (light < 0.0f) light = 0.0f; if (light > 1.0f) light = 1.0f;
+            if (light < 0.0f) light = 0.0f;
+            if (light > 1.0f) light = 1.0f;
             
             uint8_t r = (uint8_t)(br * (0.2f + 0.8f * light));
             uint8_t g = (uint8_t)(bg * (0.2f + 0.8f * light));
@@ -472,3 +474,15 @@ void sglDrawSphere(float radius, int segments) {
     }
     current_color = base_c;
 }
+void sglPerspective(float fov, float aspect, float zNear, float zFar) {
+    float f = 1.0f / (float)tan((double)(fov * 3.14159265f / 360.0f));
+    Mat4 p = {0};
+    p.m[0][0] = f / aspect;
+    p.m[1][1] = f;
+    p.m[2][2] = (zFar + zNear) / (zNear - zFar);
+    p.m[2][3] = (2.0f * zFar * zNear) / (zNear - zFar);
+    p.m[3][2] = -1.0f;
+    current_matrix = mat_mul(current_matrix, p);
+}
+
+
