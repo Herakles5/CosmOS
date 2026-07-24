@@ -135,6 +135,16 @@ echo ""
 echo "-> Copying CosmOS System..."
 mkdir -p /mnt/target
 mount "$TARGET_PART" /mnt/target || { echo "ERROR: Could not mount partition $TARGET_PART!"; sleep 5; exit 1; }
+
+if [ "$INSTALL_MODE" == "3" ]; then
+    echo "-> Cleaning up old kernel/graphics configs to prevent resolution bugs..."
+    rm -rf /mnt/target/lib/modules/* 2>/dev/null || true
+    rm -rf /mnt/target/etc/modprobe.d/* 2>/dev/null || true
+    rm -rf /mnt/target/etc/X11/xorg.conf* 2>/dev/null || true
+    rm -rf /mnt/target/boot/initrd.img* 2>/dev/null || true
+    rm -rf /mnt/target/boot/vmlinuz* 2>/dev/null || true
+fi
+
 rsync -aAX --exclude={"/dev/*","/proc/*","/sys/*","/tmp/*","/run/*","/mnt/*","/media/*","/cdrom/*","/rofs/*","/lib/live/mount/*"} / /mnt/target/
 
 echo "-> Configuring Bootloader..."

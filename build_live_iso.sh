@@ -18,7 +18,7 @@ if [ "$BUILD_MODE" == "2" ]; then
     sleep 2
 else
     # Rasend schnelle Komprimierung
-    COMP_ARGS="-comp gzip"
+    COMP_ARGS="-comp zstd -Xcompression-level 3"
     echo "-> FAST MODE aktiviert. Turbogang eingelegt!"
     sleep 1
 fi
@@ -39,19 +39,26 @@ rm -f CosmOS.iso
 # FIX: /tmp mit dev+exec remounten, damit debootstrap Device-Nodes erstellen kann!
 mount -o remount,dev,exec /tmp 2>/dev/null || true
 
-# WICHTIG: Kompletten alten Datenmüll aus dem RAM-Disk löschen, damit er nicht bei 97% vollläuft!
-rm -rf /tmp/meinos_build
-mkdir -p /tmp/meinos_build
+BUILD_DIR="$PWD/build_tmp"
+mkdir -p "$BUILD_DIR"
 
+# Alte Build-Daten im Image löschen - SICHERSTELLEN DASS NICHTS GEMOUNTET IST!
+umount "$BUILD_DIR/live_rootfs/dev/pts" 2>/dev/null || true
+umount "$BUILD_DIR/live_rootfs/dev" 2>/dev/null || true
+umount "$BUILD_DIR/live_rootfs/sys" 2>/dev/null || true
+umount "$BUILD_DIR/live_rootfs/proc" 2>/dev/null || true
+
+rm -rf "$BUILD_DIR"/live_rootfs "$BUILD_DIR"/live_iso
+mkdir -p "$BUILD_DIR"/live_rootfs "$BUILD_DIR"/live_iso
 echo "2. Compiling meinos.elf (Linux version)..."
 make -f Makefile.linux clean
 make -f Makefile.linux
 
 echo "3. Creating minimal root filesystem (This will take a while)..."
-export ROOTFS=/tmp/meinos_build/live_rootfs
+export ROOTFS="$BUILD_DIR/live_rootfs"
 mkdir -p $ROOTFS
 if [ ! -f "$ROOTFS/bin/bash" ]; then
-    debootstrap --variant=minbase --arch=amd64 noble $ROOTFS http://archive.ubuntu.com/ubuntu/
+    debootstrap --include=gpgv,ubuntu-keyring,gnupg,apt-utils --arch=amd64 noble $ROOTFS http://archive.ubuntu.com/ubuntu/
 else
     echo "Base system already extracted, skipping debootstrap."
 fi
@@ -62,10 +69,30 @@ mount -t sysfs none $ROOTFS/sys || true
 mount -o bind /dev $ROOTFS/dev || true
 mount -o bind /dev/pts $ROOTFS/dev/pts || true
 
+# Ensure network works inside chroot
+rm -f $ROOTFS/etc/resolv.conf
+echo "nameserver 8.8.8.8" > $ROOTFS/etc/resolv.conf
+
 # Install necessary packages inside chroot
 chroot $ROOTFS /bin/bash << 'EOF'
+set -e
 export DEBIAN_FRONTEND=noninteractive
-echo 'deb http://archive.ubuntu.com/ubuntu/ noble universe' > /etc/apt/sources.list.d/universe.list
+
+# Vollständige Paketquellen eintragen (verhindert "Unable to locate package")
+rm -f /etc/apt/sources.list.d/ubuntu.sources
+cat << 'SOURCES' > /etc/apt/sources.list
+deb [trusted=yes] http://archive.ubuntu.com/ubuntu/ noble main restricted universe multiverse
+deb [trusted=yes] http://archive.ubuntu.com/ubuntu/ noble-updates main restricted universe multiverse
+deb [trusted=yes] http://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse
+SOURCES
+
+# TURBO-BOOST: Deaktiviere fsync in dpkg. Verhindert extreme I/O-Lags auf dem USB/exFAT-Laufwerk!
+echo "force-unsafe-io" > /etc/dpkg/dpkg.cfg.d/force-unsafe-io
+
+# FIX FÜR exFAT/USB-LAUFWERKE: Verhindere, dass apt die Rechte abgibt. 
+# Der eingeschränkte _apt User darf sonst wegen den exFAT-Ordnerrechten nicht auf gpgv oder /dev/null zugreifen!
+echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99sandbox
+
 apt-get update
 
 # === COSMOS BASIS & INSTALLER PAKETE ===
@@ -96,6 +123,12 @@ Pin-Priority: 1000' > /etc/apt/preferences.d/mozilla
 apt-get update
 apt-get install -y firefox
 
+# === ZEROTIER NETWORK (P2P VPN) ===
+echo "-> Installiere ZeroTier (CosmOS Network)..."
+# Um Fehler beim Curl/GPG zu vermeiden, installieren wir es über das offizielle Script
+apt-get install -y curl gpg
+curl -s https://install.zerotier.com | bash
+
 # === GOOGLE ANTIGRAVITY (KI ASSISTANT) DIREKT IN DIE ISO BACKEN ===
 echo "-> Lade KI-Agenten herunter..."
 # URL existiert nicht, daher vorerst deaktiviert, um Fehler zu vermeiden.
@@ -103,6 +136,28 @@ echo "-> Lade KI-Agenten herunter..."
 # echo "-> Installiere KI-Agenten..."
 # dpkg -i /tmp/antigravity.deb || apt-get install -f -y
 # rm -f /tmp/antigravity.deb
+
+# === STEAM (Gaming Platform) ===
+echo "-> Installiere Steam..."
+dpkg --add-architecture i386
+apt-get update
+apt-get install -y --no-install-recommends steam-installer || echo "WARN: Steam install failed, continuing..."
+
+# === WINE (Windows Compatibility Layer for EA/Windows Games) ===
+echo "-> Installiere Wine..."
+apt-get install -y --no-install-recommends \
+    wine64 wine32 winetricks || echo "WARN: Wine install failed, continuing..."
+
+# === LUTRIS (Game Manager for EA App + GOG + Epic) ===
+echo "-> Installiere Lutris..."
+apt-get install -y --no-install-recommends \
+    lutris || echo "WARN: Lutris install failed, continuing..."
+
+# === GPU DRIVERS (Vulkan support for Proton/Wine) ===
+echo "-> Installiere GPU/Vulkan Treiber..."
+apt-get install -y --no-install-recommends \
+    mesa-vulkan-drivers vulkan-tools libvulkan1 \
+    mesa-utils || echo "WARN: Vulkan install failed, continuing..."
 
 apt-get clean
 # PROFI-TRICK: Löscht den ungenutzten Paket-Cache. Spart riesige Mengen an Platz in der finalen ISO!
@@ -251,7 +306,7 @@ umount $ROOTFS/proc || true
 umount $ROOTFS/dev || true
 
 echo "6. Packaging the ISO..."
-export ISO_DIR=/tmp/meinos_build/live_iso
+export ISO_DIR="$BUILD_DIR/live_iso"
 rm -rf $ISO_DIR/live/filesystem.squashfs 
 mkdir -p $ISO_DIR/live
 mkdir -p $ISO_DIR/boot/grub
@@ -266,8 +321,8 @@ echo "Compressing filesystem (This will also take a while)..."
 mksquashfs $ROOTFS $ISO_DIR/live/filesystem.squashfs $COMP_ARGS -noappend -processors 3 -e "proc/*" "sys/*" "dev/*" "tmp/*" "run/*"
 
 cat > $ISO_DIR/boot/grub/grub.cfg << 'EOF'
-set timeout=0
-set timeout_style=hidden
+set timeout=5
+set timeout_style=menu
 set gfxpayload=text
 
 menuentry "MeinOS Live" {
@@ -275,15 +330,15 @@ menuentry "MeinOS Live" {
     if [ -n "$iso_path" ]; then
         set loopback="findiso=${iso_path} iso-scan/filename=${iso_path}"
     fi
-    linux /boot/vmlinuz boot=live components rootwait quiet splash toram noprompt noeject $loopback
+    linux /boot/vmlinuz boot=live components rootwait rootdelay=10 toram quiet splash noprompt noeject $loopback
     initrd /boot/initrd.img
 }
 EOF
 
-grub-mkrescue -o /tmp/CosmOS.iso $ISO_DIR
+grub-mkrescue -o "$BUILD_DIR/CosmOS_tmp.iso" $ISO_DIR
 echo "-> Kopiere ISO auf SSD in sicheren, synchronen Blöcken (verhindert exFAT-Freeze!)..."
-dd if=/tmp/CosmOS.iso of=CosmOS.iso bs=4M oflag=sync status=progress
-rm -f /tmp/CosmOS.iso
+dd if="$BUILD_DIR/CosmOS_tmp.iso" of=CosmOS.iso bs=4M oflag=sync status=progress
+rm -f "$BUILD_DIR/CosmOS_tmp.iso"
 
 echo "=========================================="
 echo "          ISO ERFOLGREICH GEBAUT          "

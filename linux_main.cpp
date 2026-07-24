@@ -61,35 +61,36 @@ extern "C" void cosmos_main(void* boot_info);
 extern void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_blocked);
 
 // SDL keycode to PS/2 scancode conversion
-static uint8_t sdl_to_ps2(SDL_Keycode key) {
-    switch (key) {
-        case SDLK_ESCAPE: return 0x01;
-        case SDLK_1: return 0x02; case SDLK_2: return 0x03; case SDLK_3: return 0x04;
-        case SDLK_4: return 0x05; case SDLK_5: return 0x06; case SDLK_6: return 0x07;
-        case SDLK_7: return 0x08; case SDLK_8: return 0x09; case SDLK_9: return 0x0A;
-        case SDLK_0: return 0x0B;
-        case SDLK_MINUS: return 0x0C; case SDLK_EQUALS: return 0x0D;
-        case SDLK_BACKSPACE: return 0x0E; case SDLK_TAB: return 0x0F;
-        case SDLK_q: return 0x10; case SDLK_w: return 0x11; case SDLK_e: return 0x12;
-        case SDLK_r: return 0x13; case SDLK_t: return 0x14; case SDLK_z: return 0x15;
-        case SDLK_u: return 0x16; case SDLK_i: return 0x17; case SDLK_o: return 0x18;
-        case SDLK_p: return 0x19;
-        case SDLK_RETURN: return 0x1C;
-        case SDLK_a: return 0x1E; case SDLK_s: return 0x1F; case SDLK_d: return 0x20;
-        case SDLK_f: return 0x21; case SDLK_g: return 0x22; case SDLK_h: return 0x23;
-        case SDLK_j: return 0x24; case SDLK_k: return 0x25; case SDLK_l: return 0x26;
-        case SDLK_y: return 0x2C; case SDLK_x: return 0x2D; case SDLK_c: return 0x2E;
-        case SDLK_v: return 0x2F; case SDLK_b: return 0x30; case SDLK_n: return 0x31;
-        case SDLK_m: return 0x32;
-        case SDLK_COMMA: return 0x33; case SDLK_PERIOD: return 0x34;
-        case SDLK_SLASH: return 0x35;
-        case SDLK_SPACE: return 0x39;
-        case SDLK_F1: return 0x3B; case SDLK_F2: return 0x3C; case SDLK_F3: return 0x3D;
-        case SDLK_F4: return 0x3E; case SDLK_F5: return 0x3F; case SDLK_F6: return 0x40;
-        case SDLK_F7: return 0x41; case SDLK_F8: return 0x42; case SDLK_F9: return 0x43;
-        case SDLK_F10: return 0x44; case SDLK_F11: return 0x85; case SDLK_F12: return 0x86;
-        case SDLK_UP: return 0x48; case SDLK_DOWN: return 0x50;
-        case SDLK_LEFT: return 0x4B; case SDLK_RIGHT: return 0x4D;
+static uint8_t sdl_to_ps2(SDL_Scancode sc) {
+    switch (sc) {
+        case SDL_SCANCODE_ESCAPE: return 0x01;
+        case SDL_SCANCODE_1: return 0x02; case SDL_SCANCODE_2: return 0x03; case SDL_SCANCODE_3: return 0x04;
+        case SDL_SCANCODE_4: return 0x05; case SDL_SCANCODE_5: return 0x06; case SDL_SCANCODE_6: return 0x07;
+        case SDL_SCANCODE_7: return 0x08; case SDL_SCANCODE_8: return 0x09; case SDL_SCANCODE_9: return 0x0A;
+        case SDL_SCANCODE_0: return 0x0B;
+        case SDL_SCANCODE_MINUS: return 0x0C; case SDL_SCANCODE_EQUALS: return 0x0D;
+        case SDL_SCANCODE_BACKSPACE: return 0x0E; case SDL_SCANCODE_TAB: return 0x0F;
+        case SDL_SCANCODE_Q: return 0x10; case SDL_SCANCODE_W: return 0x11; case SDL_SCANCODE_E: return 0x12;
+        case SDL_SCANCODE_R: return 0x13; case SDL_SCANCODE_T: return 0x14; case SDL_SCANCODE_Z: return 0x15;
+        case SDL_SCANCODE_U: return 0x16; case SDL_SCANCODE_I: return 0x17; case SDL_SCANCODE_O: return 0x18;
+        case SDL_SCANCODE_P: return 0x19;
+        case SDL_SCANCODE_RETURN: return 0x1C;
+        case SDL_SCANCODE_A: return 0x1E; case SDL_SCANCODE_S: return 0x1F; case SDL_SCANCODE_D: return 0x20;
+        case SDL_SCANCODE_F: return 0x21; case SDL_SCANCODE_G: return 0x22; case SDL_SCANCODE_H: return 0x23;
+        case SDL_SCANCODE_J: return 0x24; case SDL_SCANCODE_K: return 0x25; case SDL_SCANCODE_L: return 0x26;
+        case SDL_SCANCODE_Y: return 0x2C; case SDL_SCANCODE_X: return 0x2D; case SDL_SCANCODE_C: return 0x2E;
+        case SDL_SCANCODE_V: return 0x2F; case SDL_SCANCODE_B: return 0x30; case SDL_SCANCODE_N: return 0x31;
+        case SDL_SCANCODE_M: return 0x32;
+        case SDL_SCANCODE_COMMA: return 0x33; case SDL_SCANCODE_PERIOD: return 0x34;
+        case SDL_SCANCODE_SLASH: return 0x35;
+        case SDL_SCANCODE_SPACE: return 0x39;
+        case SDL_SCANCODE_F1: return 0x3B; case SDL_SCANCODE_F2: return 0x3C; case SDL_SCANCODE_F3: return 0x3D;
+        case SDL_SCANCODE_F4: return 0x3E; case SDL_SCANCODE_F5: return 0x3F; case SDL_SCANCODE_F6: return 0x40;
+        case SDL_SCANCODE_F7: return 0x41; case SDL_SCANCODE_F8: return 0x42; case SDL_SCANCODE_F9: return 0x43;
+        case SDL_SCANCODE_F10: return 0x44; case SDL_SCANCODE_F11: return 0x85; case SDL_SCANCODE_F12: return 0x86;
+        case SDL_SCANCODE_UP: return 0x48; case SDL_SCANCODE_DOWN: return 0x50;
+        case SDL_SCANCODE_LEFT: return 0x4B; case SDL_SCANCODE_RIGHT: return 0x4D;
+        case SDL_SCANCODE_LSHIFT: return 0x2A; case SDL_SCANCODE_RSHIFT: return 0x36;
         default: return 0;
     }
 }
@@ -148,6 +149,34 @@ extern "C" void play_linux_sound(uint32_t freq, uint32_t duration_ms) {
     linux_sound_max_duration = linux_sound_duration;
 }
 
+#include <mutex>
+std::mutex linux_capture_mutex;
+int16_t linux_capture_buffer[44100 * 2 * 2]; // 2 seconds of stereo
+int linux_capture_head = 0;
+int linux_capture_tail = 0;
+int linux_capture_count = 0;
+
+void audio_capture_callback(void* userdata, Uint8* stream, int len) {
+    int16_t* in = (int16_t*)stream;
+    int samples = len / 2;
+    std::lock_guard<std::mutex> lock(linux_capture_mutex);
+    static float env = 0.0f;
+    for (int i = 0; i < samples; i++) {
+        int16_t val = in[i];
+        float abs_val = abs(val);
+        // Envelope follower: Fast attack, slow release
+        if (abs_val > env) env = env + 0.1f * (abs_val - env);
+        else env = env + 0.001f * (abs_val - env);
+        
+
+        if (linux_capture_count < 44100 * 2 * 2) {
+            linux_capture_buffer[linux_capture_head] = val;
+            linux_capture_head = (linux_capture_head + 1) % (44100 * 2 * 2);
+            linux_capture_count++;
+        }
+    }
+}
+
 // Audio Callback
 void audio_callback(void* userdata, Uint8* stream, int len) {
     static float phase_left = 0.0f;
@@ -155,23 +184,57 @@ void audio_callback(void* userdata, Uint8* stream, int len) {
     int16_t* out = (int16_t*)stream;
     int num_frames = len / 4; // 16-bit stereo = 4 bytes per frame
     
+    // Initialize Stream to 0 to prepare for mixing
+    memset(stream, 0, len);
+    
+    // Read captured desktop audio ONLY for visualizer amplitude (do not mix to output to prevent feedback/hiss)
+    int64_t capture_sum = 0;
+    int64_t capture_high_sum = 0;
+    int capture_samples_read = 0;
+    {
+        std::lock_guard<std::mutex> lock(linux_capture_mutex);
+        int samples = len / 2;
+        int to_read = (linux_capture_count < samples) ? linux_capture_count : samples;
+        int16_t prev_val = 0;
+        for (int i = 0; i < to_read; i++) {
+            int16_t val = linux_capture_buffer[linux_capture_tail];
+            
+            // High frequency tracking (difference between adjacent samples)
+            int32_t diff = (int32_t)val - (int32_t)prev_val;
+            if (diff < 0) diff = -diff;
+            capture_high_sum += diff;
+            prev_val = val;
+
+            if (val < 0) val = -val;
+            capture_sum += val;
+            linux_capture_tail = (linux_capture_tail + 1) % (44100 * 2 * 2);
+            linux_capture_count--;
+            capture_samples_read++;
+        }
+    }
+
     if (linux_wav_len > 0 && linux_wav_pos < linux_wav_len) {
         int bytes_to_copy = len;
         if (linux_wav_pos + bytes_to_copy > linux_wav_len) {
             bytes_to_copy = linux_wav_len - linux_wav_pos;
         }
-        memcpy(stream, linux_wav_buffer + linux_wav_pos, bytes_to_copy);
-        linux_wav_pos += bytes_to_copy;
         
+        // Additive mix for bare metal audio
+        int16_t* wav_src = (int16_t*)(linux_wav_buffer + linux_wav_pos);
+        for(int i = 0; i < bytes_to_copy / 2; i++) {
+            int32_t mixed = out[i] + wav_src[i];
+            if (mixed > 32767) mixed = 32767;
+            if (mixed < -32768) mixed = -32768;
+            out[i] = (int16_t)mixed;
+        }
+        
+        linux_wav_pos += bytes_to_copy;
+
         if (bytes_to_copy < len) {
-            memset(stream + bytes_to_copy, 0, len - bytes_to_copy);
             linux_wav_len = 0;
         }
         goto apply_surreal;
     }
-
-    // Initialize Stream to 0 to prepare for mixing
-    memset(stream, 0, len);
     
     // --- 1. SYSTEM BEEP / SURREAL BEEP ---
     if (linux_current_freq > 0 && linux_sound_duration > 0) {
@@ -266,21 +329,17 @@ apply_surreal:
             int16_t right = out[i*2+1];
             
             // Only apply surreal effect when there is actual audio signal
-            // This prevents the noise/hiss from playing during silence
-            if (left == 0 && right == 0) continue;
-            
+            // This prevents any residual noise/hiss from playing during silence
+            if (abs(left) < 50 && abs(right) < 50) continue;
+
             surreal_phase += 0.005f;
             if (surreal_phase > 6.28318f) surreal_phase -= 6.28318f;
-            
-            float mist = sin(surreal_phase); 
-            float noise = ((float)(rand() % 1000) / 500.0f) - 1.0f;
-            
-            // Scale noise by the signal amplitude so it blends naturally
-            float signal_level = (float)(abs(left) + abs(right)) / 65536.0f;
-            
-            // Apply alien/surreal ring modulation and signal-proportional noise
-            int32_t mixed_l = (int32_t)(left * (0.7f + 0.3f * mist)) + (int32_t)(noise * 500.0f * signal_level);
-            int32_t mixed_r = (int32_t)(right * (0.7f + 0.3f * cos(surreal_phase))) + (int32_t)(noise * 500.0f * signal_level);
+
+            float mist = sin(surreal_phase);
+
+            // Apply alien/surreal ring modulation (without white noise)
+            int32_t mixed_l = (int32_t)(left * (0.7f + 0.3f * mist));
+            int32_t mixed_r = (int32_t)(right * (0.7f + 0.3f * cos(surreal_phase)));
             
             if (mixed_l > 32767) mixed_l = 32767; else if (mixed_l < -32768) mixed_l = -32768;
             if (mixed_r > 32767) mixed_r = 32767; else if (mixed_r < -32768) mixed_r = -32768;
@@ -293,20 +352,40 @@ apply_surreal:
 calc_amp:
     // Wenn gerade kein fester System-Beep spielt, nutze die Amplitude der Musik fuer die Visuals!
     if (linux_sound_duration == 0) {
-        int64_t sum = 0;
-        int num_samples = len / 2;
-        for (int i = 0; i < num_samples; i++) {
-            int16_t val = out[i];
-            if (val < 0) val = -val;
-            sum += val;
-        }
-        int avg_amp = sum / num_samples;
-        
-        if (avg_amp > 100) {
-            linux_current_freq = avg_amp / 2; 
+        int32_t avg_amp = 0;
+        int32_t avg_high_amp = 0;
+        if (capture_samples_read > 0) {
+            avg_amp = capture_sum / capture_samples_read;
+            avg_high_amp = capture_high_sum / capture_samples_read;
         } else {
-            linux_current_freq = 0;
+            // Fallback
+            int64_t sum = 0;
+            int64_t sum_high = 0;
+            int num_samples = len / 4;
+            int16_t prev_val = 0;
+            for (int i=0; i<num_samples; i++) {
+                int16_t val = (out[i*2] + out[i*2+1]) / 2;
+                
+                int32_t diff = (int32_t)val - (int32_t)prev_val;
+                if (diff < 0) diff = -diff;
+                sum_high += diff;
+                prev_val = val;
+
+                if (val < 0) val = -val;
+                sum += val;
+            }
+            avg_amp = sum / num_samples;
+            avg_high_amp = sum_high / num_samples;
         }
+        
+        // Combine low and high frequency amplitudes so all tones register
+        avg_amp = avg_amp + (avg_high_amp / 4);
+
+        // PURE AMPLITUDE DIAGRAM
+        // No envelopes, no noise floors, no thresholds! 
+        // This passes the raw volume directly to the sun, making it look exactly like a raw audio waveform!
+        // Note: This requires the microphone to be UNPLUGGED (Stereo Mix), otherwise white noise will spike it.
+        linux_current_freq = avg_amp / 2;
     }
 }
 #include "boot_info.h"
@@ -368,6 +447,16 @@ int main(int argc, char** argv) {
         load_and_convert_wav("sounds/furious_cat.wav", 3, &have);
         
         global_audio_dev = audio_dev;
+        
+          int num_capture_devs = SDL_GetNumAudioDevices(1);
+          printf("\n[SYS] Found %d Capture Devices:\n", num_capture_devs);
+          for (int i = 0; i < num_capture_devs; i++) {
+              printf("  -> %s\n", SDL_GetAudioDeviceName(i, 1));
+          want.callback = audio_capture_callback;
+          }
+          SDL_AudioDeviceID capture_dev = SDL_OpenAudioDevice(NULL, 1, &want, &have, 0);
+          if (capture_dev > 0) SDL_PauseAudioDevice(capture_dev, 0);
+          if (capture_dev > 0) SDL_PauseAudioDevice(capture_dev, 0);
         while (true) sleep(1000); // Keep thread alive to prevent PulseAudio crash!
     });
     audio_init_thread.detach();
@@ -434,13 +523,13 @@ int main(int argc, char** argv) {
                 if (event.key.keysym.scancode == SDL_SCANCODE_PRINTSCREEN) {
                     if (fork() == 0) { execlp("xfce4-screenshooter", "xfce4-screenshooter", "-f", NULL); exit(1); }
                 }
-                linux_scancode = sdl_to_ps2(event.key.keysym.sym);
+                linux_scancode = sdl_to_ps2(event.key.keysym.scancode);
             }
 			if (event.type == SDL_MOUSEWHEEL) {
 				mouse_wheel = event.wheel.y;
 			}
             if (event.type == SDL_KEYUP) {
-                uint8_t sc = sdl_to_ps2(event.key.keysym.sym);
+                uint8_t sc = sdl_to_ps2(event.key.keysym.scancode);
                 if (sc != 0) {
                     linux_scancode = sc | 0x80; // Release scancode
                 }

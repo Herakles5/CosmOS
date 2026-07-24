@@ -1,4 +1,6 @@
 #include <stdint.h>
+#include <stdio.h>
+#include <time.h>
 #include "schneider_lang.h"
 #include "surreal_gl.h"
 
@@ -29,9 +31,9 @@ extern "C" uint8_t os2_key_scancode;
 static bool sc_keys[256] = {false};
 
 // === PERFEKTE START-KAMERA (3rd Person Action Sicht) ===
-float sc_cam_rot_x = 30.0f;  // POSITIV: Kamera blickt von oben nach unten!
+float sc_cam_rot_x = -30.0f; // NEGATIV: Kamera blickt von oben nach unten!
 float sc_cam_rot_y = 0.0f;   // Geradeaus
-float sc_cam_dist = -30.0f;  // Zoom nach hinten (Abstand zur Katze)
+float sc_cam_dist = 35.0f;  // Zoom nach hinten (Abstand zur Katze)
 
 float sc_cat_x = 0.0f;
 float sc_cat_z = 0.0f;
@@ -55,6 +57,22 @@ struct ScSlot {
 ScSlot sc_slots[3] = {{0}};
 int sc_current_slot = 0;
 int sc_player_lives = 9;
+
+void save_sc_save() {
+    FILE* f = fopen("smash_cats.dat", "wb");
+    if (f) {
+        fwrite(sc_slots, sizeof(ScSlot), 3, f);
+        fclose(f);
+    }
+}
+
+void load_sc_save() {
+    FILE* f = fopen("smash_cats.dat", "rb");
+    if (f) {
+        fread(sc_slots, sizeof(ScSlot), 3, f);
+        fclose(f);
+    }
+}
 
 // === SURREAL GRAFIK EDITOR: MORPH SYSTEM ===
 struct CatMorph {
@@ -494,6 +512,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
     
     // MORPH INITIALISIERUNG (nur einmal!)
     if (!morph_initialized) {
+        load_sc_save();
         morph_reset(&player_morph);
         for (int i = 0; i < 3; i++) morph_reset(&slot_morphs[i]);
         morph_initialized = true;
@@ -561,11 +580,17 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 // Spiel Kamera drehen!
                 sc_cam_rot_y += (float)(mouse_x - sc_last_mx) * 0.5f;
                 sc_cam_rot_x += (float)(mouse_y - sc_last_my) * 0.5f;
-                if (sc_cam_rot_x < -20.0f) sc_cam_rot_x = -20.0f;
-                if (sc_cam_rot_x > 60.0f) sc_cam_rot_x = 60.0f;
+                if (sc_cam_rot_x < -60.0f) sc_cam_rot_x = -60.0f;
+                if (sc_cam_rot_x > 20.0f) sc_cam_rot_x = 20.0f;
             }
+        } else if (!mouse_right_down && sc_state == 1) {
+            // Auto-Follow Kamera: Dreht sich sanft hinter die Katze, wenn die Maus nicht gedrueckt wird!
+            float target_rot = sc_cat_rot;
+            float diff = target_rot - sc_cam_rot_y;
+            while (diff > 180.0f) diff -= 360.0f;
+            while (diff < -180.0f) diff += 360.0f;
+            sc_cam_rot_y += diff * 0.05f; // Sanftes interpolieren
         }
-        
         // === KAMERA ZOOMEN (Spiel & Editor) ===
         if (mouse_wheel != 0) {
             if (sc_state == 3) {
@@ -762,7 +787,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 if (sc_enemy_attack_timer[i] > 0) {
                     sc_enemy_attack_timer[i]--;
                     if (sc_enemy_attack_timer[i] == 10 && min_dist < 12.0f) { 
-                        if (target_id == -1 && sc_player_hp > 0) { 
+                        if (target_id == -1 && sc_player_hp > 0 && sc_player_hit_timer == 0) { 
                             sc_player_hp--; sc_player_hit_timer = 15; 
                             meow_type = 2; meow_timer = 25;
                         } else if (target_id != -1) { 
@@ -832,9 +857,10 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
     if (sc_player_hit_timer > 0) sc_player_hit_timer--;
     
     // === TOD, 9 LIVES & GAME OVER RESET ===
+    static int sc_death_timer = 0;
     if (sc_state == 1 && sc_player_hp <= 0) { 
-        if (input_cooldown == 0) {
-            input_cooldown = 60; 
+        if (sc_death_timer == 0) {
+            sc_death_timer = 60; 
             
             sc_player_lives--;
             sc_slots[sc_current_slot].lives = sc_player_lives;
@@ -843,6 +869,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
             if (sc_slots[sc_current_slot].playtime > sc_slots[sc_current_slot].record_playtime) {
                 sc_slots[sc_current_slot].record_playtime = sc_slots[sc_current_slot].playtime;
             }
+            save_sc_save();
             
             // NEU: Wir speichern die exakte Playtime als "Deathtime" ab!
             sc_slots[sc_current_slot].deathtime = sc_slots[sc_current_slot].playtime;
@@ -854,7 +881,10 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 }
             }
         }
-        if (input_cooldown == 1) { 
+        
+        sc_death_timer--;
+        
+        if (sc_death_timer == 0) { 
             if (sc_player_lives <= 0) {
                 // GAME OVER! SLOT WIRD GELÖSCHT!
                 sc_slots[sc_current_slot].active = false;
@@ -862,11 +892,15 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 sc_slots[sc_current_slot].playtime = 0;
                 for(int i=0; i<20; i++) sc_inv[i].count = 0; // Inventar weg
                 sc_state = 0; // Zurück zum Startbildschirm
+                save_sc_save();
             } else {
                 sc_state = 2; // Normaler Tod, darf respawnen
+                save_sc_save();
             }
             sc_show_inv = false; 
         } 
+    } else {
+        sc_death_timer = 0;
     }
     
     sc_last_mx = mouse_x; sc_last_my = mouse_y;
@@ -1103,8 +1137,8 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                     
                     // === PAUSE ODER NEUSTART CHECK ===
                     if (sc_player_hp <= 0 || sc_slots[sc_current_slot].playtime == 0) {
-                        sc_cam_dist = -30.0f; 
-                        sc_cam_rot_x = 30.0f;
+                        sc_cam_dist = 35.0f; 
+                        sc_cam_rot_x = -30.0f;
                         for (int i=0; i<5; i++) { 
                             enemy_color_idx[i] = (frame + i) % 8; enemy_pattern_idx[i] = (frame/2 + i) % 3; enemy_armor_idx[i] = (frame/3 + i) % 3; enemy_weapon_idx[i] = (frame/4 + i) % 3; enemy_face_idx[i] = (frame/5 + i) % 3; 
                             sc_enemy_x[i] = app_cosf((float)i * 1.2f) * 30.0f; sc_enemy_z[i] = app_sinf((float)i * 1.2f) * 30.0f;
@@ -1119,6 +1153,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                     
                     sc_state = 1; // Spiel starten / fortsetzen
                     input_cooldown = 20;
+                    save_sc_save();
                 }
             }
         } 
@@ -1141,11 +1176,11 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 DrawRoundedRect(wx + 95 + i*16, hud_y - 2, 12, 10, 2, cP); 
             }
             
-            // 3. INGAME-UHRZEIT
-            int total_s = 20 + (sc_slots[sc_current_slot].playtime / 60);
-            int cur_s = total_s % 60; int total_m = 38 + (total_s / 60); int cur_m = total_m % 60; int total_h = 22 + (total_m / 60); int cur_h = total_h % 24;
-            char tbuf[32] = "06.17.2026 - 00:00:00"; 
-            tbuf[13] = '0'+(cur_h/10); tbuf[14] = '0'+(cur_h%10); tbuf[16] = '0'+(cur_m/10); tbuf[17] = '0'+(cur_m%10); tbuf[19] = '0'+(cur_s/10); tbuf[20] = '0'+(cur_s%10);
+            // 3. INGAME-UHRZEIT (Echte Systemzeit)
+            time_t t = time(NULL);
+            struct tm *tm_info = localtime(&t);
+            char tbuf[32];
+            sprintf(tbuf, "%02d.%02d.%04d - %02d:%02d:%02d", tm_info->tm_mday, tm_info->tm_mon + 1, tm_info->tm_year + 1900, tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec);
             TextC(wx + ww/2 - 20, hud_y, tbuf, 0x00FF00, _86); 
             
             // === 4. FPS IN WEISS (Exakt zwischen Uhrzeit und Playtime) ===

@@ -39,6 +39,7 @@ extern "C" {
     char* wow64_api_name_table[16384];
     uint64_t saved_fs_base = 0;
     uint32_t wow64_pop_bytes_global = 0;
+    uint64_t glibc_fs_table[16];
 
 #ifndef WIN_ABI
 #define WIN_ABI __attribute__((ms_abi, force_align_arg_pointer))
@@ -812,6 +813,8 @@ void pe_execute(uint8_t* pe_data, uint32_t pe_sz) {
 #include "cosmos_font.h"
 #include <string.h>
 #include <stdio.h>
+#include "cosmos_zt.h"
+#include "cosmos_chat.h"
 #endif
 
 char linux_file_paths[28][256];
@@ -7415,7 +7418,9 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 #endif
 
 #ifdef __linux__
-    // AUTO-LAUNCH EAappInstaller.exe
+    // AUTO-LAUNCH EAappInstaller.exe - DISABLED (blocks main thread, use launcher UI instead)
+    // To run EXEs, use the EA/Steam launcher buttons in the Start Menu.
+    /*
     {
         extern bool disk_read_file(const char* name, uint8_t* buf, uint32_t buf_sz);
         uint32_t fsize = 0;
@@ -7438,6 +7443,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             }
         }
     }
+    */
 #endif
     
     // Ab hier ist float erlaubt!
@@ -7532,7 +7538,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
     sys_ota_idx = 0;
     
     str_cpy(windows[0].title, "NOTEPAD");  windows[0].x=0; windows[0].y=0; windows[0].w=600; windows[0].h=300; windows[0].color=0xEEEEEE; 
-    str_cpy(windows[1].title, "APPS");     windows[1].x=0; windows[1].y=300; windows[1].w=600; windows[1].h=300; windows[1].color=0xDDDDDD; 
+    str_cpy(windows[1].title, "APPS");     windows[1].x=0; windows[1].y=300; windows[1].w=600; windows[1].h=320; windows[1].color=0xDDDDDD;
     str_cpy(windows[2].title, "SAVE AS..."); windows[2].x=0; windows[2].y=150; windows[2].w=300; windows[2].h=200; windows[2].color=0xDDDDDD;
     str_cpy(windows[3].title, "SYSTEM");   windows[3].x=0; windows[3].y=0;  windows[3].w=600; windows[3].h=300; windows[3].color=0xFFD700;
     str_cpy(windows[4].title, "DISK MGR"); windows[4].x=0; windows[4].y=0; windows[4].w=600; windows[4].h=300; windows[4].color=0x888888; 
@@ -8567,7 +8573,6 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     }
                 }
             }
-			
 			/// =========================================================
             /// APP: PONG ARCADE (ID 11)
             /// =========================================================
@@ -9128,7 +9133,39 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 #endif
                     input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
                 }
+                
+                /// --- STEAM LAUNCHER (Col 1, Row 4) ---
+                DrawRoundedRect(col1, row4, bw, bh, 4, 0x1A2838);
+                TextC(col1+bw/2, row4+10, "STEAM", 0x66C0F4, _128); 
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col1, row4, bw, bh)) { 
+#ifdef __linux__
+                    if (fork() == 0) { execlp("steam", "steam", NULL); exit(1); }
+#endif
+                    input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
+                }
 
+                /// --- LUTRIS / EA (Col 2, Row 4) ---
+                DrawRoundedRect(col2, row4, bw, bh, 4, 0xEE1111);
+                TextC(col2+bw/2, row4+10, "LUTRIS / EA", 0xFFFFFF, _128); 
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col2, row4, bw, bh)) { 
+#ifdef __linux__
+                    if (fork() == 0) { execlp("lutris", "lutris", NULL); exit(1); }
+#endif
+                    input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
+                }
+
+                /// --- COSMOS NETWORK (Col 1, Row 5) ---
+                int row5 = row4 + 45;
+                DrawRoundedRect(col1, row5, bw, bh, 4, 0x005544);
+                TextC(col1+bw/2, row5+10, "COSMOS NETWORK", 0xFFFFFF, _128); 
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col1, row5, bw, bh)) { 
+                    windows[16].open = _128; windows[16].minimized = _86; str_cpy(windows[16].title, "COSMOS NETWORK"); 
+                    windows[16].w = 700; windows[16].h = 450;
+                    windows[16].x = (screen_w - 700) / 2;
+                    windows[16].y = (screen_h - 450) / 2;
+                    focus_window(16);
+                    input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
+                }
             }
 			
 			/// ==========================================
@@ -10272,6 +10309,151 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 			/// ==========================================
                 }
             }
+            
+            /// ==========================================
+            /// COSMOS NETWORK (FENSTER ID 16)
+            /// ==========================================
+            _15(win->id EQ 16) {
+                _44 is_active = (win_z[19] EQ win->id);
+                _43 mid = wx + ww/2;
+                static _44 init_zt = _86;
+                _15(!init_zt) {
+                    init_zt = _128;
+                    chat_init();
+                    zt_poll_status();
+                }
+
+                // Header
+                Text(wx+10, wy+40, "Status:", 0xAAAAAA, _128);
+                if (zt_has_network) {
+                    Text(wx+70, wy+40, "ONLINE", 0x00FF00, _128);
+                } else {
+                    Text(wx+70, wy+40, "OFFLINE", 0xFF0000, _128);
+                }
+                
+                Text(wx+140, wy+40, zt_status_line, 0x888888, _86);
+                
+                // Network ID Input
+                Text(wx+10, wy+70, "Network ID:", 0xFFFFFF, _128);
+                DrawRoundedRect(wx+100, wy+65, 180, 25, 4, zt_input_focus ? 0x444444 : 0x222222);
+                Text(wx+105, wy+70, zt_target_id, 0xFFFFFF, _128);
+                
+                static _44 name_input_focus = _86;
+                // Name Input
+                Text(wx+10, wy+100, "Your Name:", 0xFFFFFF, _128);
+                DrawRoundedRect(wx+100, wy+95, 180, 25, 4, name_input_focus ? 0x444444 : 0x222222);
+                Text(wx+105, wy+100, os2_user_name, 0xFFFFFF, _128);
+                
+                if (input_cooldown == 0 && mouse_just_pressed && is_active) {
+                    zt_input_focus = is_over_rect(mouse_x, mouse_y, wx+100, wy+65, 180, 25);
+                    name_input_focus = is_over_rect(mouse_x, mouse_y, wx+100, wy+95, 180, 25);
+                    chat_input_focus = is_over_rect(mouse_x, mouse_y, wx+10, wy+380, ww-100, 25);
+                }
+                
+                if (zt_input_focus && os2_key_scancode != 0 && input_cooldown == 0) {
+                    if (os2_key_scancode == 0x0E && zt_target_id_len > 0) { // Backspace
+                        zt_target_id[--zt_target_id_len] = 0;
+                    } else if (zt_target_id_len < 16) {
+                        char c = 0;
+                        if (os2_key_scancode >= 0x02 && os2_key_scancode <= 0x0A) c = '1' + (os2_key_scancode - 0x02);
+                        if (os2_key_scancode == 0x0B) c = '0';
+                        if (os2_key_scancode >= 0x10 && os2_key_scancode <= 0x19) c = "qwertyuiop"[os2_key_scancode - 0x10];
+                        if (os2_key_scancode >= 0x1E && os2_key_scancode <= 0x26) c = "asdfghjkl"[os2_key_scancode - 0x1E];
+                        if (os2_key_scancode >= 0x2C && os2_key_scancode <= 0x32) c = "zxcvbnm"[os2_key_scancode - 0x2C];
+                        if (c != 0) { zt_target_id[zt_target_id_len++] = c; zt_target_id[zt_target_id_len] = 0; }
+                    }
+                    input_cooldown = 10;
+                }
+                
+                if (name_input_focus && os2_key_scancode != 0 && input_cooldown == 0) {
+                    int len = strlen(os2_user_name);
+                    if (os2_key_scancode == 0x0E && len > 0) { // Backspace
+                        os2_user_name[len-1] = 0;
+                    } else if (len < 16) {
+                        char c = 0;
+                        if (os2_key_scancode >= 0x02 && os2_key_scancode <= 0x0A) c = '1' + (os2_key_scancode - 0x02);
+                        if (os2_key_scancode == 0x0B) c = '0';
+                        if (os2_key_scancode >= 0x10 && os2_key_scancode <= 0x19) c = "qwertyuiop"[os2_key_scancode - 0x10];
+                        if (os2_key_scancode >= 0x1E && os2_key_scancode <= 0x26) c = "asdfghjkl"[os2_key_scancode - 0x1E];
+                        if (os2_key_scancode >= 0x2C && os2_key_scancode <= 0x32) c = "zxcvbnm"[os2_key_scancode - 0x2C];
+                        if (os2_key_scancode == 0x39) c = ' ';
+                        if (c != 0) { os2_user_name[len] = c; os2_user_name[len+1] = 0; }
+                    }
+                    input_cooldown = 10;
+                }
+                
+                // CONNECT / DISCONNECT Buttons
+                _44 hov_c = is_over_rect(mouse_x, mouse_y, wx+290, wy+65, 100, 25);
+                DrawRoundedRect(wx+290, wy+65, 100, 25, 4, hov_c ? 0x00AA00 : 0x006600);
+                TextC(wx+340, wy+70, "CONNECT", 0xFFFFFF, _128);
+                if (input_cooldown == 0 && mouse_just_pressed && hov_c) {
+                    zt_join(); zt_poll_status(); input_cooldown = 20;
+                }
+                
+                _44 hov_d = is_over_rect(mouse_x, mouse_y, wx+400, wy+65, 100, 25);
+                DrawRoundedRect(wx+400, wy+65, 100, 25, 4, hov_d ? 0xAA0000 : 0x660000);
+                TextC(wx+450, wy+70, "DISCONNECT", 0xFFFFFF, _128);
+                if (input_cooldown == 0 && mouse_just_pressed && hov_d) {
+                    zt_leave(); zt_poll_status(); input_cooldown = 20;
+                }
+                
+                // Chat Box
+                DrawRoundedRect(wx+10, wy+130, ww-120, 240, 4, 0x111111);
+                for (int i=0; i<chat_history_count; i++) {
+                    Text(wx+15, wy+135 + i*15, chat_history[i], 0xCCCCCC, _86);
+                }
+                
+                // Chat Input
+                DrawRoundedRect(wx+10, wy+380, ww-120, 25, 4, chat_input_focus ? 0x444444 : 0x222222);
+                Text(wx+15, wy+385, chat_input_len == 0 ? "Type message..." : chat_input, chat_input_len == 0 ? 0x555555 : 0xFFFFFF, _128);
+                
+                if (chat_input_focus && os2_key_scancode != 0 && input_cooldown == 0) {
+                    if (os2_key_scancode == 0x0E && chat_input_len > 0) { // Backspace
+                        chat_input[--chat_input_len] = 0;
+                    } else if (chat_input_len < 100 && os2_key_scancode != 0x0E && os2_key_scancode != 0x1C) {
+                        char c = 0; // Simple key mapping for chat
+                        if (os2_key_scancode >= 0x02 && os2_key_scancode <= 0x0A) c = '1' + (os2_key_scancode - 0x02);
+                        if (os2_key_scancode == 0x0B) c = '0';
+                        if (os2_key_scancode == 0x39) c = ' ';
+                        if (os2_key_scancode >= 0x10 && os2_key_scancode <= 0x19) c = "qwertyuiop"[os2_key_scancode - 0x10];
+                        if (os2_key_scancode >= 0x1E && os2_key_scancode <= 0x26) c = "asdfghjkl"[os2_key_scancode - 0x1E];
+                        if (os2_key_scancode >= 0x2C && os2_key_scancode <= 0x32) c = "zxcvbnm"[os2_key_scancode - 0x2C];
+                        if (c != 0) { chat_input[chat_input_len++] = c; chat_input[chat_input_len] = 0; }
+                    }
+                    input_cooldown = 10;
+                }
+                
+                _44 hov_s = is_over_rect(mouse_x, mouse_y, wx+ww-105, wy+380, 45, 25);
+                DrawRoundedRect(wx+ww-105, wy+380, 45, 25, 4, hov_s ? 0x00AA00 : 0x006600);
+                TextC(wx+ww-82, wy+385, ">>>", 0xFFFFFF, _128);
+                
+                if ((input_cooldown == 0 && mouse_just_pressed && hov_s) || (chat_input_focus && os2_key_scancode == 0x1C && input_cooldown == 0)) {
+                    if (chat_input_len > 0) {
+                        chat_send_msg(chat_input);
+                        chat_input[0] = 0; chat_input_len = 0;
+                    }
+                    input_cooldown = 20;
+                }
+                
+                _44 hov_l = is_over_rect(mouse_x, mouse_y, wx+ww-55, wy+380, 45, 25);
+                DrawRoundedRect(wx+ww-55, wy+380, 45, 25, 4, hov_l ? 0xAA0000 : 0x660000);
+                TextC(wx+ww-32, wy+385, "LEAVE", 0xFFFFFF, _128);
+                if (input_cooldown == 0 && mouse_just_pressed && hov_l) {
+                    chat_send_msg("/leave");
+                    input_cooldown = 20;
+                }
+
+                // Players List
+                DrawRoundedRect(wx+ww-105, wy+130, 95, 240, 4, 0x222222);
+                Text(wx+ww-100, wy+135, "Players:", 0x00FFFF, _128);
+                for (int i=0; i<num_chat_peers; i++) {
+                    Text(wx+ww-100, wy+150 + i*15, chat_peers[i].name, 0xFFFFFF, _86);
+                }
+                
+                if (frame % 60 == 0) zt_poll_status();
+                chat_poll();
+            }
+            
             /// NOTEPAD (ID 0) - BARE METAL FIX (SICHTBAR!)
             /// ==========================================
             _15(win->id EQ 0) {

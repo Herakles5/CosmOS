@@ -2018,6 +2018,12 @@ _172 "C" _50 kernel_main(_89 magic, multiboot_info* mbi) {
             /// ==========================================
             /// DEEP SPACE BACKGROUND (Sterne, Kometen, Asteroiden, Galaxien)
             /// ==========================================
+            
+            /// FIX: 5-Minuten Garbage Collector für das Rendering (Cache Reset)
+            _15(frame > 0 AND frame % 18000 EQ 0) {
+                _39(_43 i=0; i<200; i++) { stars[i].z = 0; }
+            }
+
             _39(_43 i=0; i<200; i++) {
                 _43 t = stars[i].type;
                 /// Bewegung berechnen (Galaxien extrem langsam, Kometen extrem schnell)
