@@ -31,3 +31,5 @@ and intelligent teaching modes to assist you directly on the desktop.
 ***Arcade & Entertainment Mode:*** A built-in arcade system for instant gaming and media playback directly from the desktop environment.
 
 ***Live USB Support:*** Fully portable architecture. Flash the .iso to a USB stick and carry your entire CosmOS workspace in your pocket.
+
+<img width="1920" height="1080" alt="Screenshot_2026-09-18_16-04-50" src="https://github.com/user-attachments/assets/9cfe89ee-6766-4a12-9aaa-f271bbd1c35e" />
