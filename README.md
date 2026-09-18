@@ -2,7 +2,7 @@
 
 https://drive.google.com/drive/home
 
-🌌 CosmOS: The Bare Metal / Linux Hybrid OS
+🌌 ***CosmOS***: The Bare Metal / Linux ***Hybrid OS**
 CosmOS (formerly MeinOS) :
 
 ***is a next-generation lightweight operating system and advanced Win32 compatibility layer,
