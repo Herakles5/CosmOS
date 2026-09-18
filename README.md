@@ -1,7 +1,5 @@
 # MeinOS
 
-format iso ins dd-format on a stick an boot !
-
 https://drive.google.com/drive/home
 
 🌌 CosmOS: The Bare Metal / Linux Hybrid OS
