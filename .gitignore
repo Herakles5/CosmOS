@@ -1,0 +1,13 @@
+*.o
+*.elf
+*.img
+*.iso
+*.tba
+*.exe
+.Antigravity IDE
+Antigravity IDE
+
+_ARCHIVE_JUNK/
+CosmOS.iso
+build_tmp/
+upload_to_github.sh
