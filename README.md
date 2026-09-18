@@ -3,11 +3,13 @@
 https://drive.google.com/drive/home
 
 🌌 CosmOS: The Bare Metal / Linux Hybrid OS
-CosmOS (formerly MeinOS) is a next-generation lightweight operating system and advanced Win32 compatibility layer,
+CosmOS (formerly MeinOS) :
+
+***is a next-generation lightweight operating system and advanced Win32 compatibility layer,
 designed to seamlessly bridge the gap between Linux and Windows ecosystems.
 Built on top of a highly optimized SDL2 foundation,
 CosmOS executes Windows applications (PE executables)
-natively on Linux—completely eliminating the need for WINE!
+natively on Linux—completely eliminating the need for WINE!**
 
 ***Simply flash the Live ISO onto a USB drive (dd-format), plug it in, and boot into a fully integrated, high-performance environment.***
 
