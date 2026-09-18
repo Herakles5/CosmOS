@@ -43,8 +43,6 @@ and intelligent teaching modes to assist you directly on the desktop.
 <img width="1920" height="1080" alt="Screenshot_2026-09-18_16-06-32" src="https://github.com/user-attachments/assets/3a321d98-0cec-4ead-9de2-9f92d2dd456d" />
 <img width="1920" height="1080" alt="Screenshot_2026-09-18_16-06-44" src="https://github.com/user-attachments/assets/6af3b58b-c49f-4985-b817-6e5ca57ddc52" />
 <img width="1920" height="1080" alt="Screenshot_2026-09-18_16-06-59" src="https://github.com/user-attachments/assets/48648790-6d33-4348-9748-2c7a1b4a3d45" />
-<img width="1920" height="1080" alt="Screenshot_2026-09-18_16-07-18" src="https://github.com/user-attachments/assets/76e92016-a094-4f4d-a96e-ee9aa0eba75a" />
-<img width="1920" height="1080" alt="Screenshot_2026-09-18_16-07-27" src="https://github.com/user-attachments/assets/805707c0-a3be-4b20-8edc-bf72cd7619db" />
 
 
 ***ALL CREDITS*** to me !!!
