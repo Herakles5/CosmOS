@@ -1,5 +1,8 @@
 # MeinOS
 
+***latest iso Cosmois_AI.iso and this build are same ! so take the build start on it , work on it !
+how you like , how you want. All via Antigravity IDE***
+
 https://drive.google.com/drive/home
 
 🌌 ***CosmOS***: The Bare Metal / Linux ***Hybrid OS**
