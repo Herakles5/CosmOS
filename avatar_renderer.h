@@ -27,7 +27,19 @@ struct A3DModel {
 
 A3DModel global_avatar;
 
+extern "C" uint8_t  aion_switch_avatar = 0;
+extern "C" int      aion_current_avatar_idx = 0;
+extern "C" int      aion_total_models = 0;
+
 void load_a3d(const char* path) {
+    if (global_avatar.loaded) {
+        for (uint32_t i = 0; i < global_avatar.num_frames; i++) {
+            delete[] global_avatar.frames[i].vertices;
+        }
+        delete[] global_avatar.frames;
+        global_avatar.loaded = false;
+    }
+
     FILE* f = fopen(path, "rb");
     if (!f) {
         printf("Failed to load %s\n", path);
@@ -60,6 +72,13 @@ void load_a3d(const char* path) {
 }
 
 void draw_a3d() {
+    if (aion_switch_avatar) {
+        aion_switch_avatar = 0;
+        char path[256];
+        snprintf(path, 256, "/root/coding/MeinOS/avatar/model_%d.a3d", aion_current_avatar_idx);
+        load_a3d(path);
+    }
+
     if (!global_avatar.loaded || !aion_window_open || !aion_use_3d_avatar) return;
     
     static float current_frame = 0;
@@ -82,16 +101,21 @@ void draw_a3d() {
     // Calculate OpenGL window coordinates (Y is flipped in OpenGL)
     extern int global_screen_w;
     extern int global_screen_h;
-    int scissor_y = global_screen_h - (aion_window_y + aion_window_h);
-    glScissor(aion_window_x, scissor_y, aion_window_w, aion_window_h);
-    glViewport(aion_window_x, scissor_y, aion_window_w, aion_window_h);
+    
+    // The console takes up the bottom 220 pixels, so don't draw 3D there!
+    int draw_h = aion_window_h - 220;
+    if (draw_h < 1) draw_h = 1;
+    int scissor_y = global_screen_h - (aion_window_y + aion_window_h - 220);
+    
+    glScissor(aion_window_x, scissor_y, aion_window_w, draw_h);
+    glViewport(aion_window_x, scissor_y, aion_window_w, draw_h);
     
     glClear(GL_DEPTH_BUFFER_BIT); // Clear depth only for the window area
     
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     // Simple perspective
-    float aspect = (float)aion_window_w / (float)aion_window_h;
+    float aspect = (float)aion_window_w / (float)draw_h;
     float fov = 45.0f * (3.14159f / 180.0f);
     float zNear = 0.1f;
     float zFar = 1000.0f;
@@ -103,12 +127,18 @@ void draw_a3d() {
     glLoadIdentity();
     
     // Camera Transform (Looking at the avatar)
-    glTranslatef(0.0f, -1.0f, -3.0f);
+    glTranslatef(0.0f, -0.85f, -3.0f);
+    
+    // Scale the model down significantly
+    glScalef(0.35f, 0.35f, 0.35f);
+    
+    // Fix Z-up to Y-up orientation (rotate -90 around X)
+    glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
     
     // Slight rotation
     static float rot = 0;
-    rot += 0.5f;
-    glRotatef(rot, 0, 1, 0);
+    // rot += 0.5f; // STOP ROTATION
+    glRotatef(rot, 0, 0, 1); // Rotate around Z instead of Y because we just rotated the axes!
     
     glEnableClientState(GL_VERTEX_ARRAY);
     glVertexPointer(3, GL_FLOAT, 5 * sizeof(float), f->vertices);

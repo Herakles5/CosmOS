@@ -9061,6 +9061,30 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     aion_use_3d_avatar = !aion_use_3d_avatar;
                     input_cooldown = 20;
                 }
+                
+                extern uint8_t aion_switch_avatar;
+                extern int aion_current_avatar_idx;
+                extern int aion_total_models;
+
+                if (aion_use_3d_avatar && aion_total_models > 1) {
+                    DrawRoundedRect(wx + ww - 140, wy + 5, 20, 20, 4, 0x555555);
+                    TextC(wx + ww - 130, wy + 8, "<", 0xFFFFFF, _128);
+                    if (!blocked && mouse_just_pressed && input_cooldown == 0 && is_over_rect(mouse_x, mouse_y, wx + ww - 140, wy + 5, 20, 20)) {
+                        aion_current_avatar_idx--;
+                        if (aion_current_avatar_idx < 0) aion_current_avatar_idx = aion_total_models - 1;
+                        aion_switch_avatar = 1;
+                        input_cooldown = 20;
+                    }
+
+                    DrawRoundedRect(wx + ww - 165, wy + 5, 20, 20, 4, 0x555555);
+                    TextC(wx + ww - 155, wy + 8, ">", 0xFFFFFF, _128);
+                    if (!blocked && mouse_just_pressed && input_cooldown == 0 && is_over_rect(mouse_x, mouse_y, wx + ww - 165, wy + 5, 20, 20)) {
+                        aion_current_avatar_idx++;
+                        if (aion_current_avatar_idx >= aion_total_models) aion_current_avatar_idx = 0;
+                        aion_switch_avatar = 1;
+                        input_cooldown = 20;
+                    }
+                }
 
                 UpdateAionApp(wx, wy, ww, wh, !blocked);
                 
@@ -9275,6 +9299,24 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 char disp_name[128];
                 snprintf(disp_name, 128, "SELECTED: %s", radio_stations[current_radio_station].name);
                 TextC(mid, station_y, disp_name, 0xFFD700, _128);
+                
+                static char radio_meta[128] = {0};
+                static int meta_timer = 0;
+                if (++meta_timer > 60) {
+                    meta_timer = 0;
+                    FILE* fm = fopen("/tmp/radio_meta.txt", "r");
+                    if (fm) {
+                        fgets(radio_meta, 127, fm);
+                        fclose(fm);
+                        for(int k=0; k<128; k++) if(radio_meta[k]=='\n') radio_meta[k]=0;
+                    } else {
+                        radio_meta[0] = 0;
+                    }
+                }
+                if (radio_is_playing && radio_meta[0] != 0) {
+                    TextC(mid, wy + 440, "NOW PLAYING:", 0x00FF00, _128);
+                    TextC(mid, wy + 460, radio_meta, 0xFFFFFF, _128);
+                }
                 
                 // --- PLAY / STOP BUTTONS ---
                 _43 ctrl_y = wy + 340;
@@ -9865,7 +9907,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 DrawRoundedRect(col2, row4, bw, bh, 4, 0x8822AA);
                 TextC(col2+bw/2, row4+10, "RADIO COSMOS", 0xFFFFFF, _128); 
                 _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col2, row4, bw, bh)) { 
-                    windows[19].open = _128; windows[19].minimized = _86; str_cpy(windows[19].title, "RADIO COSMOS"); windows[19].x = 100; windows[19].y = 100; windows[19].w = 500; windows[19].h = 450; windows[19].color = 0x1A1A2A; focus_window(19);
+                    windows[19].open = _128; windows[19].minimized = _86; str_cpy(windows[19].title, "RADIO COSMOS"); windows[19].x = 100; windows[19].y = 100; windows[19].w = 500; windows[19].h = 480; windows[19].color = 0x1A1A2A; focus_window(19);
                     input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
                 }
                 

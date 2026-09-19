@@ -11,3 +11,5 @@ _ARCHIVE_JUNK/
 CosmOS.iso
 build_tmp/
 upload_to_github.sh
+avatar.a3d
+avatar/*.a3d

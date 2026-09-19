@@ -1,11 +1,11 @@
 Model Information:
-* title:	Reze – Stylized Anime Girl
-* source:	https://sketchfab.com/3d-models/reze-stylized-anime-girl-f1d8f9a207554a5cba21e9e8516273f4
-* author:	bolbi601 (https://sketchfab.com/bolbi601)
+* title:	anime girl Mia Ter Excited Preview
+* source:	https://sketchfab.com/3d-models/anime-girl-mia-ter-excited-preview-bda66b935705449dad31f6c5d96780a7
+* author:	ChamberSu1996 (https://sketchfab.com/chambersu1996)
 
 Model License:
-* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
-* requirements:	Author must be credited. Commercial use is allowed.
+* license type:	CC-BY-NC-4.0 (http://creativecommons.org/licenses/by-nc/4.0/)
+* requirements:	Author must be credited. No commercial use.
 
 If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
-This work is based on "Reze – Stylized Anime Girl" (https://sketchfab.com/3d-models/reze-stylized-anime-girl-f1d8f9a207554a5cba21e9e8516273f4) by bolbi601 (https://sketchfab.com/bolbi601) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+This work is based on "anime girl Mia Ter Excited Preview" (https://sketchfab.com/3d-models/anime-girl-mia-ter-excited-preview-bda66b935705449dad31f6c5d96780a7) by ChamberSu1996 (https://sketchfab.com/chambersu1996) licensed under CC-BY-NC-4.0 (http://creativecommons.org/licenses/by-nc/4.0/)

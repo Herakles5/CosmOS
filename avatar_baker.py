@@ -5,11 +5,11 @@ import glob
 import mathutils
 
 def bake_to_a3d():
-    # Find the glTF file
+    # Find the glTF file recursively
     avatar_dir = "/root/coding/MeinOS/avatar/"
-    gltf_files = glob.glob(os.path.join(avatar_dir, "*.gltf"))
+    gltf_files = glob.glob(os.path.join(avatar_dir, "**/*.gltf"), recursive=True) + glob.glob(os.path.join(avatar_dir, "**/*.glb"), recursive=True)
     if not gltf_files:
-        print("ERROR: No .gltf file found in", avatar_dir)
+        print("ERROR: No .gltf or .glb file found in", avatar_dir)
         return
     
     gltf_path = gltf_files[0]

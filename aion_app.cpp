@@ -466,9 +466,10 @@ void UpdateAionApp(int cx, int cy, int cw, int ch, bool is_active) {
     float scaleX = (float)cw / FaceW;
     float scaleY = (float)(ch - 210) / FaceH;
     
-    // Original loop logic
-    for (int x = 0; x < COLS; x++) {
-        for (auto& d : columnDrops[x]) {
+    extern uint8_t aion_use_3d_avatar;
+    if (!aion_use_3d_avatar) {
+        for (int x = 0; x < COLS; x++) {
+            for (auto& d : columnDrops[x]) {
             d.y += d.speed * 0.65f;
             if (d.y > FaceH + 5) d.y = -5;
         }
@@ -553,6 +554,7 @@ void UpdateAionApp(int cx, int cy, int cw, int ch, bool is_active) {
     }
     
 
+    }
     
     int console_y = cy + ch - 210;
     DrawRoundedRect(cx, console_y, cw, 170, 0, 0x111111);
