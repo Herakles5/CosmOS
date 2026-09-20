@@ -1,5 +1,7 @@
 # CosmOS (MeinOS)
+
 https://x.com/_Cosmos_OS_/status/2101342137593831766?s=20
+
 ![CosmOS Logo](https://img.shields.io/badge/CosmOS-Future_Operating_System-blue?style=for-the-badge)
 <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=boxingdual@gmail.com&currency_code=EUR&item_name=Coffee+Support+Earthquake+Tracker" target="_blank">
   <img src="https://img.shields.io/badge/☕_Donate-PayPal-0070ba?style=for-the-badge&logo=paypal&logoColor=white" alt="Donate Coffee">
