@@ -1,6 +1,5 @@
 # CosmOS (MeinOS)
-
-https://x.com/_Cosmos_OS_/status/2101342137593831766?s=20
+<blockquote class="twitter-tweet" data-media-max-width="560"><p lang="en" dir="ltr">now they cam smaltalkl or talk. <a href="https://x.com/hashtag/Ai8n?src=hash&amp;ref_src=twsrc%5Etfw">#Ai8n</a> <a href="https://x.com/hashtag/antigravity?src=hash&amp;ref_src=twsrc%5Etfw">#antigravity</a> <a href="https://x.com/hashtag/AI?src=hash&amp;ref_src=twsrc%5Etfw">#AI</a> <a href="https://t.co/2o4DIAH4e9">pic.twitter.com/2o4DIAH4e9</a></p>&mdash; Warumfragst Dumichnicht (@_Cosmos_OS_) <a href="https://x.com/_Cosmos_OS_/status/2101342137593831766?ref_src=twsrc%5Etfw">September 19, 2026</a></blockquote> <script async src="https://platform.x.com/widgets.js" charset="utf-8"></script> 
 
 ![CosmOS Logo](https://img.shields.io/badge/CosmOS-Future_Operating_System-blue?style=for-the-badge)
 <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=boxingdual@gmail.com&currency_code=EUR&item_name=Coffee+Support+Earthquake+Tracker" target="_blank">
