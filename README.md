@@ -30,6 +30,4 @@ make -f Makefile.linux
 CosmOS is deeply integrated with "AION", an LLM-driven AI Assistant that operates on an active IPC bridge (`ide_to_aion.py` / `listen_to_aion.py`). AION monitors the screen buffer, UI events, and audio outputs to organically interact with the user and the system.
 
 
-https://www.facebook.com/reel/1836264224407290
-
-<iframe src="https://www.facebook.com/plugins/video.php?height=314&href=https%3A%2F%2Fwww.facebook.com%2Freel%2F1836264224407290%2F&show_text=false&width=560&t=0" width="560" height="314" style="border:none;overflow:hidden" scrolling="no" frameborder="0" allowfullscreen="true" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen="true"></iframe>
+<iframe src="https://www.facebook.com/plugins/video.php?height=314&href=https%3A%2F%2Fwww.facebook.com%2Freel%2F1836264224407290%2F&show_text=true&width=560&t=0" width="560" height="429" style="border:none;overflow:hidden" scrolling="no" frameborder="0" allowfullscreen="true" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowFullScreen="true"></iframe>
