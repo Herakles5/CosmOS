@@ -22,6 +22,9 @@ float aion_avatar_pan_x = 0.0f;
 float aion_avatar_pan_y = 0.0f;
 int aion_avatar_screen_x = 0;
 int aion_avatar_screen_y = 0;
+int jaw_idx = -2;
+int spine_idx = -2;
+float anim_time = 0.0f;
 
 #include "avatar_anim.h"
 
@@ -97,6 +100,10 @@ void draw_a3d() {
         aion_avatar_pan_y = 0.0f;
         aion_avatar_rot_x = 0.0f;
         aion_avatar_rot_y = 0.0f;
+        
+        // Reset bone indices so it searches for the correct bones in the new model
+        jaw_idx = -2;
+        spine_idx = -2;
     }
 
     if (!global_avatar.is_loaded() || !aion_window_open || !aion_use_3d_avatar) return;
@@ -195,9 +202,6 @@ void draw_a3d() {
     }
     
     // Procedural Animations (BEFORE update)
-    static int jaw_idx = -2;
-    static int spine_idx = -2;
-    static float anim_time = 0.0f;
     anim_time += 0.016f;
     
     if (jaw_idx == -2) {
