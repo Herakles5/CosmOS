@@ -9136,8 +9136,8 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                             // Right click drag = Pan
                             extern float aion_manual_pan_x;
                             extern float aion_manual_pan_y;
-                            aion_manual_pan_x += (float)mdx * 0.01f;
-                            aion_manual_pan_y -= (float)mdy * 0.01f;
+                            aion_manual_pan_x += (float)mdx * 0.03f;
+                            aion_manual_pan_y -= (float)mdy * 0.03f;
                         }
 
                         last_aion_mx = mouse_x;

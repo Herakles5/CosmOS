@@ -34,10 +34,15 @@ struct Bone {
     int parent_index;
     mat4 inverse_bind_matrix;
     
-    // Local transform state
+    // Local transform state (current)
     vec3 local_t;
     quat local_r;
     vec3 local_s;
+
+    // Base transform state (from bind pose)
+    vec3 base_local_t;
+    quat base_local_r;
+    vec3 base_local_s;
 
     // Global transform
     mat4 global_matrix;

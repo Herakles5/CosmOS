@@ -153,16 +153,21 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
             } else {
                 bones[i].local_t = vec3(0,0,0);
             }
+            bones[i].base_local_t = bones[i].local_t;
+
             if (node->has_rotation) {
                 bones[i].local_r = quat(node->rotation[0], node->rotation[1], node->rotation[2], node->rotation[3]);
             } else {
                 bones[i].local_r = quat(0,0,0,1);
             }
+            bones[i].base_local_r = bones[i].local_r;
+
             if (node->has_scale) {
                 bones[i].local_s = vec3(node->scale[0], node->scale[1], node->scale[2]);
             } else {
                 bones[i].local_s = vec3(1,1,1);
             }
+            bones[i].base_local_s = bones[i].local_s;
         }
     }
     
@@ -346,6 +351,13 @@ void SkeletalAvatar::update_hierarchy(int bone_idx, const mat4& parent_mat) {
 
 void SkeletalAvatar::update(float delta_time) {
     if (!loaded) return;
+    
+    // Reset all bones to their base local transform
+    for (size_t i = 0; i < bones.size(); ++i) {
+        bones[i].local_t = bones[i].base_local_t;
+        bones[i].local_r = bones[i].base_local_r;
+        bones[i].local_s = bones[i].base_local_s;
+    }
     
     if (max_time > 0.0f) {
         current_time += delta_time;
@@ -629,7 +641,7 @@ void SkeletalAvatar::add_procedural_rotation(int bone_idx, float ax, float ay, f
 }
 
 void SkeletalAvatar::recompute_global_matrices() {
-    mat4 root_transform = mat4_identity();
+    mat4 root_transform;
     for (int i = 0; i < (int)bones.size(); ++i) {
         if (bones[i].parent_index == -1) {
             update_hierarchy(i, root_transform);
