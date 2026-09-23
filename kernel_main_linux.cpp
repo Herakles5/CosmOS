@@ -11791,6 +11791,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             
             extern int aion_avatar_screen_x;
             extern int aion_avatar_screen_y;
+            extern float aion_avatar_zoom;
             bool over_aion_window = !windows[49].minimized && mouse_y > aion_window_y + 30 && mouse_y < aion_window_y + aion_window_h - 220 && mouse_x > aion_window_x && mouse_x < aion_window_x + aion_window_w;
             bool over_avatar_frame = mouse_x > aion_avatar_screen_x - 150 && mouse_x < aion_avatar_screen_x + 150 && 
                                      mouse_y > aion_avatar_screen_y - 400 && mouse_y < aion_avatar_screen_y + 100;
