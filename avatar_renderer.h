@@ -117,9 +117,9 @@ void draw_a3d() {
     if (dx < -1.0f) dx = -1.0f; if (dx > 1.0f) dx = 1.0f;
     if (dy < -1.0f) dy = -1.0f; if (dy > 1.0f) dy = 1.0f;
     
-    // Target rotation angles (max ±30 degrees follow)
-    float target_rot_y = dx * 30.0f;
-    float target_rot_x = dy * 20.0f;
+    // Target rotation angles - more subtle (max ±15/10 degrees follow) so it doesn't "stick"
+    float target_rot_y = dx * 15.0f;
+    float target_rot_x = dy * 10.0f;
     
     // Check if user is manually dragging (override follow)
     if (mouse_down && mouse_x > (int)aion_window_x && mouse_x < (int)(aion_window_x + aion_window_w) &&
@@ -134,7 +134,7 @@ void draw_a3d() {
     if (aion_drag_release_time > 0) aion_drag_release_time--;
     
     // Smooth follow (only when not manually dragging and cooldown expired)
-    float lerp_speed = 0.02f; // Very smooth, slow follow
+    float lerp_speed = 0.015f; // Slower, more elegant follow
     if (!aion_mouse_dragging && aion_drag_release_time == 0) {
         aion_follow_rot_y += (target_rot_y - aion_follow_rot_y) * lerp_speed;
         aion_follow_rot_x += (target_rot_x - aion_follow_rot_x) * lerp_speed;
@@ -163,10 +163,15 @@ void draw_a3d() {
     if (draw_h < 1) draw_h = 1;
     int scissor_y = global_screen_h - (aion_window_y + aion_window_h - 220);
     
-    // Viewport still defines the perspective center, but no clipping
-    glViewport(aion_window_x, scissor_y, aion_window_w, draw_h);
+    // Allow rendering outside window by expanding the viewport and frustum by 3x
+    int vp_w = aion_window_w * 3;
+    int vp_h = draw_h * 3;
+    int vp_x = aion_window_x - aion_window_w;
+    int vp_y = scissor_y - draw_h;
     
-    glClear(GL_DEPTH_BUFFER_BIT);
+    glViewport(vp_x, vp_y, vp_w, vp_h);
+    
+    glClear(GL_DEPTH_BUFFER_BIT); // Depth buffer clear for the whole expanded area
     
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -176,7 +181,9 @@ void draw_a3d() {
     float zFar = 1000.0f;
     float fH = tanf(fov / 2.0f) * zNear;
     float fW = fH * aspect;
-    glFrustum(-fW, fW, -fH, fH, zNear, zFar);
+    
+    // Scale frustum by 3 to perfectly counteract the 3x viewport size
+    glFrustum(-fW * 3.0f, fW * 3.0f, -fH * 3.0f, fH * 3.0f, zNear, zFar);
     
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
