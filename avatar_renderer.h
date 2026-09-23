@@ -20,8 +20,6 @@ float aion_avatar_rot_y = 0.0f;
 float aion_avatar_rot_z = 0.0f;
 float aion_avatar_pan_x = 0.0f;
 float aion_avatar_pan_y = 0.0f;
-float aion_manual_pan_x = 0.0f;
-float aion_manual_pan_y = 0.0f;
 int aion_avatar_screen_x = 0;
 int aion_avatar_screen_y = 0;
 int jaw_idx = -2;
@@ -29,10 +27,6 @@ int spine_idx = -2;
 int arm_r_idx = -2;
 int arm_l_idx = -2;
 float anim_time = 0.0f;
-
-float aion_manual_pan_x = 0.0f;
-float aion_manual_pan_y = 0.0f;
-
 #include "avatar_anim.h"
 
 SkeletalAvatar global_avatar;
