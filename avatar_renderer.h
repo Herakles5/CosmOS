@@ -117,9 +117,9 @@ void draw_a3d() {
     if (dx < -1.0f) dx = -1.0f; if (dx > 1.0f) dx = 1.0f;
     if (dy < -1.0f) dy = -1.0f; if (dy > 1.0f) dy = 1.0f;
     
-    // Target rotation angles - more subtle (max ±15/10 degrees follow) so it doesn't "stick"
-    float target_rot_y = dx * 15.0f;
-    float target_rot_x = dy * 10.0f;
+    // Target rotation angles - more obvious follow
+    float target_rot_y = dx * 45.0f;
+    float target_rot_x = dy * 20.0f;
     
     // Check if user is manually dragging (override follow)
     if (mouse_down && mouse_x > (int)aion_window_x && mouse_x < (int)(aion_window_x + aion_window_w) &&
@@ -134,22 +134,20 @@ void draw_a3d() {
     if (aion_drag_release_time > 0) aion_drag_release_time--;
     
     // Smooth follow (rotation)
-    float lerp_speed = 0.015f;
+    float lerp_speed = 0.05f;
     if (!aion_mouse_dragging && aion_drag_release_time == 0) {
         aion_follow_rot_y += (target_rot_y - aion_follow_rot_y) * lerp_speed;
         aion_follow_rot_x += (target_rot_x - aion_follow_rot_x) * lerp_speed;
         
         // --- Free Screen Movement (Translation) ---
         // Move pan_x and pan_y towards the cursor
-        float move_speed = 0.005f; // Slow walk speed
-        float target_pan_x = dx * 4.0f; // Max reach on screen
-        float target_pan_y = -dy * 3.0f; // Invert Y for OpenGL
+        float move_speed = 0.05f; // Faster walk speed
+        float target_pan_x = dx * 10.0f; // Max reach on screen
+        float target_pan_y = -dy * 10.0f; // Invert Y for OpenGL
         
-        // Only move if mouse is somewhat far from center to avoid jitter
-        if (fabs(dx) > 0.1f || fabs(dy) > 0.1f) {
-            aion_avatar_pan_x += (target_pan_x - aion_avatar_pan_x) * move_speed;
-            aion_avatar_pan_y += (target_pan_y - aion_avatar_pan_y) * move_speed;
-        }
+        // Always move towards the cursor, even if close, to ensure she centers back
+        aion_avatar_pan_x += (target_pan_x - aion_avatar_pan_x) * move_speed;
+        aion_avatar_pan_y += (target_pan_y - aion_avatar_pan_y) * move_speed;
     }
     
     // Check if speaking
