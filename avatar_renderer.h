@@ -274,8 +274,6 @@ void draw_a3d() {
     
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    float aspect = (float)global_screen_w / (float)global_screen_h;
-    float fov = 45.0f * (3.14159f / 180.0f);
     float zNear = 0.1f;
     float zFar = 1000.0f;
     float fH = tanf(fov / 2.0f) * zNear;
@@ -285,19 +283,6 @@ void draw_a3d() {
     
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    
-    // Calculate AION window center in normalized screen coordinates
-    float model_center_x = aion_window_x + aion_window_w * 0.5f;
-    float model_center_y = aion_window_y + 30 + draw_h * 0.5f;
-    float nx = (model_center_x / (float)global_screen_w) * 2.0f - 1.0f;
-    float ny = 1.0f - (model_center_y / (float)global_screen_h) * 2.0f;
-    
-    // Frustum dimensions at Z = -3.0f
-    float half_h_at_z3 = tanf(fov / 2.0f) * 3.0f;
-    float half_w_at_z3 = half_h_at_z3 * aspect;
-    
-    float baseline_x = nx * half_w_at_z3;
-    float baseline_y = ny * half_h_at_z3;
     
     // Camera Transform (Anchored to AION window, plus free panning)
     // We adjust Y by -0.75f to center the model's feet roughly at the bottom of the virtual box
