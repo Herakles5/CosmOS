@@ -29,6 +29,44 @@ extern "C" uint8_t  aion_switch_avatar = 0;
 extern "C" int      aion_current_avatar_idx = 0;
 extern "C" int      aion_total_models = 0;
 
+extern "C" void aion_save_config(int idx) {
+    char path[256];
+    snprintf(path, 256, "/opt/meinos/avatar_config_%d.bin", idx);
+    FILE* f = fopen(path, "wb");
+    if (f) {
+        fwrite(&aion_avatar_rot_x, sizeof(float), 1, f);
+        fwrite(&aion_avatar_rot_y, sizeof(float), 1, f);
+        fwrite(&aion_avatar_rot_z, sizeof(float), 1, f);
+        fwrite(&aion_avatar_pan_x, sizeof(float), 1, f);
+        fwrite(&aion_avatar_pan_y, sizeof(float), 1, f);
+        fwrite(&aion_avatar_zoom, sizeof(float), 1, f);
+        fclose(f);
+    }
+}
+
+extern "C" void aion_load_config(int idx) {
+    char path[256];
+    snprintf(path, 256, "/opt/meinos/avatar_config_%d.bin", idx);
+    FILE* f = fopen(path, "rb");
+    if (f) {
+        fread(&aion_avatar_rot_x, sizeof(float), 1, f);
+        fread(&aion_avatar_rot_y, sizeof(float), 1, f);
+        fread(&aion_avatar_rot_z, sizeof(float), 1, f);
+        fread(&aion_avatar_pan_x, sizeof(float), 1, f);
+        fread(&aion_avatar_pan_y, sizeof(float), 1, f);
+        fread(&aion_avatar_zoom, sizeof(float), 1, f);
+        fclose(f);
+    } else {
+        // Defaults
+        aion_avatar_rot_x = 0.0f;
+        aion_avatar_rot_y = 0.0f;
+        aion_avatar_rot_z = 0.0f;
+        aion_avatar_pan_x = 0.0f;
+        aion_avatar_pan_y = 0.0f;
+        aion_avatar_zoom = 1.0f;
+    }
+}
+
 void load_a3d(const char* path) {
     global_avatar.load_glb(path);
     if (global_avatar.is_loaded()) {
@@ -44,6 +82,7 @@ void draw_a3d() {
         char path[256];
         snprintf(path, 256, "/opt/meinos/model_%d.glb", aion_current_avatar_idx);
         load_a3d(path);
+        aion_load_config(aion_current_avatar_idx);
     }
 
     if (!global_avatar.is_loaded() || !aion_window_open || !aion_use_3d_avatar) return;
@@ -102,11 +141,13 @@ void draw_a3d() {
     glRotatef(aion_avatar_rot_x, 1.0f, 0.0f, 0.0f);
     glRotatef(aion_avatar_rot_y, 0.0f, 1.0f, 0.0f);
     glRotatef(aion_avatar_rot_z, 0.0f, 0.0f, 1.0f);
-    glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
     
-    // Apply model's auto-centering and scaling
+    // Apply model's auto-centering and scaling (applied AFTER Z-to-Y fix)
     glScalef(global_avatar.auto_scale, global_avatar.auto_scale, global_avatar.auto_scale);
     glTranslatef(global_avatar.center_offset.x, global_avatar.center_offset.y, global_avatar.center_offset.z);
+    
+    // Fix Z-up to Y-up (applied FIRST to raw vertices)
+    glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
     
     // Draw the GLB model
     global_avatar.draw();
