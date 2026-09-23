@@ -76,6 +76,12 @@ void load_a3d(const char* path) {
     }
 }
 
+// Mouse-follow state
+static float aion_follow_rot_x = 0.0f;
+static float aion_follow_rot_y = 0.0f;
+static bool  aion_mouse_dragging = false;
+static uint64_t aion_drag_release_time = 0;
+
 void draw_a3d() {
     if (aion_switch_avatar) {
         aion_switch_avatar = 0;
@@ -94,6 +100,49 @@ void draw_a3d() {
     
     extern int global_screen_w;
     extern int global_screen_h;
+    extern int mouse_x;
+    extern int mouse_y;
+    extern bool mouse_down;
+    
+    // --- Smooth Mouse Follow ---
+    // Calculate center of the 3D viewport on screen
+    float model_center_x = aion_window_x + aion_window_w * 0.5f;
+    float model_center_y = aion_window_y + 30 + (aion_window_h - 220 - 30) * 0.5f;
+    
+    // Vector from model center to mouse cursor (normalized to -1..1 range)
+    float dx = ((float)mouse_x - model_center_x) / (float)global_screen_w * 2.0f;
+    float dy = ((float)mouse_y - model_center_y) / (float)global_screen_h * 2.0f;
+    
+    // Clamp to reasonable range
+    if (dx < -1.0f) dx = -1.0f; if (dx > 1.0f) dx = 1.0f;
+    if (dy < -1.0f) dy = -1.0f; if (dy > 1.0f) dy = 1.0f;
+    
+    // Target rotation angles (max ±30 degrees follow)
+    float target_rot_y = dx * 30.0f;
+    float target_rot_x = dy * 20.0f;
+    
+    // Check if user is manually dragging (override follow)
+    if (mouse_down && mouse_x > (int)aion_window_x && mouse_x < (int)(aion_window_x + aion_window_w) &&
+        mouse_y > (int)(aion_window_y + 30) && mouse_y < (int)(aion_window_y + aion_window_h - 220)) {
+        aion_mouse_dragging = true;
+    } else if (!mouse_down && aion_mouse_dragging) {
+        aion_mouse_dragging = false;
+        aion_drag_release_time = 120; // Wait ~2 seconds before re-engaging follow
+    }
+    
+    // Countdown after drag release
+    if (aion_drag_release_time > 0) aion_drag_release_time--;
+    
+    // Smooth follow (only when not manually dragging and cooldown expired)
+    float lerp_speed = 0.02f; // Very smooth, slow follow
+    if (!aion_mouse_dragging && aion_drag_release_time == 0) {
+        aion_follow_rot_y += (target_rot_y - aion_follow_rot_y) * lerp_speed;
+        aion_follow_rot_x += (target_rot_x - aion_follow_rot_x) * lerp_speed;
+    }
+    
+    // Combine: manual rotation + mouse follow
+    float final_rot_x = aion_avatar_rot_x + aion_follow_rot_x;
+    float final_rot_y = aion_avatar_rot_y + aion_follow_rot_y;
     
     // SAVE entire OpenGL state
     glPushAttrib(GL_ALL_ATTRIB_BITS);
@@ -102,10 +151,10 @@ void draw_a3d() {
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     
-    // 3D Projection Setup inside the AION NEXUS window
+    // 3D Projection Setup - NO scissor so model can extend beyond window
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_LIGHTING);
-    glEnable(GL_SCISSOR_TEST);
+    glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     
@@ -114,7 +163,7 @@ void draw_a3d() {
     if (draw_h < 1) draw_h = 1;
     int scissor_y = global_screen_h - (aion_window_y + aion_window_h - 220);
     
-    glScissor(aion_window_x, scissor_y, aion_window_w, draw_h);
+    // Viewport still defines the perspective center, but no clipping
     glViewport(aion_window_x, scissor_y, aion_window_w, draw_h);
     
     glClear(GL_DEPTH_BUFFER_BIT);
@@ -133,13 +182,11 @@ void draw_a3d() {
     glLoadIdentity();
     
     // Camera Transform (center of the screen)
-    // The auto_scale normalizes model height to 1.5 units, with feet at Y=0.
-    // So we translate Y by -0.75 to center it vertically.
     glTranslatef(0.0f + aion_avatar_pan_x, -0.75f + aion_avatar_pan_y, -3.0f * (1.0f / aion_avatar_zoom));
     
-    // Apply User Rotations
-    glRotatef(aion_avatar_rot_x, 1.0f, 0.0f, 0.0f);
-    glRotatef(aion_avatar_rot_y, 0.0f, 1.0f, 0.0f);
+    // Apply combined rotations (manual + mouse follow)
+    glRotatef(final_rot_x, 1.0f, 0.0f, 0.0f);
+    glRotatef(final_rot_y, 0.0f, 1.0f, 0.0f);
     glRotatef(aion_avatar_rot_z, 0.0f, 0.0f, 1.0f);
     
     // Apply model's auto-centering and scaling (applied AFTER Z-to-Y fix)
@@ -160,7 +207,6 @@ void draw_a3d() {
     glPopAttrib();
     
     // EXPLICIT RESET of all critical state for safety
-    // (some GL drivers don't restore everything with glPopAttrib)
     glViewport(0, 0, global_screen_w, global_screen_h);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_SCISSOR_TEST);
@@ -176,3 +222,4 @@ void draw_a3d() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 }
+
