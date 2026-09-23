@@ -57,6 +57,17 @@ public:
     vec3 center_offset;
     mat4 root_transform;
 
+    // Procedural animation states
+    bool is_waving_left = false;
+    bool is_waving_right = false;
+    float wave_time = 0.0f;
+    bool is_peace_sign = false;
+    float peace_sign_weight = 0.0f;
+
+    void apply_procedural_animations(float delta_time);
+    void add_procedural_rotation(int bone_idx, float ax, float ay, float az, float angle);
+    void recompute_global_matrices();
+
     bool is_loaded() const { return loaded; }
 
     int find_bone(const char* name);

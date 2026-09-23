@@ -5,6 +5,22 @@
 #include <stdio.h>
 #include <string.h>
 #include "stb_image.h"
+#include <math.h>
+
+static quat quat_from_axis_angle(vec3 axis, float angle) {
+    float half_angle = angle * 0.5f;
+    float s = sinf(half_angle);
+    return quat(axis.x * s, axis.y * s, axis.z * s, cosf(half_angle));
+}
+
+static quat quat_mul(const quat& q1, const quat& q2) {
+    return quat(
+        q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y,
+        q1.w * q2.y - q1.x * q2.z + q1.y * q2.w + q1.z * q2.x,
+        q1.w * q2.z + q1.x * q2.y - q1.y * q2.x + q1.z * q2.w,
+        q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z
+    );
+}
 
 SkeletalAvatar::SkeletalAvatar() : loaded(false), current_time(0), max_time(0), gltf_data(nullptr) {}
 
@@ -398,6 +414,9 @@ void SkeletalAvatar::update(float delta_time) {
         }
     }
     
+    // Apply procedural animations (waving, peace sign)
+    apply_procedural_animations(delta_time);
+    
     // Update global matrices
     for (int i = 0; i < (int)bones.size(); ++i) {
         if (bones[i].parent_index == -1) {
@@ -535,4 +554,85 @@ void SkeletalAvatar::draw() {
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
     glDisableClientState(GL_VERTEX_ARRAY);
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void SkeletalAvatar::apply_procedural_animations(float delta_time) {
+    if (is_waving_left || is_waving_right) {
+        wave_time += delta_time * 6.0f;
+    } else {
+        if (wave_time > 0) {
+            wave_time -= delta_time * 2.0f;
+            if (wave_time < 0) wave_time = 0;
+        }
+    }
+    
+    if (is_peace_sign) {
+        peace_sign_weight += delta_time * 4.0f;
+        if (peace_sign_weight > 1.0f) peace_sign_weight = 1.0f;
+    } else {
+        peace_sign_weight -= delta_time * 4.0f;
+        if (peace_sign_weight < 0.0f) peace_sign_weight = 0.0f;
+    }
+    
+    float wave_blend = wave_time > 1.0f ? 1.0f : wave_time;
+
+    // Wave Left
+    if (is_waving_left || wave_blend > 0) {
+        int b_arm = find_bone("arm_stretch.l_041");
+        int b_forearm = find_bone("forearm_stretch.l_042");
+        if (b_arm != -1 && b_forearm != -1) {
+            quat q_arm = quat_from_axis_angle(vec3(0,0,1), 1.2f); 
+            quat q_forearm = quat_from_axis_angle(vec3(1,0,0), sinf(wave_time) * 0.6f);
+            bones[b_arm].local_r = quat_slerp(bones[b_arm].local_r, quat_mul(bones[b_arm].local_r, q_arm), wave_blend * (is_waving_left ? 1.0f : 0.0f));
+            bones[b_forearm].local_r = quat_slerp(bones[b_forearm].local_r, quat_mul(bones[b_forearm].local_r, q_forearm), wave_blend * (is_waving_left ? 1.0f : 0.0f));
+        }
+    }
+
+    // Wave Right
+    if (is_waving_right || wave_blend > 0) {
+        int b_arm = find_bone("arm_stretch.r_020");
+        int b_forearm = find_bone("forearm_stretch.r_021");
+        if (b_arm != -1 && b_forearm != -1) {
+            quat q_arm = quat_from_axis_angle(vec3(0,0,-1), 1.2f); 
+            quat q_forearm = quat_from_axis_angle(vec3(1,0,0), sinf(wave_time) * 0.6f);
+            bones[b_arm].local_r = quat_slerp(bones[b_arm].local_r, quat_mul(bones[b_arm].local_r, q_arm), wave_blend * (is_waving_right ? 1.0f : 0.0f));
+            bones[b_forearm].local_r = quat_slerp(bones[b_forearm].local_r, quat_mul(bones[b_forearm].local_r, q_forearm), wave_blend * (is_waving_right ? 1.0f : 0.0f));
+        }
+    }
+    
+    // Peace sign (curl ring, pinky, thumb)
+    if (peace_sign_weight > 0) {
+        const char* curl_bones[] = {
+            "c_pinky1.r_026", "c_pinky2.r_027", "c_pinky3.r_028",
+            "c_ring1.r_029", "c_ring2.r_030", "c_ring3.r_031",
+            "c_thumb1.r_023", "c_thumb2.r_024", "c_thumb3.r_025",
+            "c_pinky1.l_047", "c_pinky2.l_048", "c_pinky3.l_049",
+            "c_ring1.l_050", "c_ring2.l_051", "c_ring3.l_052",
+            "c_thumb1.l_044", "c_thumb2.l_045", "c_thumb3.l_046"
+        };
+        for (int i=0; i<18; i++) {
+            int b = find_bone(curl_bones[i]);
+            if (b != -1) {
+                quat q_curl = quat_from_axis_angle(vec3(0,0,1), 1.2f); 
+                bones[b].local_r = quat_slerp(bones[b].local_r, quat_mul(bones[b].local_r, q_curl), peace_sign_weight);
+            }
+        }
+    }
+    // End of apply_procedural_animations
+}
+
+void SkeletalAvatar::add_procedural_rotation(int bone_idx, float ax, float ay, float az, float angle) {
+    if (bone_idx >= 0 && bone_idx < (int)bones.size()) {
+        quat rot = quat_from_axis_angle(vec3(ax, ay, az), angle);
+        bones[bone_idx].local_r = quat_mul(bones[bone_idx].local_r, rot);
+    }
+}
+
+void SkeletalAvatar::recompute_global_matrices() {
+    mat4 root_transform = mat4_identity();
+    for (int i = 0; i < (int)bones.size(); ++i) {
+        if (bones[i].parent_index == -1) {
+            update_hierarchy(i, root_transform);
+        }
+    }
 }

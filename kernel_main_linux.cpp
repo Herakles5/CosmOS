@@ -9108,8 +9108,8 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     bool over_aion_window = mouse_y > wy + 30 && mouse_y < wy + wh - 220 && mouse_x > wx && mouse_x < wx + ww;
                     bool over_avatar_frame = mouse_x > aion_avatar_screen_x - 150 && mouse_x < aion_avatar_screen_x + 150 && 
                                              mouse_y > aion_avatar_screen_y - 400 && mouse_y < aion_avatar_screen_y + 100;
-                                             
-                    if (!blocked && (over_aion_window || over_avatar_frame)) {
+                    extern bool aion_mouse_dragging;
+                    if (!blocked && (over_aion_window || over_avatar_frame || aion_mouse_dragging)) {
                         extern bool mouse_right_down;
                         extern int mouse_wheel;
                         extern bool mouse_down;

@@ -119,7 +119,6 @@ void draw_a3d() {
     // Animation Speed relative to Bass / Frequency
     float speed = 0.5f + (linux_current_freq * 0.02f);
     global_avatar.update(0.016f * speed);
-    global_avatar.skin();
     
     extern int global_screen_w;
     extern int global_screen_h;
@@ -170,9 +169,10 @@ void draw_a3d() {
     bool over_avatar_frame = mouse_x > (uint32_t)(aion_avatar_screen_x - 150) && mouse_x < (uint32_t)(aion_avatar_screen_x + 150) &&
                              mouse_y > (uint32_t)(aion_avatar_screen_y - 400) && mouse_y < (uint32_t)(aion_avatar_screen_y + 100);
                              
-    if (mouse_down && (over_aion_window || over_avatar_frame)) {
+    extern bool mouse_right_down;
+    if ((mouse_down || mouse_right_down) && (over_aion_window || over_avatar_frame)) {
         aion_mouse_dragging = true;
-    } else if (!mouse_down && aion_mouse_dragging) {
+    } else if (!mouse_down && !mouse_right_down && aion_mouse_dragging) {
         aion_mouse_dragging = false;
         aion_drag_release_time = 120; // Wait ~2 seconds before re-engaging follow
     }
@@ -235,66 +235,28 @@ void draw_a3d() {
     }
     
     if (spine_idx >= 0) {
-        Bone* spine = global_avatar.get_bone(spine_idx);
-        if (spine) {
-            // Very slow breathing curve
-            float breath = sinf(anim_time * 2.0f) * 0.05f;
-            // Apply slight rotation on X axis
-            spine->local_r = quat(breath, 0, 0, 1.0f);
-            // Normalize quaternion
-            float mag = sqrtf(spine->local_r.x*spine->local_r.x + spine->local_r.w*spine->local_r.w);
-            spine->local_r.x /= mag;
-            spine->local_r.w /= mag;
-        }
+        float breath = sinf(anim_time * 2.0f) * 0.05f;
+        global_avatar.add_procedural_rotation(spine_idx, 1.0f, 0.0f, 0.0f, breath * 2.0f);
     }
     
-    if (jaw_idx >= 0) {
-        Bone* jaw = global_avatar.get_bone(jaw_idx);
-        if (jaw) {
-            if (is_speaking) {
-                // Fast, slightly random lip sync
-                float talk = (sinf(anim_time * 15.0f) + sinf(anim_time * 22.0f) * 0.5f) * 0.15f + 0.15f;
-                jaw->local_r = quat(talk, 0, 0, 1.0f);
-            } else {
-                jaw->local_r = quat(0, 0, 0, 1.0f); // Closed
-            }
-            // Normalize
-            float mag = sqrtf(jaw->local_r.x*jaw->local_r.x + jaw->local_r.w*jaw->local_r.w);
-            jaw->local_r.x /= mag;
-            jaw->local_r.w /= mag;
-        }
+    if (jaw_idx >= 0 && is_speaking) {
+        float talk = (sinf(anim_time * 15.0f) + sinf(anim_time * 22.0f) * 0.5f) * 0.15f + 0.15f;
+        global_avatar.add_procedural_rotation(jaw_idx, 1.0f, 0.0f, 0.0f, talk * 2.0f);
     }
     
-    if (arm_r_idx >= 0) {
-        Bone* arm = global_avatar.get_bone(arm_r_idx);
-        if (arm) {
-            if (is_speaking) {
-                float wave = sinf(anim_time * 3.0f) * 0.3f;
-                arm->local_r = quat(0, 0, wave, 1.0f);
-            } else {
-                arm->local_r = quat(0, 0, 0, 1.0f);
-            }
-            float mag = sqrtf(arm->local_r.z*arm->local_r.z + arm->local_r.w*arm->local_r.w);
-            arm->local_r.z /= mag;
-            arm->local_r.w /= mag;
-        }
+    if (arm_r_idx >= 0 && is_speaking) {
+        float wave = sinf(anim_time * 3.0f) * 0.3f;
+        global_avatar.add_procedural_rotation(arm_r_idx, 0.0f, 0.0f, 1.0f, wave * 2.0f);
     }
     
-    if (arm_l_idx >= 0) {
-        Bone* arm = global_avatar.get_bone(arm_l_idx);
-        if (arm) {
-            if (is_speaking) {
-                float wave = sinf(anim_time * 4.0f + 1.0f) * -0.3f;
-                arm->local_r = quat(0, 0, wave, 1.0f);
-            } else {
-                arm->local_r = quat(0, 0, 0, 1.0f);
-            }
-            float mag = sqrtf(arm->local_r.z*arm->local_r.z + arm->local_r.w*arm->local_r.w);
-            arm->local_r.z /= mag;
-            arm->local_r.w /= mag;
-        }
+    if (arm_l_idx >= 0 && is_speaking) {
+        float wave = sinf(anim_time * 4.0f + 1.0f) * -0.3f;
+        global_avatar.add_procedural_rotation(arm_l_idx, 0.0f, 0.0f, 1.0f, wave * 2.0f);
     }
-
+    
+    global_avatar.recompute_global_matrices();
+    global_avatar.skin();
+    
     // Combine: manual rotation + mouse follow
     float final_rot_x = aion_avatar_rot_x + aion_follow_rot_x;
     float final_rot_y = aion_avatar_rot_y + aion_follow_rot_y;
