@@ -59,6 +59,9 @@ public:
 
     bool is_loaded() const { return loaded; }
 
+    int find_bone(const char* name);
+    Bone* get_bone(int index);
+
 private:
     bool loaded;
     std::vector<AnimVertex> base_vertices;
@@ -80,8 +83,6 @@ private:
     void* gltf_data; 
     
     void update_hierarchy(int bone_idx, const mat4& parent_mat);
-    int find_bone(const char* name);
-    Bone* get_bone(int index);
 };
 
 #endif

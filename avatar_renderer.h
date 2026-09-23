@@ -100,8 +100,8 @@ void draw_a3d() {
     
     extern int global_screen_w;
     extern int global_screen_h;
-    extern int mouse_x;
-    extern int mouse_y;
+    extern uint32_t mouse_x;
+    extern uint32_t mouse_y;
     extern bool mouse_down;
     
     // --- Smooth Mouse Follow ---
@@ -122,8 +122,8 @@ void draw_a3d() {
     float target_rot_x = dy * 20.0f;
     
     // Check if user is manually dragging (override follow)
-    if (mouse_down && mouse_x > (int)aion_window_x && mouse_x < (int)(aion_window_x + aion_window_w) &&
-        mouse_y > (int)(aion_window_y + 30) && mouse_y < (int)(aion_window_y + aion_window_h - 220)) {
+    if (mouse_down && mouse_x > (uint32_t)aion_window_x && mouse_x < (uint32_t)(aion_window_x + aion_window_w) &&
+        mouse_y > (uint32_t)(aion_window_y + 30) && mouse_y < (uint32_t)(aion_window_y + aion_window_h - 220)) {
         aion_mouse_dragging = true;
     } else if (!mouse_down && aion_mouse_dragging) {
         aion_mouse_dragging = false;
@@ -145,7 +145,6 @@ void draw_a3d() {
         float target_pan_x = dx * 10.0f; // Max reach on screen
         float target_pan_y = -dy * 10.0f; // Invert Y for OpenGL
         
-        // Always move towards the cursor, even if close, to ensure she centers back
         aion_avatar_pan_x += (target_pan_x - aion_avatar_pan_x) * move_speed;
         aion_avatar_pan_y += (target_pan_y - aion_avatar_pan_y) * move_speed;
     }
