@@ -30,6 +30,9 @@ int arm_r_idx = -2;
 int arm_l_idx = -2;
 float anim_time = 0.0f;
 
+float aion_manual_pan_x = 0.0f;
+float aion_manual_pan_y = 0.0f;
+
 #include "avatar_anim.h"
 
 SkeletalAvatar global_avatar;
@@ -97,14 +100,7 @@ void draw_a3d() {
         snprintf(path, 256, "/opt/meinos/model_%d.glb", aion_current_avatar_idx);
         load_a3d(path);
         aion_load_config(aion_current_avatar_idx);
-        
-        // Reset pan and rotation on switch so it spawns in the center of its window
-        aion_avatar_pan_x = 0.0f;
-        aion_avatar_pan_y = 0.0f;
-        aion_avatar_rot_x = 0.0f;
-        aion_avatar_rot_y = 0.0f;
-        aion_manual_pan_x = 0.0f;
-        aion_manual_pan_y = 0.0f;
+        // We do NOT reset pan/rot here, so that loaded config stays!
         
         // Reset bone indices so it searches for the correct bones in the new model
         jaw_idx = -2;
@@ -151,8 +147,8 @@ void draw_a3d() {
     float baseline_y = ny * half_h_at_z3;
 
     // Calculate avatar screen coordinates for her 'invisible window frame'
-    float current_world_x = baseline_x + aion_avatar_pan_x + aion_manual_pan_x;
-    float current_world_y = baseline_y - 0.75f + aion_avatar_pan_y + aion_manual_pan_y;
+    float current_world_x = baseline_x + aion_avatar_pan_x;
+    float current_world_y = baseline_y - 0.75f + aion_avatar_pan_y;
     float current_nx = current_world_x / half_w_at_z3;
     float current_ny = current_world_y / half_h_at_z3;
     aion_avatar_screen_x = (int)((current_nx + 1.0f) * 0.5f * global_screen_w);
@@ -296,7 +292,7 @@ void draw_a3d() {
     
     // Camera Transform (Anchored to AION window, plus free panning)
     // We adjust Y by -0.75f to center the model's feet roughly at the bottom of the virtual box
-    glTranslatef(baseline_x + aion_avatar_pan_x + aion_manual_pan_x, baseline_y - 0.75f + aion_avatar_pan_y + aion_manual_pan_y, -3.0f * (1.0f / aion_avatar_zoom));
+    glTranslatef(baseline_x + aion_avatar_pan_x, baseline_y - 0.75f + aion_avatar_pan_y, -3.0f * (1.0f / aion_avatar_zoom));
     
     // Apply combined rotations (manual + mouse follow)
     glRotatef(final_rot_x, 1.0f, 0.0f, 0.0f);
