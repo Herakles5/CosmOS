@@ -20,10 +20,14 @@ float aion_avatar_rot_y = 0.0f;
 float aion_avatar_rot_z = 0.0f;
 float aion_avatar_pan_x = 0.0f;
 float aion_avatar_pan_y = 0.0f;
+float aion_manual_pan_x = 0.0f;
+float aion_manual_pan_y = 0.0f;
 int aion_avatar_screen_x = 0;
 int aion_avatar_screen_y = 0;
 int jaw_idx = -2;
 int spine_idx = -2;
+int arm_r_idx = -2;
+int arm_l_idx = -2;
 float anim_time = 0.0f;
 
 #include "avatar_anim.h"
@@ -100,10 +104,14 @@ void draw_a3d() {
         aion_avatar_pan_y = 0.0f;
         aion_avatar_rot_x = 0.0f;
         aion_avatar_rot_y = 0.0f;
+        aion_manual_pan_x = 0.0f;
+        aion_manual_pan_y = 0.0f;
         
         // Reset bone indices so it searches for the correct bones in the new model
         jaw_idx = -2;
         spine_idx = -2;
+        arm_l_idx = -2;
+        arm_r_idx = -2;
     }
 
     if (!global_avatar.is_loaded() || !aion_window_open || !aion_use_3d_avatar) return;
@@ -145,8 +153,8 @@ void draw_a3d() {
     float baseline_y = ny * half_h_at_z3;
 
     // Calculate avatar screen coordinates for her 'invisible window frame'
-    float current_world_x = baseline_x + aion_avatar_pan_x;
-    float current_world_y = baseline_y - 0.75f + aion_avatar_pan_y;
+    float current_world_x = baseline_x + aion_avatar_pan_x + aion_manual_pan_x;
+    float current_world_y = baseline_y - 0.75f + aion_avatar_pan_y + aion_manual_pan_y;
     float current_nx = current_world_x / half_w_at_z3;
     float current_ny = current_world_y / half_h_at_z3;
     aion_avatar_screen_x = (int)((current_nx + 1.0f) * 0.5f * global_screen_w);
@@ -208,6 +216,7 @@ void draw_a3d() {
         jaw_idx = global_avatar.find_bone("Jaw");
         if (jaw_idx == -1) jaw_idx = global_avatar.find_bone("jaw");
         if (jaw_idx == -1) jaw_idx = global_avatar.find_bone("mixamorig:Jaw");
+        if (jaw_idx == -1) jaw_idx = global_avatar.find_bone("Head_");
         if (jaw_idx == -1) jaw_idx = global_avatar.find_bone("Head");
     }
     if (spine_idx == -2) {
@@ -215,6 +224,14 @@ void draw_a3d() {
         if (spine_idx == -1) spine_idx = global_avatar.find_bone("spine");
         if (spine_idx == -1) spine_idx = global_avatar.find_bone("mixamorig:Spine");
         if (spine_idx == -1) spine_idx = global_avatar.find_bone("Chest");
+    }
+    if (arm_r_idx == -2) {
+        arm_r_idx = global_avatar.find_bone("RightArm");
+        if (arm_r_idx == -1) arm_r_idx = global_avatar.find_bone("mixamorig:RightArm");
+    }
+    if (arm_l_idx == -2) {
+        arm_l_idx = global_avatar.find_bone("LeftArm");
+        if (arm_l_idx == -1) arm_l_idx = global_avatar.find_bone("mixamorig:LeftArm");
     }
     
     if (spine_idx >= 0) {
@@ -245,6 +262,36 @@ void draw_a3d() {
             float mag = sqrtf(jaw->local_r.x*jaw->local_r.x + jaw->local_r.w*jaw->local_r.w);
             jaw->local_r.x /= mag;
             jaw->local_r.w /= mag;
+        }
+    }
+    
+    if (arm_r_idx >= 0) {
+        Bone* arm = global_avatar.get_bone(arm_r_idx);
+        if (arm) {
+            if (is_speaking) {
+                float wave = sinf(anim_time * 3.0f) * 0.3f;
+                arm->local_r = quat(0, 0, wave, 1.0f);
+            } else {
+                arm->local_r = quat(0, 0, 0, 1.0f);
+            }
+            float mag = sqrtf(arm->local_r.z*arm->local_r.z + arm->local_r.w*arm->local_r.w);
+            arm->local_r.z /= mag;
+            arm->local_r.w /= mag;
+        }
+    }
+    
+    if (arm_l_idx >= 0) {
+        Bone* arm = global_avatar.get_bone(arm_l_idx);
+        if (arm) {
+            if (is_speaking) {
+                float wave = sinf(anim_time * 4.0f + 1.0f) * -0.3f;
+                arm->local_r = quat(0, 0, wave, 1.0f);
+            } else {
+                arm->local_r = quat(0, 0, 0, 1.0f);
+            }
+            float mag = sqrtf(arm->local_r.z*arm->local_r.z + arm->local_r.w*arm->local_r.w);
+            arm->local_r.z /= mag;
+            arm->local_r.w /= mag;
         }
     }
 
@@ -288,7 +335,7 @@ void draw_a3d() {
     
     // Camera Transform (Anchored to AION window, plus free panning)
     // We adjust Y by -0.75f to center the model's feet roughly at the bottom of the virtual box
-    glTranslatef(baseline_x + aion_avatar_pan_x, baseline_y - 0.75f + aion_avatar_pan_y, -3.0f * (1.0f / aion_avatar_zoom));
+    glTranslatef(baseline_x + aion_avatar_pan_x + aion_manual_pan_x, baseline_y - 0.75f + aion_avatar_pan_y + aion_manual_pan_y, -3.0f * (1.0f / aion_avatar_zoom));
     
     // Apply combined rotations (manual + mouse follow)
     glRotatef(final_rot_x, 1.0f, 0.0f, 0.0f);
