@@ -445,6 +445,22 @@ void SkeletalAvatar::skin() {
     }
 }
 
+int SkeletalAvatar::find_bone(const char* name) {
+    for (size_t i = 0; i < bones.size(); ++i) {
+        if (bones[i].name.find(name) != std::string::npos) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+Bone* SkeletalAvatar::get_bone(int index) {
+    if (index >= 0 && index < (int)bones.size()) {
+        return &bones[index];
+    }
+    return nullptr;
+}
+
 void SkeletalAvatar::draw() {
     if (!loaded) return;
     

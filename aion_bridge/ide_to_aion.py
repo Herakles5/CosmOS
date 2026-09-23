@@ -10,7 +10,7 @@ if len(sys.argv) < 2:
 
 conversation_id = sys.argv[1]
 transcript_path = f"/root/.gemini/antigravity-ide/brain/{conversation_id}/.system_generated/logs/transcript.jsonl"
-out_path = "/tmp/aion_ide_out.txt"
+out_path = "/tmp/aion_direct.txt"
 
 def strip_markdown(text):
     # Very basic markdown stripping
@@ -25,7 +25,6 @@ def strip_markdown(text):
 
 def get_aion_lang():
     """Read the aion_lang setting from the shared config file, fallback to checking /tmp"""
-    # Check for the language setting file written by aion_app.cpp
     try:
         with open('/tmp/aion_lang.txt', 'r') as f:
             lang = f.read().strip()
@@ -54,7 +53,7 @@ def speak_text(text):
         sf.write(text)
     
     print(f"Playing IDE TTS (lang={lang})...")
-    os.system(f'nice -n 19 /root/coding/AI_Desktop/piper/piper --model {piper_model} --output_file /tmp/ide_speech.wav < /tmp/ide_speech.txt && pw-play /tmp/ide_speech.wav')
+    os.system(f'nice -n 19 /root/coding/AI_Desktop/piper/piper --model {piper_model} --output_file /tmp/ide_speech.wav < /tmp/ide_speech.txt && touch /tmp/aion_speaking && pw-play /tmp/ide_speech.wav; rm -f /tmp/aion_speaking')
 
 last_size = 0
 if os.path.exists(transcript_path):

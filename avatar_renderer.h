@@ -133,13 +133,83 @@ void draw_a3d() {
     // Countdown after drag release
     if (aion_drag_release_time > 0) aion_drag_release_time--;
     
-    // Smooth follow (only when not manually dragging and cooldown expired)
-    float lerp_speed = 0.015f; // Slower, more elegant follow
+    // Smooth follow (rotation)
+    float lerp_speed = 0.015f;
     if (!aion_mouse_dragging && aion_drag_release_time == 0) {
         aion_follow_rot_y += (target_rot_y - aion_follow_rot_y) * lerp_speed;
         aion_follow_rot_x += (target_rot_x - aion_follow_rot_x) * lerp_speed;
+        
+        // --- Free Screen Movement (Translation) ---
+        // Move pan_x and pan_y towards the cursor
+        float move_speed = 0.005f; // Slow walk speed
+        float target_pan_x = dx * 4.0f; // Max reach on screen
+        float target_pan_y = -dy * 3.0f; // Invert Y for OpenGL
+        
+        // Only move if mouse is somewhat far from center to avoid jitter
+        if (fabs(dx) > 0.1f || fabs(dy) > 0.1f) {
+            aion_avatar_pan_x += (target_pan_x - aion_avatar_pan_x) * move_speed;
+            aion_avatar_pan_y += (target_pan_y - aion_avatar_pan_y) * move_speed;
+        }
     }
     
+    // Check if speaking
+    FILE* sf = fopen("/tmp/aion_speaking", "r");
+    bool is_speaking = false;
+    if (sf) {
+        is_speaking = true;
+        fclose(sf);
+    }
+    
+    // Procedural Animations (BEFORE update)
+    static int jaw_idx = -2;
+    static int spine_idx = -2;
+    static float anim_time = 0.0f;
+    anim_time += 0.016f;
+    
+    if (jaw_idx == -2) {
+        jaw_idx = global_avatar.find_bone("Jaw");
+        if (jaw_idx == -1) jaw_idx = global_avatar.find_bone("jaw");
+        if (jaw_idx == -1) jaw_idx = global_avatar.find_bone("mixamorig:Jaw");
+        if (jaw_idx == -1) jaw_idx = global_avatar.find_bone("Head");
+    }
+    if (spine_idx == -2) {
+        spine_idx = global_avatar.find_bone("Spine");
+        if (spine_idx == -1) spine_idx = global_avatar.find_bone("spine");
+        if (spine_idx == -1) spine_idx = global_avatar.find_bone("mixamorig:Spine");
+        if (spine_idx == -1) spine_idx = global_avatar.find_bone("Chest");
+    }
+    
+    if (spine_idx >= 0) {
+        Bone* spine = global_avatar.get_bone(spine_idx);
+        if (spine) {
+            // Very slow breathing curve
+            float breath = sinf(anim_time * 2.0f) * 0.05f;
+            // Apply slight rotation on X axis
+            spine->local_r = quat(breath, 0, 0, 1.0f);
+            // Normalize quaternion
+            float mag = sqrtf(spine->local_r.x*spine->local_r.x + spine->local_r.w*spine->local_r.w);
+            spine->local_r.x /= mag;
+            spine->local_r.w /= mag;
+        }
+    }
+    
+    if (jaw_idx >= 0) {
+        Bone* jaw = global_avatar.get_bone(jaw_idx);
+        if (jaw) {
+            if (is_speaking) {
+                // Fast, slightly random lip sync
+                float talk = (sinf(anim_time * 15.0f) + sinf(anim_time * 22.0f) * 0.5f) * 0.15f + 0.15f;
+                jaw->local_r = quat(talk, 0, 0, 1.0f);
+            } else {
+                jaw->local_r = quat(0, 0, 0, 1.0f); // Closed
+            }
+            // Normalize
+            float mag = sqrtf(jaw->local_r.x*jaw->local_r.x + jaw->local_r.w*jaw->local_r.w);
+            jaw->local_r.x /= mag;
+            jaw->local_r.w /= mag;
+        }
+    }
+
     // Combine: manual rotation + mouse follow
     float final_rot_x = aion_avatar_rot_x + aion_follow_rot_x;
     float final_rot_y = aion_avatar_rot_y + aion_follow_rot_y;

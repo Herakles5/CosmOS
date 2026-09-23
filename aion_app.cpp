@@ -232,7 +232,7 @@ void UpdateAionBackground() {
         
         std::string piper_model = "/root/coding/AI_Desktop/voice.onnx";
         if (aion_lang == 1 || aion_teach_mode) piper_model = "/root/coding/AI_Desktop/de_DE-ramona-low.onnx";
-        std::string piper_cmd = "(nice -n 19 /root/coding/AI_Desktop/piper/piper --model " + piper_model + " --output_file /tmp/aion_response.wav < /tmp/aion_speech.txt && pw-play /tmp/aion_response.wav; touch /tmp/aion_speech_done) &";
+        std::string piper_cmd = "(nice -n 19 /root/coding/AI_Desktop/piper/piper --model " + piper_model + " --output_file /tmp/aion_response.wav < /tmp/aion_speech.txt && touch /tmp/aion_speaking && pw-play /tmp/aion_response.wav; rm -f /tmp/aion_speaking; touch /tmp/aion_speech_done) &";
         system(piper_cmd.c_str());
         
         is_thinking = false;
