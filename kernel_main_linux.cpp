@@ -1761,12 +1761,12 @@ extern "C" uint32_t aion_window_y = 0;
 extern "C" uint32_t aion_window_w = 0;
 extern "C" uint32_t aion_window_h = 0;
 extern "C" uint8_t  aion_window_open = 0;
-extern "C" uint8_t  aion_use_3d_avatar = 1;
+extern "C" uint8_t  aion_use_3d_avatar = 0;
 
 struct Planet { _43 ang; _43 dist; _30 name[8]; float cur_x, cur_y; float real_ang; }; 
 struct Star { _43 x, y, z, type, speed; };
-_43 win_z[20] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19};
-Window windows[20]; 
+_43 win_z[50] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49};
+Window windows[50]; 
 
 /// ==========================================
 /// BARE METAL FIX: GLOBAL DEBUG POPUP
@@ -2288,10 +2288,10 @@ void scan_pci_drives(Window* dsk_win) {
 }
 _50 focus_window(_43 id) { 
     _43 found_at = -1; 
-    _39(_43 i=0; i<20; i++) _15(win_z[i] EQ id) found_at = i; 
+    _39(_43 i=0; i<50; i++) _15(win_z[i] EQ id) found_at = i; 
     _15(found_at EQ -1) _96;
-    _39(_43 i=found_at; i<19; i++) win_z[i] = win_z[i+1]; 
-    win_z[19] = id; 
+    _39(_43 i=found_at; i<49; i++) win_z[i] = win_z[i+1]; 
+    win_z[49] = id; 
 }
 
 /// GANZ OBEN IN DER DATEI (Globaler Speicher für den Cursor)
@@ -3160,7 +3160,7 @@ extern void system_init_usb();
 extern "C" uint32_t xhci_bot_get_capacity(uint8_t slot_id);
 _50 toggle_app(_43 id) {
     Window* win = &windows[id];
-    _15(win->open AND !win->minimized AND win_z[19] EQ win->id) { win->minimized = _128; } 
+    _15(win->open AND !win->minimized AND win_z[49] EQ win->id) { win->minimized = _128; } 
     _41 { win->open = _128; win->minimized = _86; focus_window(win->id); }
 }
 
@@ -5421,7 +5421,7 @@ extern "C" WIN_ABI int meinos_GetMessageA(void* lpMsg, void* hWnd, uint32_t wMsg
     sleep_ms(5);
     if (lpMsg) memset(lpMsg, 0, 48);
     // Only check Win32 app windows (slots 16-19), not MeinOS system windows
-    for (int i = 16; i < 20; i++) {
+    for (int i = 16; i<50; i++) {
         if (windows[i].open && windows[i].msg_msg != 0) {
             if (lpMsg) {
                 *(uint64_t*)lpMsg = (uint64_t)i; // hwnd
@@ -5450,7 +5450,7 @@ extern "C" WIN_ABI int meinos_GetMessageW(void* lpMsg, void* hWnd, uint32_t wMsg
 
 extern "C" WIN_ABI int meinos_PeekMessageA(void* lpMsg, void* hWnd, uint32_t wMsgFilterMin, uint32_t wMsgFilterMax, uint32_t wRemoveMsg) {
     if (lpMsg) memset(lpMsg, 0, 48);
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i<50; i++) {
         if (windows[i].open && windows[i].msg_msg != 0) {
             if (lpMsg) {
                 *(uint64_t*)lpMsg = (uint64_t)i; // hwnd
@@ -7038,7 +7038,7 @@ extern "C" WIN_ABI uint32_t meinos_MsgWaitForMultipleObjects(uint32_t nCount, vo
     uint32_t elapsed = 0;
     while (true) {
         // 1. Check for messages first
-        for (int i = 16; i < 20; i++) {
+        for (int i = 16; i<50; i++) {
             if (windows[i].open && (windows[i].msg_msg != 0 || windows[i].needs_paint)) {
                 return nCount; // WAIT_OBJECT_0 + nCount (indicates message arrived)
             }
@@ -7690,7 +7690,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
     /// ==========================================
     /// BARE METAL FIX: FENSTER SAUBER INITIALISIEREN
     /// ==========================================
-    _39(_43 i=0; i<20; i++) { 
+    _39(_43 i=0; i<50; i++) { 
         windows[i].id = i; 
         windows[i].open = _86; 
         windows[i].minimized = _86; 
@@ -7815,7 +7815,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             if (!windows[18].open) {
                 str_cpy(windows[18].title, "AION NEXUS"); 
                 windows[18].x = 100; windows[18].y = 50; 
-                windows[18].w = 640; windows[18].h = 740; 
+                windows[18].w = 450; windows[18].h = 550; 
                 windows[18].color = 0x000000; 
                 windows[18].open = _128; 
                 windows[18].minimized = _86; 
@@ -8033,7 +8033,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 _15(sc EQ 0x44) toggle_app(7); /// F10 = SYSTEM DEBUG POPUP
 
                 /// 2. Welches Fenster ist ganz oben (Fokus)?
-                _43 fw_id = win_z[19]; 
+                _43 fw_id = win_z[49]; 
                 Window* fw = &windows[fw_id];
                 
                 _15(fw AND fw->open AND !fw->minimized) {
@@ -8230,7 +8230,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         } _41 { drag_win = -1; resize_win = -1; }
         
         _15(!mouse_handled) {
-            _39(_43 i=19; i>=0; i--) { 
+            _39(_43 i=49; i>=0; i--) { 
                 _43 k = win_z[i]; Window* win=&windows[k];
                 _15(win->open AND !win->minimized) {
                     _43 wx=(win->fullscreen?0:win->x); _43 wy=(win->fullscreen?0:win->y); _43 ww=(win->fullscreen?screen_w:win->w); _43 wh=(win->fullscreen?screen_h:win->h);
@@ -8874,7 +8874,8 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 		/// BARE METAL FIX: Modal-Status berechnen, BEVOR die Fenster gezeichnet werden!
         /// Wenn Fenster ID 2 (Save As) offen und sichtbar ist, ist der Modus aktiv.
         _44 is_modal_blocked = (windows[2].open AND !windows[2].minimized);
-        _39(_43 i=0; i<20; i++) {
+        aion_window_open = 0;
+        _39(_43 i=0; i<50; i++) {
             _43 k = win_z[i]; 
             Window* win = &windows[k];
             _15(!win->open OR win->minimized) continue;
@@ -9036,9 +9037,9 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             /// APP: AION (ID 18)
             /// =========================================================
             _15(win->id EQ 18) {
-                if (win_z[19] >= 0 && win_z[19] < 20 && windows[win_z[19]].open && !windows[win_z[19]].minimized) {
+                if (win_z[49] >= 0 && win_z[49] < 50 && windows[win_z[49]].open && !windows[win_z[49]].minimized) {
                     str_cpy(aion_system_context, "Active Window: ");
-                    str_cat(aion_system_context, windows[win_z[19]].title);
+                    str_cat(aion_system_context, windows[win_z[49]].title);
                 } else {
                     str_cpy(aion_system_context, "Active Window: Desktop");
                 }
@@ -9065,8 +9066,15 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 extern uint8_t aion_switch_avatar;
                 extern int aion_current_avatar_idx;
                 extern int aion_total_models;
+                extern float aion_avatar_rot_x;
+                extern float aion_avatar_rot_y;
+                extern float aion_avatar_rot_z;
+                extern float aion_avatar_zoom;
+                extern float aion_avatar_pan_y;
+                extern float aion_avatar_pan_x;
 
-                if (aion_use_3d_avatar && aion_total_models > 1) {
+                if (aion_use_3d_avatar && aion_total_models > 0) {
+                    // < Button (previous model)
                     DrawRoundedRect(wx + ww - 140, wy + 5, 20, 20, 4, 0x555555);
                     TextC(wx + ww - 130, wy + 8, "<", 0xFFFFFF, _128);
                     if (!blocked && mouse_just_pressed && input_cooldown == 0 && is_over_rect(mouse_x, mouse_y, wx + ww - 140, wy + 5, 20, 20)) {
@@ -9076,6 +9084,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         input_cooldown = 20;
                     }
 
+                    // > Button (next model)
                     DrawRoundedRect(wx + ww - 165, wy + 5, 20, 20, 4, 0x555555);
                     TextC(wx + ww - 155, wy + 8, ">", 0xFFFFFF, _128);
                     if (!blocked && mouse_just_pressed && input_cooldown == 0 && is_over_rect(mouse_x, mouse_y, wx + ww - 165, wy + 5, 20, 20)) {
@@ -9083,6 +9092,45 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         if (aion_current_avatar_idx >= aion_total_models) aion_current_avatar_idx = 0;
                         aion_switch_avatar = 1;
                         input_cooldown = 20;
+                    }
+
+                    // Model ID + Zoom display
+                    char model_txt[64];
+                    snprintf(model_txt, 64, "MODEL %d/%d  ZOOM:%.1f", aion_current_avatar_idx + 1, aion_total_models, aion_avatar_zoom);
+                    TextC(wx + ww - 280, wy + 8, model_txt, 0xCCCCCC, _128);
+
+                    // 3D Mouse Input (always active, no lock needed)
+                    if (!blocked && mouse_y > wy + 30 && mouse_y < wy + wh - 220 && mouse_x > wx && mouse_x < wx + ww) {
+                        extern bool mouse_right_down;
+                        extern int mouse_wheel;
+                        extern bool mouse_down;
+
+                        static int last_aion_mx = mouse_x;
+                        static int last_aion_my = mouse_y;
+                        int mdx = mouse_x - last_aion_mx;
+                        int mdy = mouse_y - last_aion_my;
+
+                        if (mouse_wheel != 0) {
+                            if (mouse_wheel > 0) aion_avatar_zoom *= 1.25f;
+                            else aion_avatar_zoom *= 0.8f;
+                            if (aion_avatar_zoom < 0.001f) aion_avatar_zoom = 0.001f;
+                            if (aion_avatar_zoom > 1000.0f) aion_avatar_zoom = 1000.0f;
+                            mouse_wheel = 0;
+                        }
+
+                        if (mouse_down && !mouse_right_down) {
+                            // Left click drag = Rotate
+                            aion_avatar_rot_y += (float)mdx * 0.5f;
+                            aion_avatar_rot_x += (float)mdy * 0.5f;
+                        }
+                        else if (mouse_right_down) {
+                            // Right click drag = Pan
+                            aion_avatar_pan_x += (float)mdx * 0.01f;
+                            aion_avatar_pan_y -= (float)mdy * 0.01f;
+                        }
+
+                        last_aion_mx = mouse_x;
+                        last_aion_my = mouse_y;
                     }
                 }
 
@@ -9217,7 +9265,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 _43 mid = wx + ww/2;
                 TextC(mid, wy + 20, "RADIO COSMOS", 0x8822AA, _128);
                 
-                _44 is_active = (win_z[19] EQ win->id);
+                _44 is_active = (win_z[49] EQ win->id);
                 
                 // --- SEARCH BAR ---
                 _43 search_y = wy + 40;
@@ -9387,7 +9435,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 _43 btn_y = wy + 45;
                 
                 /// FIX: Nur Klicks zulassen, wenn das Fenster GANZ OBEN liegt!
-                _44 is_active = (win_z[19] EQ win->id);
+                _44 is_active = (win_z[49] EQ win->id);
                 
                 /// 1. THEME & LANG TOGGLES
                 _30 lang_lbl[20], theme_lbl[30];
@@ -9688,7 +9736,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         global_boot_info->screen_width = 1280; global_boot_info->screen_height = 720; global_boot_info->framebuffer_pitch = 1280 * 4;
                         screen_w = 1280; screen_h = 720; screen_pitch = 1280 * 4;
                         v_cx = screen_w / 2; v_cy = screen_h / 2;
-                        for(int _i=0; _i<20; _i++) if(windows[_i].fullscreen) { windows[_i].w = screen_w; windows[_i].h = screen_h; }
+                        for(int _i=0; _i<50; _i++) if(windows[_i].fullscreen) { windows[_i].w = screen_w; windows[_i].h = screen_h; }
                     }
                     input_cooldown = 25; 
                 }
@@ -9701,7 +9749,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         global_boot_info->screen_width = 1920; global_boot_info->screen_height = 1080; global_boot_info->framebuffer_pitch = 1920 * 4;
                         screen_w = 1920; screen_h = 1080; screen_pitch = 1920 * 4;
                         v_cx = screen_w / 2; v_cy = screen_h / 2;
-                        for(int _i=0; _i<20; _i++) if(windows[_i].fullscreen) { windows[_i].w = screen_w; windows[_i].h = screen_h; }
+                        for(int _i=0; _i<50; _i++) if(windows[_i].fullscreen) { windows[_i].w = screen_w; windows[_i].h = screen_h; }
                     }
                     input_cooldown = 25; 
                 }
@@ -9714,7 +9762,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         global_boot_info->screen_width = 800; global_boot_info->screen_height = 600; global_boot_info->framebuffer_pitch = 800 * 4;
                         screen_w = 800; screen_h = 600; screen_pitch = 800 * 4;
                         v_cx = screen_w / 2; v_cy = screen_h / 2;
-                        for(int _i=0; _i<20; _i++) if(windows[_i].fullscreen) { windows[_i].w = screen_w; windows[_i].h = screen_h; }
+                        for(int _i=0; _i<50; _i++) if(windows[_i].fullscreen) { windows[_i].w = screen_w; windows[_i].h = screen_h; }
                     }
                     input_cooldown = 25; 
                 }
@@ -9833,7 +9881,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 DrawRoundedRect(col1, row1, bw, bh, 4, bm_col); 
                 TextC(col1+bw/2, row1+10, "AION", 0x00FF33, _128);
                 _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col1, row1, bw, bh)) {
-                    if (!windows[18].open) { str_cpy(windows[18].title, "AION NEXUS"); windows[18].x = 100; windows[18].y = 50; windows[18].w = 640; windows[18].h = 740; windows[18].color = 0x000000; windows[18].open = _128; windows[18].minimized = _86; focus_window(18); InitAionApp(); }
+                    if (!windows[18].open) { str_cpy(windows[18].title, "AION NEXUS"); windows[18].x = 100; windows[18].y = 50; windows[18].w = 450; windows[18].h = 550; windows[18].color = 0x000000; windows[18].open = _128; windows[18].minimized = _86; focus_window(18); InitAionApp(); }
                     input_cooldown = 25; windows[1].open = _86; windows[2].open = _86;
                 }
 
@@ -9997,7 +10045,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 }
                 
                 static _44 usb_scanned = _86;
-                _44 is_active = (win_z[19] EQ win->id);
+                _44 is_active = (win_z[49] EQ win->id);
                 txt_color = (win->color > 0x888888) ? 0x000000 : 0xFFFFFF;
                 uint64_t buf_mbr = (uint64_t)global_buf_mbr;
                 uint64_t buf_dir = (uint64_t)global_buf_dir;
@@ -11120,7 +11168,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             /// COSMOS NETWORK (FENSTER ID 16)
             /// ==========================================
             _15(win->id EQ 16) {
-                _44 is_active = (win_z[19] EQ win->id);
+                _44 is_active = (win_z[49] EQ win->id);
                 _43 mid = wx + ww/2;
                 static _44 init_zt = _86;
                 _15(!init_zt) {
@@ -11269,14 +11317,14 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             /// ==========================================
             _15(win->id EQ 0) {
                 /// BARE METAL FIX: Fokus-Check für Notepad Buttons!
-                _44 is_active = (win_z[19] EQ win->id);
+                _44 is_active = (win_z[49] EQ win->id);
                 
                 /// BARE METAL FIX: Harte Farbe (Weiß) für Text!
                 _89 safe_txt_color = 0xFFFFFF; 
                 Text(wx+15, wy+45, win->content, safe_txt_color, _86);
                 
                 /// BARE METAL FIX: Sichtbarer Block-Cursor!
-                _15(win_z[19] EQ win->id AND (frame / 20) % 2 EQ 0) {
+                _15(win_z[49] EQ win->id AND (frame / 20) % 2 EQ 0) {
                     _43 cursor_off_x = 0; _43 cursor_off_y = 0;
                     _39(_43 c_idx = 0; c_idx < win->cursor_pos; c_idx++) { 
                         _15(win->content[c_idx] EQ '\n') { cursor_off_y += 15; cursor_off_x = 0; } 
@@ -11327,7 +11375,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             /// BARE METAL FIX: SAVE AS & CREATE FOLDER (ID 2)
             /// =========================================================
             _15(win->id EQ 2) {
-                _44 is_active = (win_z[19] EQ win->id);
+                _44 is_active = (win_z[49] EQ win->id);
                 /// Feste, sichere DMA RAM-Adressen (64-Bit OS2 Alignments)
                 uint64_t buf_dir = (uint64_t)global_buf_dir;
                 uint64_t text_ram_addr = get_ram_addr_copy(); /// Gleicher Buffer wie beim normalen Save
@@ -11529,7 +11577,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 _44 hov_lin = is_over_rect(mouse_x, mouse_y, wx+15, wy+120, 100, 30);
                 DrawRoundedRect(wx+15, wy+120, 100, 30, 4, hov_lin ? 0x008800 : 0x005500);
                 TextC(wx+65, wy+128, "LINUX (.deb)", 0xFFFFFF, _128);
-                _15(input_cooldown == 0 && mouse_just_pressed && (win_z[19] == 7) && hov_lin && app_installer_buf[0] != 0) { 
+                _15(input_cooldown == 0 && mouse_just_pressed && (win_z[49] == 7) && hov_lin && app_installer_buf[0] != 0) { 
                     input_cooldown = 20; play_sound(1000, 10);
                     char sys_cmd[512];
                     snprintf(sys_cmd, sizeof(sys_cmd), "apt-cache search %s | head -n 7 > /tmp/cosmos_store.txt &", app_installer_buf);
@@ -11542,7 +11590,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 _44 hov_win = is_over_rect(mouse_x, mouse_y, wx+125, wy+120, 110, 30);
                 DrawRoundedRect(wx+125, wy+120, 110, 30, 4, hov_win ? 0x0055AA : 0x003388);
                 TextC(wx+180, wy+128, "WINDOWS (.exe)", 0xFFFFFF, _128);
-                _15(input_cooldown == 0 && mouse_just_pressed && (win_z[19] == 7) && hov_win && app_installer_buf[0] != 0) { 
+                _15(input_cooldown == 0 && mouse_just_pressed && (win_z[49] == 7) && hov_win && app_installer_buf[0] != 0) { 
                     input_cooldown = 20; play_sound(1000, 10); 
                     char sys_cmd[512];
                     snprintf(sys_cmd, sizeof(sys_cmd), "echo '%s - Official Windows Setup' > /tmp/cosmos_store.txt &", app_installer_buf);
@@ -11555,7 +11603,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 _44 hov_and = is_over_rect(mouse_x, mouse_y, wx+245, wy+120, 100, 30);
                 DrawRoundedRect(wx+245, wy+120, 100, 30, 4, hov_and ? 0xAA5500 : 0x883300);
                 TextC(wx+295, wy+128, "ANDROID (.apk)", 0xFFFFFF, _128);
-                _15(input_cooldown == 0 && mouse_just_pressed && (win_z[19] == 7) && hov_and && app_installer_buf[0] != 0) { 
+                _15(input_cooldown == 0 && mouse_just_pressed && (win_z[49] == 7) && hov_and && app_installer_buf[0] != 0) { 
                     input_cooldown = 20; play_sound(1000, 10);
                     char sys_cmd[512];
                     snprintf(sys_cmd, sizeof(sys_cmd), "echo '%s - Verified APK Package' > /tmp/cosmos_store.txt &", app_installer_buf);

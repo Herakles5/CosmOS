@@ -520,7 +520,7 @@ int main(int argc, char** argv) {
     bool running = true;
     uint32_t last_ticks_ms = SDL_GetTicks();
     extern int aion_total_models;
-    FILE* fm = fopen("/root/coding/MeinOS/avatar/models.txt", "r");
+    FILE* fm = fopen("/opt/meinos/models.txt", "r");
     if (fm) {
         fscanf(fm, "%d", &aion_total_models);
         fclose(fm);
@@ -528,7 +528,7 @@ int main(int argc, char** argv) {
         aion_total_models = 1;
     }
     ::system("/root/coding/MeinOS/poll_radio.sh &");
-    load_a3d("/root/coding/MeinOS/avatar/model_0.a3d");
+    load_a3d("/opt/meinos/model_0.glb");
 
     while (running) {
         extern bool os_vsync_enabled;
