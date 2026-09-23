@@ -20,6 +20,8 @@ float aion_avatar_rot_y = 0.0f;
 float aion_avatar_rot_z = 0.0f;
 float aion_avatar_pan_x = 0.0f;
 float aion_avatar_pan_y = 0.0f;
+int aion_avatar_screen_x = 0;
+int aion_avatar_screen_y = 0;
 
 #include "avatar_anim.h"
 
@@ -130,16 +132,12 @@ void draw_a3d() {
     float half_w_at_z3 = half_h_at_z3 * aspect;
     
     // Calculate AION window center in normalized screen coordinates
-    float model_center_x = aion_window_x + aion_window_w * 0.5f;
-    float model_center_y = aion_window_y + 30 + (aion_window_h - 220 - 30) * 0.5f;
     float nx = (model_center_x / (float)global_screen_w) * 2.0f - 1.0f;
     float ny = 1.0f - (model_center_y / (float)global_screen_h) * 2.0f;
     float baseline_x = nx * half_w_at_z3;
     float baseline_y = ny * half_h_at_z3;
 
     // Calculate avatar screen coordinates for her 'invisible window frame'
-    extern int aion_avatar_screen_x;
-    extern int aion_avatar_screen_y;
     float current_world_x = baseline_x + aion_avatar_pan_x;
     float current_world_y = baseline_y - 0.75f + aion_avatar_pan_y;
     float current_nx = current_world_x / half_w_at_z3;
