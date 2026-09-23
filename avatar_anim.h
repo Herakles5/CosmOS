@@ -63,6 +63,7 @@ private:
     bool loaded;
     std::vector<AnimVertex> base_vertices;
     std::vector<vec3> skinned_positions; // For rendering
+    std::vector<vec3> skinned_normals;   // For lighting
     std::vector<uint32_t> indices;
     
     std::vector<Primitive> primitives;

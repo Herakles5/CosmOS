@@ -105,6 +105,13 @@ void UpdateAionBackground() {
             aion_ollama_online = (st == '1');
             fclose(ping_f);
         }
+        
+        // Write current language setting for TTS bridge
+        FILE* lang_f = fopen("/tmp/aion_lang.txt", "w");
+        if (lang_f) {
+            fprintf(lang_f, "%d", aion_lang);
+            fclose(lang_f);
+        }
     }
 
     if (has_pending_whisper) {
@@ -224,7 +231,7 @@ void UpdateAionBackground() {
         aion_wants_foreground = true;
         
         std::string piper_model = "/root/coding/AI_Desktop/voice.onnx";
-        if (aion_detected_lang == 1 || aion_teach_mode) piper_model = "/root/coding/AI_Desktop/de_DE-ramona-low.onnx";
+        if (aion_lang == 1 || aion_teach_mode) piper_model = "/root/coding/AI_Desktop/de_DE-ramona-low.onnx";
         std::string piper_cmd = "(nice -n 19 /root/coding/AI_Desktop/piper/piper --model " + piper_model + " --output_file /tmp/aion_response.wav < /tmp/aion_speech.txt && pw-play /tmp/aion_response.wav; touch /tmp/aion_speech_done) &";
         system(piper_cmd.c_str());
         

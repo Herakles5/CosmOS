@@ -31,6 +31,7 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
         // Clear all vectors
         base_vertices.clear();
         skinned_positions.clear();
+        skinned_normals.clear();
         indices.clear();
         primitives.clear();
         materials.clear();
@@ -175,6 +176,7 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
             size_t vertex_offset = base_vertices.size();
             base_vertices.resize(vertex_offset + pos_acc->count);
             skinned_positions.resize(base_vertices.size());
+            skinned_normals.resize(base_vertices.size());
             uvs.resize(base_vertices.size());
             
             for (cgltf_size v = 0; v < pos_acc->count; ++v) {
@@ -259,11 +261,15 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
     
     // Calculate bounding box for auto-scaling based on transformed vertices
     if (base_vertices.size() > 0) {
-        vec3 first_p = mat4_mul_vec3(root_transform, base_vertices[0].position);
+        vec3 first_p_orig = mat4_mul_vec3(root_transform, base_vertices[0].position);
+        vec3 first_p(first_p_orig.x, first_p_orig.z, -first_p_orig.y);
         vec3 min_p = first_p;
         vec3 max_p = first_p;
         for (size_t i = 1; i < base_vertices.size(); i++) {
-            vec3 p = mat4_mul_vec3(root_transform, base_vertices[i].position);
+            vec3 p_orig = mat4_mul_vec3(root_transform, base_vertices[i].position);
+            // Apply -90 degree X rotation (Z-up to Y-up)
+            vec3 p(p_orig.x, p_orig.z, -p_orig.y);
+            
             if (p.x < min_p.x) min_p.x = p.x;
             if (p.y < min_p.y) min_p.y = p.y;
             if (p.z < min_p.z) min_p.z = p.z;
@@ -430,6 +436,12 @@ void SkeletalAvatar::skin() {
         } else {
             skinned_positions[i] = mat4_mul_vec3(root_transform, v.position);
         }
+        // Transform normals (rotation only, strip translation)
+        if (i < skinned_normals.size()) {
+            mat4 norm_mat = root_transform;
+            norm_mat.m[12] = 0; norm_mat.m[13] = 0; norm_mat.m[14] = 0;
+            skinned_normals[i] = mat4_mul_vec3(norm_mat, v.normal);
+        }
     }
 }
 
@@ -438,44 +450,72 @@ void SkeletalAvatar::draw() {
     
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    glEnableClientState(GL_NORMAL_ARRAY);
     
     glVertexPointer(3, GL_FLOAT, sizeof(vec3), skinned_positions.data());
     glTexCoordPointer(2, GL_FLOAT, sizeof(vec2), uvs.data());
+    if (skinned_normals.size() > 0) {
+        glNormalPointer(GL_FLOAT, sizeof(vec3), skinned_normals.data());
+    }
     
     for (size_t i = 0; i < primitives.size(); i++) {
         Primitive& prim = primitives[i];
         
         if (prim.material_idx >= 0 && prim.material_idx < (int)materials.size()) {
             Material& mat = materials[prim.material_idx];
-            glColor4fv(mat.base_color);
+            
             if (mat.texture_id != 0) {
+                // Textured: no lighting needed, use texture color directly
+                glDisable(GL_LIGHTING);
                 glEnable(GL_TEXTURE_2D);
                 glBindTexture(GL_TEXTURE_2D, mat.texture_id);
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+                glColor4fv(mat.base_color);
             } else {
+                // Untextured: enable lighting for proper 3D shading
                 glDisable(GL_TEXTURE_2D);
                 glBindTexture(GL_TEXTURE_2D, 0);
-                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-                glColor4f(0.0f, 1.0f, 0.5f, 1.0f); // Neon Green for untextured
+                glEnable(GL_LIGHTING);
+                glEnable(GL_LIGHT0);
+                // Set up a directional light from upper-front-right
+                float light_pos[] = {0.5f, 1.0f, 1.0f, 0.0f};
+                float light_amb[] = {0.3f, 0.3f, 0.35f, 1.0f};
+                float light_dif[] = {0.8f, 0.75f, 0.7f, 1.0f};
+                glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
+                glLightfv(GL_LIGHT0, GL_AMBIENT, light_amb);
+                glLightfv(GL_LIGHT0, GL_DIFFUSE, light_dif);
+                // Material color from base_color
+                float mat_color[] = {mat.base_color[0], mat.base_color[1], mat.base_color[2], mat.base_color[3]};
+                glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, mat_color);
+                glColor4fv(mat.base_color);
+                glEnable(GL_COLOR_MATERIAL);
+                glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
             }
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             
             if (mat.double_sided) {
                 glDisable(GL_CULL_FACE);
+                glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
             } else {
                 glEnable(GL_CULL_FACE);
+                glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
             }
         } else {
             glDisable(GL_TEXTURE_2D);
-            glColor4f(0.0f, 1.0f, 0.5f, 1.0f);
+            glDisable(GL_LIGHTING);
+            glColor4f(0.8f, 0.8f, 0.8f, 1.0f);
             glBindTexture(GL_TEXTURE_2D, 0);
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glEnable(GL_CULL_FACE);
         }
         
         glDrawElements(GL_TRIANGLES, prim.index_count, GL_UNSIGNED_INT, &indices[prim.index_offset]);
     }
     
+    glDisable(GL_LIGHTING);
+    glDisable(GL_LIGHT0);
+    glDisable(GL_COLOR_MATERIAL);
     glDisable(GL_TEXTURE_2D);
+    glDisableClientState(GL_NORMAL_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
     glDisableClientState(GL_VERTEX_ARRAY);
     glBindTexture(GL_TEXTURE_2D, 0);
