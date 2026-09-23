@@ -89,6 +89,12 @@ void draw_a3d() {
         snprintf(path, 256, "/opt/meinos/model_%d.glb", aion_current_avatar_idx);
         load_a3d(path);
         aion_load_config(aion_current_avatar_idx);
+        
+        // Reset pan and rotation on switch so it spawns in the center of its window
+        aion_avatar_pan_x = 0.0f;
+        aion_avatar_pan_y = 0.0f;
+        aion_avatar_rot_x = 0.0f;
+        aion_avatar_rot_y = 0.0f;
     }
 
     if (!global_avatar.is_loaded() || !aion_window_open || !aion_use_3d_avatar) return;
@@ -117,13 +123,41 @@ void draw_a3d() {
     if (dx < -1.0f) dx = -1.0f; if (dx > 1.0f) dx = 1.0f;
     if (dy < -1.0f) dy = -1.0f; if (dy > 1.0f) dy = 1.0f;
     
-    // Target rotation angles - more obvious follow
+    // Frustum dimensions at Z = -3.0f (must match the glFrustum setup below)
+    float aspect = (float)global_screen_w / (float)global_screen_h;
+    float fov = 45.0f * (3.14159f / 180.0f);
+    float half_h_at_z3 = tanf(fov / 2.0f) * 3.0f;
+    float half_w_at_z3 = half_h_at_z3 * aspect;
+    
+    // Calculate AION window center in normalized screen coordinates
+    float model_center_x = aion_window_x + aion_window_w * 0.5f;
+    float model_center_y = aion_window_y + 30 + (aion_window_h - 220 - 30) * 0.5f;
+    float nx = (model_center_x / (float)global_screen_w) * 2.0f - 1.0f;
+    float ny = 1.0f - (model_center_y / (float)global_screen_h) * 2.0f;
+    float baseline_x = nx * half_w_at_z3;
+    float baseline_y = ny * half_h_at_z3;
+
+    // Calculate avatar screen coordinates for her 'invisible window frame'
+    extern int aion_avatar_screen_x;
+    extern int aion_avatar_screen_y;
+    float current_world_x = baseline_x + aion_avatar_pan_x;
+    float current_world_y = baseline_y - 0.75f + aion_avatar_pan_y;
+    float current_nx = current_world_x / half_w_at_z3;
+    float current_ny = current_world_y / half_h_at_z3;
+    aion_avatar_screen_x = (int)((current_nx + 1.0f) * 0.5f * global_screen_w);
+    aion_avatar_screen_y = (int)((1.0f - current_ny) * 0.5f * global_screen_h);
+    
+    // Target rotation angles
     float target_rot_y = dx * 45.0f;
     float target_rot_x = dy * 20.0f;
     
     // Check if user is manually dragging (override follow)
-    if (mouse_down && mouse_x > (uint32_t)aion_window_x && mouse_x < (uint32_t)(aion_window_x + aion_window_w) &&
-        mouse_y > (uint32_t)(aion_window_y + 30) && mouse_y < (uint32_t)(aion_window_y + aion_window_h - 220)) {
+    bool over_aion_window = mouse_x > (uint32_t)aion_window_x && mouse_x < (uint32_t)(aion_window_x + aion_window_w) &&
+                            mouse_y > (uint32_t)(aion_window_y + 30) && mouse_y < (uint32_t)(aion_window_y + aion_window_h - 220);
+    bool over_avatar_frame = mouse_x > (uint32_t)(aion_avatar_screen_x - 150) && mouse_x < (uint32_t)(aion_avatar_screen_x + 150) &&
+                             mouse_y > (uint32_t)(aion_avatar_screen_y - 400) && mouse_y < (uint32_t)(aion_avatar_screen_y + 100);
+                             
+    if (mouse_down && (over_aion_window || over_avatar_frame)) {
         aion_mouse_dragging = true;
     } else if (!mouse_down && aion_mouse_dragging) {
         aion_mouse_dragging = false;
@@ -140,11 +174,16 @@ void draw_a3d() {
         aion_follow_rot_x += (target_rot_x - aion_follow_rot_x) * lerp_speed;
         
         // --- Free Screen Movement (Translation) ---
-        // Move pan_x and pan_y towards the cursor
-        float move_speed = 0.05f; // Faster walk speed
-        float target_pan_x = dx * 10.0f; // Max reach on screen
-        float target_pan_y = -dy * 10.0f; // Invert Y for OpenGL
+        float mouse_nx = ((float)mouse_x / (float)global_screen_w) * 2.0f - 1.0f;
+        float mouse_ny = 1.0f - ((float)mouse_y / (float)global_screen_h) * 2.0f;
         
+        float target_world_x = mouse_nx * half_w_at_z3;
+        float target_world_y = mouse_ny * half_h_at_z3;
+        
+        float target_pan_x = target_world_x - baseline_x;
+        float target_pan_y = target_world_y - baseline_y;
+        
+        float move_speed = 0.05f; // Walk speed
         aion_avatar_pan_x += (target_pan_x - aion_avatar_pan_x) * move_speed;
         aion_avatar_pan_y += (target_pan_y - aion_avatar_pan_y) * move_speed;
     }
@@ -225,38 +264,44 @@ void draw_a3d() {
     glDisable(GL_BLEND);
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
     
-    // The console takes up the bottom 220 pixels, title bar top 30 pixels
     int draw_h = aion_window_h - 220 - 30;
     if (draw_h < 1) draw_h = 1;
-    int scissor_y = global_screen_h - (aion_window_y + aion_window_h - 220);
     
-    // Allow rendering outside window by expanding the viewport and frustum by 3x
-    int vp_w = aion_window_w * 3;
-    int vp_h = draw_h * 3;
-    int vp_x = aion_window_x - aion_window_w;
-    int vp_y = scissor_y - draw_h;
+    // FULLSCREEN VIEWPORT so she can walk anywhere
+    glViewport(0, 0, global_screen_w, global_screen_h);
     
-    glViewport(vp_x, vp_y, vp_w, vp_h);
-    
-    glClear(GL_DEPTH_BUFFER_BIT); // Depth buffer clear for the whole expanded area
+    glClear(GL_DEPTH_BUFFER_BIT); // Depth buffer clear for the whole screen
     
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    float aspect = (float)aion_window_w / (float)draw_h;
+    float aspect = (float)global_screen_w / (float)global_screen_h;
     float fov = 45.0f * (3.14159f / 180.0f);
     float zNear = 0.1f;
     float zFar = 1000.0f;
     float fH = tanf(fov / 2.0f) * zNear;
     float fW = fH * aspect;
     
-    // Scale frustum by 3 to perfectly counteract the 3x viewport size
-    glFrustum(-fW * 3.0f, fW * 3.0f, -fH * 3.0f, fH * 3.0f, zNear, zFar);
+    glFrustum(-fW, fW, -fH, fH, zNear, zFar);
     
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     
-    // Camera Transform (center of the screen)
-    glTranslatef(0.0f + aion_avatar_pan_x, -0.75f + aion_avatar_pan_y, -3.0f * (1.0f / aion_avatar_zoom));
+    // Calculate AION window center in normalized screen coordinates
+    float model_center_x = aion_window_x + aion_window_w * 0.5f;
+    float model_center_y = aion_window_y + 30 + draw_h * 0.5f;
+    float nx = (model_center_x / (float)global_screen_w) * 2.0f - 1.0f;
+    float ny = 1.0f - (model_center_y / (float)global_screen_h) * 2.0f;
+    
+    // Frustum dimensions at Z = -3.0f
+    float half_h_at_z3 = tanf(fov / 2.0f) * 3.0f;
+    float half_w_at_z3 = half_h_at_z3 * aspect;
+    
+    float baseline_x = nx * half_w_at_z3;
+    float baseline_y = ny * half_h_at_z3;
+    
+    // Camera Transform (Anchored to AION window, plus free panning)
+    // We adjust Y by -0.75f to center the model's feet roughly at the bottom of the virtual box
+    glTranslatef(baseline_x + aion_avatar_pan_x, baseline_y - 0.75f + aion_avatar_pan_y, -3.0f * (1.0f / aion_avatar_zoom));
     
     // Apply combined rotations (manual + mouse follow)
     glRotatef(final_rot_x, 1.0f, 0.0f, 0.0f);

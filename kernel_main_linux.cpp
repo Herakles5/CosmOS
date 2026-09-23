@@ -9072,12 +9072,14 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 extern float aion_avatar_zoom;
                 extern float aion_avatar_pan_y;
                 extern float aion_avatar_pan_x;
+                extern void aion_save_config(int idx);
 
                 if (aion_use_3d_avatar && aion_total_models > 0) {
                     // < Button (previous model)
                     DrawRoundedRect(wx + ww - 140, wy + 5, 20, 20, 4, 0x555555);
                     TextC(wx + ww - 130, wy + 8, "<", 0xFFFFFF, _128);
                     if (!blocked && mouse_just_pressed && input_cooldown == 0 && is_over_rect(mouse_x, mouse_y, wx + ww - 140, wy + 5, 20, 20)) {
+                        aion_save_config(aion_current_avatar_idx);
                         aion_current_avatar_idx--;
                         if (aion_current_avatar_idx < 0) aion_current_avatar_idx = aion_total_models - 1;
                         aion_switch_avatar = 1;
@@ -9088,6 +9090,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     DrawRoundedRect(wx + ww - 165, wy + 5, 20, 20, 4, 0x555555);
                     TextC(wx + ww - 155, wy + 8, ">", 0xFFFFFF, _128);
                     if (!blocked && mouse_just_pressed && input_cooldown == 0 && is_over_rect(mouse_x, mouse_y, wx + ww - 165, wy + 5, 20, 20)) {
+                        aion_save_config(aion_current_avatar_idx);
                         aion_current_avatar_idx++;
                         if (aion_current_avatar_idx >= aion_total_models) aion_current_avatar_idx = 0;
                         aion_switch_avatar = 1;
@@ -9100,7 +9103,13 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     TextC(wx + ww - 280, wy + 8, model_txt, 0xCCCCCC, _128);
 
                     // 3D Mouse Input (always active, no lock needed)
-                    if (!blocked && mouse_y > wy + 30 && mouse_y < wy + wh - 220 && mouse_x > wx && mouse_x < wx + ww) {
+                    extern int aion_avatar_screen_x;
+                    extern int aion_avatar_screen_y;
+                    bool over_aion_window = mouse_y > wy + 30 && mouse_y < wy + wh - 220 && mouse_x > wx && mouse_x < wx + ww;
+                    bool over_avatar_frame = mouse_x > aion_avatar_screen_x - 150 && mouse_x < aion_avatar_screen_x + 150 && 
+                                             mouse_y > aion_avatar_screen_y - 400 && mouse_y < aion_avatar_screen_y + 100;
+                                             
+                    if (!blocked && (over_aion_window || over_avatar_frame)) {
                         extern bool mouse_right_down;
                         extern int mouse_wheel;
                         extern bool mouse_down;
