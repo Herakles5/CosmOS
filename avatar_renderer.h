@@ -93,15 +93,20 @@ void draw_a3d() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     
-    // Camera Transform
-    glTranslatef(0.0f + aion_avatar_pan_x, -0.85f + aion_avatar_pan_y, -3.0f * (1.0f / aion_avatar_zoom));
-    glScalef(0.012f, 0.012f, 0.012f);
+    // Camera Transform (center of the screen)
+    // The auto_scale normalizes model height to 1.5 units, with feet at Y=0.
+    // So we translate Y by -0.75 to center it vertically.
+    glTranslatef(0.0f + aion_avatar_pan_x, -0.75f + aion_avatar_pan_y, -3.0f * (1.0f / aion_avatar_zoom));
     
     // Apply User Rotations
     glRotatef(aion_avatar_rot_x, 1.0f, 0.0f, 0.0f);
     glRotatef(aion_avatar_rot_y, 0.0f, 1.0f, 0.0f);
     glRotatef(aion_avatar_rot_z, 0.0f, 0.0f, 1.0f);
     glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+    
+    // Apply model's auto-centering and scaling
+    glScalef(global_avatar.auto_scale, global_avatar.auto_scale, global_avatar.auto_scale);
+    glTranslatef(global_avatar.center_offset.x, global_avatar.center_offset.y, global_avatar.center_offset.z);
     
     // Draw the GLB model
     global_avatar.draw();
