@@ -85,10 +85,9 @@ void load_a3d(const char* path) {
     }
 }
 
-// Mouse-follow state
 static float aion_follow_rot_x = 0.0f;
 static float aion_follow_rot_y = 0.0f;
-static bool  aion_mouse_dragging = false;
+bool aion_mouse_dragging = false;
 static uint64_t aion_drag_release_time = 0;
 
 void draw_a3d() {
