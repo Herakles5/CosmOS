@@ -183,10 +183,12 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
             cgltf_accessor* weight_acc = NULL;
             
             cgltf_accessor* texcoord_acc = NULL;
+            cgltf_accessor* color_acc = NULL;
             
             for (cgltf_size k = 0; k < prim->attributes_count; ++k) {
                 if (prim->attributes[k].type == cgltf_attribute_type_position) pos_acc = prim->attributes[k].data;
                 else if (prim->attributes[k].type == cgltf_attribute_type_normal) norm_acc = prim->attributes[k].data;
+                else if (prim->attributes[k].type == cgltf_attribute_type_color) color_acc = prim->attributes[k].data;
                 else if (prim->attributes[k].type == cgltf_attribute_type_joints) joint_acc = prim->attributes[k].data;
                 else if (prim->attributes[k].type == cgltf_attribute_type_weights) weight_acc = prim->attributes[k].data;
                 else if (prim->attributes[k].type == cgltf_attribute_type_texcoord) texcoord_acc = prim->attributes[k].data;
@@ -199,6 +201,7 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
             skinned_positions.resize(base_vertices.size());
             skinned_normals.resize(base_vertices.size());
             uvs.resize(base_vertices.size());
+            colors.resize(base_vertices.size());
             
             for (cgltf_size v = 0; v < pos_acc->count; ++v) {
                 AnimVertex& vert = base_vertices[vertex_offset + v];
@@ -220,6 +223,16 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
                 } else {
                     vert.uv = vec2(0,0);
                     uvs[vertex_offset + v] = vec2(0,0);
+                }
+                
+                if (color_acc) {
+                    float col[4] = {1,1,1,1};
+                    cgltf_accessor_read_float(color_acc, v, col, 4);
+                    vert.color = vec3(col[0], col[1], col[2]);
+                    colors[vertex_offset + v] = vert.color;
+                } else {
+                    vert.color = vec3(1,1,1);
+                    colors[vertex_offset + v] = vec3(1,1,1);
                 }
                 
                 if (joint_acc) {
@@ -498,9 +511,11 @@ void SkeletalAvatar::draw() {
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
     glEnableClientState(GL_NORMAL_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
     
     glVertexPointer(3, GL_FLOAT, sizeof(vec3), skinned_positions.data());
     glTexCoordPointer(2, GL_FLOAT, sizeof(vec2), uvs.data());
+    glColorPointer(3, GL_FLOAT, sizeof(vec3), colors.data());
     if (skinned_normals.size() > 0) {
         glNormalPointer(GL_FLOAT, sizeof(vec3), skinned_normals.data());
     }
@@ -564,6 +579,7 @@ void SkeletalAvatar::draw() {
     glDisable(GL_TEXTURE_2D);
     glDisableClientState(GL_NORMAL_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
     glDisableClientState(GL_VERTEX_ARRAY);
     glBindTexture(GL_TEXTURE_2D, 0);
 }

@@ -9102,47 +9102,6 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     snprintf(model_txt, 64, "MODEL %d/%d  ZOOM:%.1f", aion_current_avatar_idx + 1, aion_total_models, aion_avatar_zoom);
                     TextC(wx + ww - 280, wy + 8, model_txt, 0xCCCCCC, _128);
 
-                    // 3D Mouse Input (always active, no lock needed)
-                    extern int aion_avatar_screen_x;
-                    extern int aion_avatar_screen_y;
-                    bool over_aion_window = mouse_y > wy + 30 && mouse_y < wy + wh - 220 && mouse_x > wx && mouse_x < wx + ww;
-                    bool over_avatar_frame = mouse_x > aion_avatar_screen_x - 150 && mouse_x < aion_avatar_screen_x + 150 && 
-                                             mouse_y > aion_avatar_screen_y - 400 && mouse_y < aion_avatar_screen_y + 100;
-                    extern bool aion_mouse_dragging;
-                    if (!blocked && (over_aion_window || over_avatar_frame || aion_mouse_dragging)) {
-                        extern bool mouse_right_down;
-                        extern int mouse_wheel;
-                        extern bool mouse_down;
-
-                        static int last_aion_mx = mouse_x;
-                        static int last_aion_my = mouse_y;
-                        int mdx = mouse_x - last_aion_mx;
-                        int mdy = mouse_y - last_aion_my;
-
-                        if (mouse_wheel != 0) {
-                            if (mouse_wheel > 0) aion_avatar_zoom *= 1.25f;
-                            else aion_avatar_zoom *= 0.8f;
-                            if (aion_avatar_zoom < 0.001f) aion_avatar_zoom = 0.001f;
-                            if (aion_avatar_zoom > 1000.0f) aion_avatar_zoom = 1000.0f;
-                            mouse_wheel = 0;
-                        }
-
-                        if (mouse_down && !mouse_right_down) {
-                            // Left click drag = Rotate
-                            aion_avatar_rot_y += (float)mdx * 0.5f;
-                            aion_avatar_rot_x += (float)mdy * 0.5f;
-                        }
-                        else if (mouse_right_down) {
-                            // Right click drag = Pan
-                            extern float aion_avatar_pan_x;
-                            extern float aion_avatar_pan_y;
-                            aion_avatar_pan_x += (float)mdx * 0.03f;
-                            aion_avatar_pan_y -= (float)mdy * 0.03f;
-                        }
-
-                        last_aion_mx = mouse_x;
-                        last_aion_my = mouse_y;
-                    }
                 }
 
                 UpdateAionApp(wx, wy, ww, wh, !blocked);
@@ -11828,7 +11787,61 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 		} else {
 		    os_auto_update_timer = 0;
 		}
-		
+		// --- AION 3D Avatar Global Input & State (Runs even if window is minimized) ---
+		_44 is_modal_blocked_global = (windows[2].open AND !windows[2].minimized);
+        if (windows[18].open) {
+            aion_window_open = 1;
+            aion_window_x = windows[18].fullscreen ? 0 : windows[18].x;
+            aion_window_y = windows[18].fullscreen ? 0 : windows[18].y;
+            aion_window_w = windows[18].fullscreen ? screen_w : windows[18].w;
+            aion_window_h = windows[18].fullscreen ? screen_h : windows[18].h;
+            
+            extern int aion_avatar_screen_x;
+            extern int aion_avatar_screen_y;
+            extern float aion_avatar_zoom;
+            bool over_aion_window = !windows[18].minimized && mouse_y > aion_window_y + 30 && mouse_y < aion_window_y + aion_window_h - 220 && mouse_x > aion_window_x && mouse_x < aion_window_x + aion_window_w;
+            bool over_avatar_frame = mouse_x > aion_avatar_screen_x - 150 && mouse_x < aion_avatar_screen_x + 150 && 
+                                     mouse_y > aion_avatar_screen_y - 400 && mouse_y < aion_avatar_screen_y + 100;
+            extern bool aion_mouse_dragging;
+            
+            if (!is_modal_blocked_global && (over_aion_window || over_avatar_frame || aion_mouse_dragging)) {
+                extern bool mouse_right_down;
+                extern int mouse_wheel;
+                extern bool mouse_down;
+
+                static int last_aion_mx = mouse_x;
+                static int last_aion_my = mouse_y;
+                int mdx = mouse_x - last_aion_mx;
+                int mdy = mouse_y - last_aion_my;
+
+                if (mouse_wheel != 0) {
+                    if (mouse_wheel > 0) aion_avatar_zoom *= 1.25f;
+                    else aion_avatar_zoom *= 0.8f;
+                    if (aion_avatar_zoom < 0.001f) aion_avatar_zoom = 0.001f;
+                    if (aion_avatar_zoom > 1000.0f) aion_avatar_zoom = 1000.0f;
+                    mouse_wheel = 0;
+                }
+
+                if (mouse_down && !mouse_right_down) {
+                    extern float aion_avatar_rot_x;
+                    extern float aion_avatar_rot_y;
+                    aion_avatar_rot_y += (float)mdx * 0.5f;
+                    aion_avatar_rot_x += (float)mdy * 0.5f;
+                }
+                else if (mouse_right_down) {
+                    extern float aion_avatar_pan_x;
+                    extern float aion_avatar_pan_y;
+                    aion_avatar_pan_x += (float)mdx * 0.03f;
+                    aion_avatar_pan_y -= (float)mdy * 0.03f;
+                }
+
+                last_aion_mx = mouse_x;
+                last_aion_my = mouse_y;
+            }
+        } else {
+            aion_window_open = 0;
+        }
+
 		DrawAeroCursor(mouse_x, mouse_y);
         
         Swap(); 

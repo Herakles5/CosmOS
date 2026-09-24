@@ -298,7 +298,13 @@ void draw_a3d() {
     glTranslatef(global_avatar.center_offset.x, global_avatar.center_offset.y, global_avatar.center_offset.z);
     
     // Fix Z-up to Y-up (applied FIRST to raw vertices)
-    glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+    if (aion_current_avatar_idx == 8) {
+        // Model 9 (index 8) needs extra rotation to stand up
+        glRotatef(-90.0f, 1.0f, 0.0f, 0.0f); // Default
+        glRotatef(-90.0f, 1.0f, 0.0f, 0.0f); // Extra 90
+    } else {
+        glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+    }
     
     // Draw the GLB model
     global_avatar.draw();
