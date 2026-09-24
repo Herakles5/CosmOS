@@ -188,10 +188,10 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
             for (cgltf_size k = 0; k < prim->attributes_count; ++k) {
                 if (prim->attributes[k].type == cgltf_attribute_type_position) pos_acc = prim->attributes[k].data;
                 else if (prim->attributes[k].type == cgltf_attribute_type_normal) norm_acc = prim->attributes[k].data;
-                else if (prim->attributes[k].type == cgltf_attribute_type_color) color_acc = prim->attributes[k].data;
-                else if (prim->attributes[k].type == cgltf_attribute_type_joints) joint_acc = prim->attributes[k].data;
-                else if (prim->attributes[k].type == cgltf_attribute_type_weights) weight_acc = prim->attributes[k].data;
-                else if (prim->attributes[k].type == cgltf_attribute_type_texcoord) texcoord_acc = prim->attributes[k].data;
+                else if (prim->attributes[k].type == cgltf_attribute_type_color && prim->attributes[k].index == 0) color_acc = prim->attributes[k].data;
+                else if (prim->attributes[k].type == cgltf_attribute_type_joints && prim->attributes[k].index == 0) joint_acc = prim->attributes[k].data;
+                else if (prim->attributes[k].type == cgltf_attribute_type_weights && prim->attributes[k].index == 0) weight_acc = prim->attributes[k].data;
+                else if (prim->attributes[k].type == cgltf_attribute_type_texcoord && prim->attributes[k].index == 0) texcoord_acc = prim->attributes[k].data;
             }
             
             if (!pos_acc) continue;
