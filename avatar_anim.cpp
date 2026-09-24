@@ -91,7 +91,18 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
                 stbi_image_free(pixels);
                 gl_textures[i] = tex_id;
+                printf("Loaded texture %d: %dx%d (ID %u)\n", (int)i, w, h, tex_id);
+                FILE* log = fopen("/tmp/meinos_debug.log", "a");
+                if (log) { fprintf(log, "Loaded texture %d: %dx%d (ID %u)\n", (int)i, w, h, tex_id); fclose(log); }
+            } else {
+                printf("FAILED to load texture %d (size %zu) from memory\n", (int)i, size);
+                FILE* log = fopen("/tmp/meinos_debug.log", "a");
+                if (log) { fprintf(log, "FAILED to load texture %d (size %zu)\n", (int)i, size); fclose(log); }
             }
+        } else {
+            printf("Texture %d missing image data or buffer view\n", (int)i);
+            FILE* log = fopen("/tmp/meinos_debug.log", "a");
+            if (log) { fprintf(log, "Texture %d missing image data\n", (int)i); fclose(log); }
         }
     }
     
@@ -118,6 +129,17 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
                 }
             }
         }
+        FILE* log = fopen("/tmp/meinos_debug.log", "a");
+        if (log) {
+            fprintf(log, "Loaded material %d: texture_id = %u, has_pbr = %d, tex_idx = %d\n", 
+                (int)i, materials[i].texture_id, mat->has_pbr_metallic_roughness, 
+                mat->has_pbr_metallic_roughness && mat->pbr_metallic_roughness.base_color_texture.texture ? 
+                (int)(mat->pbr_metallic_roughness.base_color_texture.texture - data->textures) : -1);
+            fclose(log);
+        }
+        
+        printf("Loaded material %d: texture_id = %u\n", (int)i, materials[i].texture_id);
+
         materials[i].double_sided = mat->double_sided;
         materials[i].alpha_blend = (mat->alpha_mode == cgltf_alpha_mode_blend);
         materials[i].alpha_test = (mat->alpha_mode == cgltf_alpha_mode_mask);
