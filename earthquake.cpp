@@ -47,6 +47,22 @@ void DrawLine(int x1, int y1, int x2, int y2, uint32_t color);
 void DrawLineAlpha(int x1, int y1, int x2, int y2, uint32_t color, float alpha);
 void PutPixel(int x, int y, uint32_t color);
 void PutPixelAlpha(uint32_t x, uint32_t y, uint32_t color, float alpha);
+
+static void DrawRoundedRectAlpha(int x, int y, int rw, int rh, int r, uint32_t c, float alpha) {
+    for (int iy = 0; iy < rh; iy++) {
+        for (int ix = 0; ix < rw; ix++) {
+            bool corn = false;
+            if (r > 0) {
+                if(ix<r && iy<r && (r-ix)*(r-ix)+(r-iy)*(r-iy)>r*r) corn=true;
+                if(ix>rw-r && iy<r && (ix-(rw-r))*(ix-(rw-r))+(r-iy)*(r-iy)>r*r) corn=true;
+                if(ix<r && iy>rh-r && (r-ix)*(r-ix)+(iy-(rh-r))*(iy-(rh-r))>r*r) corn=true;
+                if(ix>rw-r && iy>rh-r && (ix-(rw-r))*(ix-(rw-r))+(iy-(rh-r))*(iy-(rh-r))>r*r) corn=true;
+            }
+            if (!corn) PutPixelAlpha(x + ix, y + iy, c, alpha);
+        }
+    }
+}
+
 void DrawRoundedRect(int x, int y, int w, int h, int radius, uint32_t color);
 void Text(int x, int y, const char* text, uint32_t color, bool bold);
 void TextC(int x, int y, const char* text, uint32_t color, bool bold);
@@ -391,7 +407,8 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
     cy += title_bar;
     ch -= title_bar;
 
-    DrawRoundedRect(cx, cy, cw, ch, 0, 0x555555); // Leicht grauer Hintergrund
+    DrawRoundedRectAlpha(cx, cy, cw, ch, 0, 0x555555, 0.2f); // Leicht grauer Hintergrund (transparent)
+
     
     static float zoom = 1.0f;
     static float offset_x = 0.0f;
@@ -531,7 +548,7 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
     
     if (!map_only) {
         // Draw Long-Term Stats on the left
-        DrawRoundedRect(cx, cy, 320, ch, 0, 0x111111);
+        DrawRoundedRectAlpha(cx, cy, 320, ch, 0, 0x111111, 0.5f);
         char top_buf[64];
         snprintf(top_buf, sizeof(top_buf), "LIVE EARTHQUAKES (%zu)", earthquakes.size());
         Text(cx + 10, cy + 15, top_buf, 0xFFCC00, true);
@@ -747,8 +764,8 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
             int g_h = 350;
             int g_x = cx + cw/2 - g_w/2;
             int g_y = cy + ch/2 - g_h/2;
-            DrawRoundedRect(g_x, g_y, g_w, g_h, 8, 0x1A051A);
-            DrawRoundedRect(g_x, g_y, g_w, 30, 8, 0x4B0082); // Header
+            DrawRoundedRectAlpha(g_x, g_y, g_w, g_h, 8, 0x1A051A, 0.7f);
+            DrawRoundedRectAlpha(g_x, g_y, g_w, 30, 8, 0x4B0082, 0.8f); // Header
             Text(g_x + 10, g_y + 10, "Gaia's Multi-Class Rhythm Matrix", 0xFF88FF, true);
             
             int text_y = g_y + 40;
