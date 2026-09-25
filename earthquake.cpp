@@ -177,6 +177,10 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
     static long long last_latest_time = 0;
     static float line_expiry = 0.0f;
     static float auto_reset_timer = 0.0f;
+    static int gaia_x = -1, gaia_y = -1;
+    static bool gaia_pinned = false;
+    static bool gaia_dragging = false;
+    static int drag_off_x = 0, drag_off_y = 0;
     static float target_zoom = 1.0f;
     static float target_offset_x = 0.0f;
     static float target_offset_y = 0.0f;
@@ -762,11 +766,48 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
         if (show_gaia_matrix) {
             int g_w = 600;
             int g_h = 350;
-            int g_x = cx + cw/2 - g_w/2;
-            int g_y = cy + ch/2 - g_h/2;
+            if (gaia_x == -1) {
+                gaia_x = cx + cw/2 - g_w/2;
+                gaia_y = cy + ch/2 - g_h/2;
+            }
+            
+            extern int mouse_x, mouse_y;
+            extern bool mouse_just_pressed, mouse_down;
+            extern int input_cooldown;
+
+            int pin_btn_x = gaia_x + g_w - 30;
+            int pin_btn_y = gaia_y + 5;
+            bool hover_pin = (mouse_x >= pin_btn_x && mouse_x <= pin_btn_x + 20 && mouse_y >= pin_btn_y && mouse_y <= pin_btn_y + 20);
+            
+            if (hover_pin && mouse_just_pressed && input_cooldown == 0) {
+                gaia_pinned = !gaia_pinned;
+                input_cooldown = 15;
+            }
+            
+            if (!gaia_pinned) {
+                if (mouse_just_pressed && !hover_pin && mouse_x >= gaia_x && mouse_x <= gaia_x + g_w && mouse_y >= gaia_y && mouse_y <= gaia_y + 30) {
+                    gaia_dragging = true;
+                    drag_off_x = mouse_x - gaia_x;
+                    drag_off_y = mouse_y - gaia_y;
+                }
+                if (mouse_down && gaia_dragging) {
+                    gaia_x = mouse_x - drag_off_x;
+                    gaia_y = mouse_y - drag_off_y;
+                }
+                if (!mouse_down) {
+                    gaia_dragging = false;
+                }
+            }
+
+            int g_x = gaia_x;
+            int g_y = gaia_y;
+            
             DrawRoundedRectAlpha(g_x, g_y, g_w, g_h, 8, 0x1A051A, 0.7f);
             DrawRoundedRectAlpha(g_x, g_y, g_w, 30, 8, 0x4B0082, 0.8f); // Header
             Text(g_x + 10, g_y + 10, "Gaia's Multi-Class Rhythm Matrix", 0xFF88FF, true);
+            
+            DrawRoundedRect(pin_btn_x, pin_btn_y, 20, 20, 4, gaia_pinned ? 0xFF3333 : (hover_pin ? 0x777777 : 0x555555));
+            Text(pin_btn_x + (gaia_pinned ? 6 : 5), pin_btn_y + 4, gaia_pinned ? "X" : "P", 0xFFFFFF, true);
             
             int text_y = g_y + 40;
             Text(g_x + 10, text_y, "The Earth behaves like a pregnant woman (Gaia) in labor. Foreshocks build up energy", 0xCCCCCC, true); text_y += 15;
