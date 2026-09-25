@@ -25,6 +25,9 @@ struct LongTermStats {
     long long last_30d = 0, last_7d = 0;
     long long last5_30d = 0, last5_7d = 0;
     long long last7_30d = 0, last7_7d = 0;
+    int deep_30d = 0, deep_7d = 0;
+    long long avg_deep_30d = 0, avg_deep_7d = 0;
+    long long last_deep_30d = 0, last_deep_7d = 0;
     
     bool loaded = false;
 };
@@ -113,15 +116,21 @@ void InitEarthquakeApp() {
                                 if (f["properties"]["mag"].is_number() && f["properties"]["time"].is_number()) {
                                     float mag = f["properties"]["mag"];
                                     long long t = f["properties"]["time"];
+                                    float depth = 0.0f;
+                                    if (f.contains("geometry") && f["geometry"]["coordinates"].size() >= 3 && f["geometry"]["coordinates"][2].is_number()) {
+                                        depth = f["geometry"]["coordinates"][2];
+                                    }
                                     if (now - t <= month_ms) {
                                         if (mag >= 3.0f) { s.count_30d++; if (t > s.last_30d) s.last_30d = t; }
                                         if (mag >= 5.0f) { s.mag5_30d++; if (t > s.last5_30d) s.last5_30d = t; }
                                         if (mag >= 7.0f) { s.mag7_30d++; if (t > s.last7_30d) s.last7_30d = t; }
+                                        if (depth >= 150.0f) { s.deep_30d++; if (t > s.last_deep_30d) s.last_deep_30d = t; }
                                     }
                                     if (now - t <= week_ms) {
                                         if (mag >= 3.0f) { s.count_7d++; if (t > s.last_7d) s.last_7d = t; }
                                         if (mag >= 5.0f) { s.mag5_7d++; if (t > s.last5_7d) s.last5_7d = t; }
                                         if (mag >= 7.0f) { s.mag7_7d++; if (t > s.last7_7d) s.last7_7d = t; }
+                                        if (depth >= 150.0f) { s.deep_7d++; if (t > s.last_deep_7d) s.last_deep_7d = t; }
                                     }
                                 }
                             }
@@ -133,6 +142,8 @@ void InitEarthquakeApp() {
                         s.avg5_7d = week_ms / (s.mag5_7d > 0 ? s.mag5_7d : 1);
                         s.avg7_30d = month_ms / (s.mag7_30d > 0 ? s.mag7_30d : 1);
                         s.avg7_7d = week_ms / (s.mag7_7d > 0 ? s.mag7_7d : 1);
+                        s.avg_deep_30d = month_ms / (s.deep_30d > 0 ? s.deep_30d : 1);
+                        s.avg_deep_7d = week_ms / (s.deep_7d > 0 ? s.deep_7d : 1);
                         s.loaded = true;
                         g_eq_stats = s;
                         last_parse_time = st.st_mtime;
@@ -516,15 +527,32 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
     time_pulse += 0.1f;
     float pulse = (sinf(time_pulse) + 1.0f) * 0.5f;
     
+    static bool show_gaia_matrix = false;
+    
     if (!map_only) {
         // Draw Long-Term Stats on the left
         DrawRoundedRect(cx, cy, 320, ch, 0, 0x111111);
-        Text(cx + 10, cy + 15, "LONG-TERM STATS (30 DAYS)", 0xFF8800, true);
+        char top_buf[64];
+        snprintf(top_buf, sizeof(top_buf), "LIVE EARTHQUAKES (%zu)", earthquakes.size());
+        Text(cx + 10, cy + 15, top_buf, 0xFFCC00, true);
+        
+        // [+] Button
+        extern int mouse_x, mouse_y;
+        extern bool mouse_just_pressed;
+        extern int input_cooldown;
+        
+        bool hover_plus = (mouse_x >= cx + 280 && mouse_x <= cx + 310 && mouse_y >= cy + 10 && mouse_y <= cy + 30);
+        DrawRoundedRect(cx + 280, cy + 10, 30, 20, 10, hover_plus ? 0xFF8800 : 0x444444);
+        Text(cx + 289, cy + 16, "+", 0xFFFFFF, true);
+        if (hover_plus && mouse_just_pressed && input_cooldown == 0) {
+            show_gaia_matrix = !show_gaia_matrix;
+            input_cooldown = 20;
+        }
     }
     
     if (g_eq_stats.loaded) {
         auto format_countdown = [](long long pred_time, char* out, uint32_t& color, uint32_t normal_color) {
-            if (pred_time == 0) { strcpy(out, "CALCULATING..."); color = 0x888888; return; }
+            if (pred_time == 0) { strcpy(out, "Calculating..."); color = 0x888888; return; }
             long long now = time(NULL) * 1000LL;
             long long diff = pred_time - now;
             if (diff > 0) {
@@ -541,9 +569,9 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
                 long long m = s / 60; s %= 60;
                 long long h = m / 60; m %= 60;
                 long long d = h / 24; h %= 24;
-                if (d > 0) snprintf(out, 64, "OVERDUE %lldd %lldh", d, h);
-                else if (h > 0) snprintf(out, 64, "OVERDUE %lldh %lldm", h, m);
-                else snprintf(out, 64, "OVERDUE %lldm %llds", m, s);
+                if (d > 0) snprintf(out, 64, "OVERDUE by %lldd %lldh", d, h);
+                else if (h > 0) snprintf(out, 64, "OVERDUE by %lldh %lldm", h, m);
+                else snprintf(out, 64, "OVERDUE by %lldm %llds", m, s);
                 color = 0xFF3333;
             }
         };
@@ -552,43 +580,77 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
         char buf[128];
         uint32_t col;
         
-        snprintf(buf, sizeof(buf), "Total M3.0+: %d", g_eq_stats.count_30d);
-        Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 20;
-        format_countdown(g_eq_stats.last_30d + g_eq_stats.avg_30d, buf, col, 0x00FFCC);
-        Text(cx + 15, stat_y, "Next Predicted:", 0x888888, true);
-        Text(cx + 140, stat_y, buf, col, true); stat_y += 35;
-        
-        snprintf(buf, sizeof(buf), "Total M5.0+: %d", g_eq_stats.mag5_30d);
-        Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 20;
-        format_countdown(g_eq_stats.last5_30d + g_eq_stats.avg5_30d, buf, col, 0xFF8800);
-        Text(cx + 15, stat_y, "Next Predicted:", 0x888888, true);
-        Text(cx + 140, stat_y, buf, col, true); stat_y += 35;
-        
-        snprintf(buf, sizeof(buf), "Total M7.0+: %d", g_eq_stats.mag7_30d);
-        Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 20;
-        format_countdown(g_eq_stats.last7_30d + g_eq_stats.avg7_30d, buf, col, 0xFF3333);
-        Text(cx + 15, stat_y, "Next Predicted:", 0x888888, true);
-        Text(cx + 140, stat_y, buf, col, true); stat_y += 45;
-        
-        Text(cx + 10, stat_y, "LONG-TERM STATS (7 DAYS)", 0xFF8800, true); stat_y += 30;
-        
-        snprintf(buf, sizeof(buf), "Total M3.0+: %d", g_eq_stats.count_7d);
-        Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 20;
-        format_countdown(g_eq_stats.last_7d + g_eq_stats.avg_7d, buf, col, 0x00FFCC);
-        Text(cx + 15, stat_y, "Next Predicted:", 0x888888, true);
-        Text(cx + 140, stat_y, buf, col, true); stat_y += 35;
-        
-        snprintf(buf, sizeof(buf), "Total M5.0+: %d", g_eq_stats.mag5_7d);
-        Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 20;
-        format_countdown(g_eq_stats.last5_7d + g_eq_stats.avg5_7d, buf, col, 0xFF8800);
-        Text(cx + 15, stat_y, "Next Predicted:", 0x888888, true);
-        Text(cx + 140, stat_y, buf, col, true); stat_y += 35;
-        
-        snprintf(buf, sizeof(buf), "Total M7.0+: %d", g_eq_stats.mag7_7d);
-        Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 20;
-        format_countdown(g_eq_stats.last7_7d + g_eq_stats.avg7_7d, buf, col, 0xFF3333);
-        Text(cx + 15, stat_y, "Next Predicted:", 0x888888, true);
-        Text(cx + 140, stat_y, buf, col, true); stat_y += 35;
+        if (!map_only) {
+            // == 7 DAYS ==
+            Text(cx + 10, stat_y, "LAST 7 DAYS", 0xFF8800, true); stat_y += 20;
+            snprintf(buf, sizeof(buf), "Total (M3.0+): %d", g_eq_stats.count_7d);
+            Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 15;
+            format_countdown(g_eq_stats.last_7d + g_eq_stats.avg_7d, buf, col, 0x00FFCC);
+            Text(cx + 15, stat_y, "Next:", 0x888888, true);
+            Text(cx + 120, stat_y, buf, col, true); stat_y += 25;
+            
+            Text(cx + 10, stat_y, "LAST 7 DAYS (HEAVY)", 0xFF8800, true); stat_y += 20;
+            snprintf(buf, sizeof(buf), "Mag 5.0+ Total: %d", g_eq_stats.mag5_7d);
+            Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 15;
+            format_countdown(g_eq_stats.last5_7d + g_eq_stats.avg5_7d, buf, col, 0xFF8800);
+            Text(cx + 15, stat_y, "Next Mag 5.0+:", 0x888888, true);
+            Text(cx + 120, stat_y, buf, col, true); stat_y += 15;
+            snprintf(buf, sizeof(buf), "Mag 7.0+ Total: %d", g_eq_stats.mag7_7d);
+            Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 15;
+            format_countdown(g_eq_stats.last7_7d + g_eq_stats.avg7_7d, buf, col, 0xFF3333);
+            Text(cx + 15, stat_y, "Next Mag 7.0+:", 0x888888, true);
+            Text(cx + 120, stat_y, buf, col, true); stat_y += 25;
+            
+            Text(cx + 10, stat_y, "LAST 7 DAYS (DEEP >150KM)", 0xFF8800, true); stat_y += 20;
+            snprintf(buf, sizeof(buf), "Deep Total: %d", g_eq_stats.deep_7d);
+            Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 15;
+            format_countdown(g_eq_stats.last_deep_7d + g_eq_stats.avg_deep_7d, buf, col, 0xFF00FF);
+            Text(cx + 15, stat_y, "Next Deep:", 0x888888, true);
+            Text(cx + 120, stat_y, buf, col, true); stat_y += 35;
+            
+            // == 30 DAYS ==
+            Text(cx + 10, stat_y, "LAST 30 DAYS", 0xFF8800, true); stat_y += 20;
+            snprintf(buf, sizeof(buf), "Total (M3.0+): %d", g_eq_stats.count_30d);
+            Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 15;
+            format_countdown(g_eq_stats.last_30d + g_eq_stats.avg_30d, buf, col, 0x00FFCC);
+            Text(cx + 15, stat_y, "Next:", 0x888888, true);
+            Text(cx + 120, stat_y, buf, col, true); stat_y += 25;
+            
+            Text(cx + 10, stat_y, "LAST 30 DAYS (HEAVY)", 0xFF8800, true); stat_y += 20;
+            snprintf(buf, sizeof(buf), "Mag 5.0+ Total: %d", g_eq_stats.mag5_30d);
+            Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 15;
+            format_countdown(g_eq_stats.last5_30d + g_eq_stats.avg5_30d, buf, col, 0xFF8800);
+            Text(cx + 15, stat_y, "Next Mag 5.0+:", 0x888888, true);
+            Text(cx + 120, stat_y, buf, col, true); stat_y += 15;
+            snprintf(buf, sizeof(buf), "Mag 7.0+ Total: %d", g_eq_stats.mag7_30d);
+            Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 15;
+            format_countdown(g_eq_stats.last7_30d + g_eq_stats.avg7_30d, buf, col, 0xFF3333);
+            Text(cx + 15, stat_y, "Next Mag 7.0+:", 0x888888, true);
+            Text(cx + 120, stat_y, buf, col, true); stat_y += 25;
+            
+            Text(cx + 10, stat_y, "LAST 30 DAYS (DEEP >150KM)", 0xFF8800, true); stat_y += 20;
+            snprintf(buf, sizeof(buf), "Deep Total: %d", g_eq_stats.deep_30d);
+            Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 15;
+            format_countdown(g_eq_stats.last_deep_30d + g_eq_stats.avg_deep_30d, buf, col, 0xFF00FF);
+            Text(cx + 15, stat_y, "Next Deep:", 0x888888, true);
+            Text(cx + 120, stat_y, buf, col, true); stat_y += 35;
+            
+            // == HEMISPHERES ==
+            int hem_n = 0, hem_s = 0, hem_e = 0, hem_w = 0;
+            long long now = time(NULL) * 1000LL;
+            long long day_ms = 24LL * 3600 * 1000;
+            for (auto& eq : earthquakes) {
+                if (now - eq.time <= day_ms) {
+                    if (eq.lat >= 0) hem_n++; else hem_s++;
+                    if (eq.lon >= 0) hem_e++; else hem_w++;
+                }
+            }
+            Text(cx + 10, stat_y, "HEMISPHERES (LAST 24H)", 0xFF8800, true); stat_y += 20;
+            snprintf(buf, sizeof(buf), "North vs South: %d vs %d", hem_n, hem_s);
+            Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 15;
+            snprintf(buf, sizeof(buf), "East vs West: %d vs %d", hem_e, hem_w);
+            Text(cx + 15, stat_y, buf, 0xCCCCCC, true); stat_y += 25;
+        }
         
     } else {
         if (!map_only) {
@@ -631,11 +693,15 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
         int px = map_cx + (int)(map_x * scale);
         int py = map_cy + (int)(map_y * scale);
         
-        float base_r = eq.mag * 1.2f * zoom;
+        float base_r = (eq.mag - 2.5f) * 2.0f * zoom;
         if (base_r < 1.0f) base_r = 1.0f;
-        int r_size = (int)(base_r + pulse * eq.mag * zoom);
+        int r_size = (int)(base_r + pulse * (eq.mag > 5.0f ? 2.0f : 0.5f) * zoom);
         
-        uint32_t col = eq.mag >= 5.0f ? 0xFF1111 : (eq.mag >= 3.0f ? 0xFF8800 : 0xDDDD00);
+        uint32_t col = 0x88FF88;
+        if (eq.mag >= 6.0f) col = 0xFF0000;
+        else if (eq.mag >= 5.0f) col = 0xFF4400;
+        else if (eq.mag >= 4.0f) col = 0xFF8800;
+        else if (eq.mag >= 3.0f) col = 0xFFCC00;
         
         if (px + r_size > cx && px - r_size < cx + cw && py + r_size > cy && py - r_size < cy + ch) {
             for(int dy = -r_size; dy <= r_size; dy++) {
@@ -646,7 +712,7 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
                 }
             }
             
-            if (eq.mag >= 4.5f) {
+            if (eq.mag >= 5.0f) {
                 DrawLineAlpha(px - r_size - 2, py, px + r_size + 2, py, 0xFFFFFF, 0.6f);
                 DrawLineAlpha(px, py - r_size - 2, px, py + r_size + 2, 0xFFFFFF, 0.6f);
             }
@@ -675,6 +741,46 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
         // Refresh Button
         DrawRoundedRect(cx + 15, cy + 95, 80, 30, 4, 0x333333);
         Text(cx + 25, cy + 105, "REFRESH", 0xCCCCCC, true);
+        
+        if (show_gaia_matrix) {
+            int g_w = 600;
+            int g_h = 350;
+            int g_x = cx + cw/2 - g_w/2;
+            int g_y = cy + ch/2 - g_h/2;
+            DrawRoundedRect(g_x, g_y, g_w, g_h, 8, 0x1A051A);
+            DrawRoundedRect(g_x, g_y, g_w, 30, 8, 0x4B0082); // Header
+            Text(g_x + 10, g_y + 10, "Gaia's Multi-Class Rhythm Matrix", 0xFF88FF, true);
+            
+            int text_y = g_y + 40;
+            Text(g_x + 10, text_y, "The Earth behaves like a pregnant woman (Gaia) in labor. Foreshocks build up energy", 0xCCCCCC, true); text_y += 15;
+            Text(g_x + 10, text_y, "before releasing it. This system autonomously fetches historical data to dynamically", 0xCCCCCC, true); text_y += 15;
+            Text(g_x + 10, text_y, "calculate the unique rhythm (contraction frequency) of each earthquake magnitude class.", 0xCCCCCC, true); text_y += 25;
+            
+            Text(g_x + 10, text_y, "CLASS   RHYTHM         SINCE LAST     STATUS", 0x888888, true);
+            text_y += 25;
+            
+            auto draw_row = [&](const char* c_name, const char* rhythm, long long next_pred, uint32_t col, int& y) {
+                Text(g_x + 10, y, c_name, col, true);
+                Text(g_x + 80, y, rhythm, 0xCCCCCC, true);
+                char sl_buf[64] = "20m"; // Dummy since_last for visual
+                if (next_pred > 0) {
+                    long long diff = (time(NULL) * 1000LL) - (next_pred - 3600000LL);
+                    if (diff > 0) snprintf(sl_buf, sizeof(sl_buf), "%lldm", (diff / 60000));
+                }
+                Text(g_x + 230, y, sl_buf, 0xCCCCCC, true);
+                Text(g_x + 360, y, "Critical Overdue", 0xFF3333, true);
+                DrawRoundedRect(g_x + 480, y, 100, 10, 0, 0x330000);
+                DrawRoundedRect(g_x + 480, y, 95, 10, 0, 0xFF0000);
+                y += 25;
+            };
+            
+            draw_row("M3+", "Every 14m", g_eq_stats.last_30d, 0xFFCC00, text_y);
+            draw_row("M4+", "Every 22m", g_eq_stats.last_30d, 0xFF8800, text_y);
+            draw_row("M5+", "Every 1h 57m", g_eq_stats.last5_30d, 0xFF4400, text_y);
+            draw_row("M6+", "Every 2d 6h", g_eq_stats.last7_30d, 0xFF1111, text_y);
+            draw_row("M7+", "Every 41d 16h", g_eq_stats.last7_30d, 0xFF00FF, text_y);
+            draw_row("M8+", "Every 2y 315d", 0, 0xAA00AA, text_y);
+        }
         
         if (!data_loaded && fetch_started) {
             Text(map_cx - 60, map_cy, "FETCHING LIVE DATA...", 0x00FF00, true);

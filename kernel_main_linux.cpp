@@ -8448,11 +8448,10 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             }
         }
         
+        DrawDenseGalaxy(v_cx, v_cy, galaxy_expansion);
         if (cfg_bg_mode == 2) {
-            DrawRoundedRect(0, 0, screen_w, screen_h, 0, 0x050511);
             UpdateEarthquakeApp(0, 0, screen_w, screen_h, true, true);
         } else {
-            DrawDenseGalaxy(v_cx, v_cy, galaxy_expansion);
         // ==========================================
         // 3D ORBIT-PHYSIK & Z-SORTIERUNG (ECHTES SYSTEM)
         // ==========================================
