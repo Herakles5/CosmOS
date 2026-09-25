@@ -1811,7 +1811,7 @@ Planet planets[6];
 Star stars[200];
 _44 cfg_planets_on = _128;
 _44 cfg_galaxy_on = _86;
-bool cfg_firmament_mode = true; // Firmament (Mittelerde) mode
+int cfg_bg_mode = 1; // 0: Cosmos, 1: Firmament, 2: Earthquake
 _44 cfg_stars_on = _128;
 _43 cfg_star_count = 100;
 _43 cfg_speed = 1;
@@ -8448,7 +8448,11 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             }
         }
         
-        DrawDenseGalaxy(v_cx, v_cy, galaxy_expansion);
+        if (cfg_bg_mode == 2) {
+            DrawRoundedRect(0, 0, screen_w, screen_h, 0, 0x050511);
+            UpdateEarthquakeApp(0, 0, screen_w, screen_h, true, true);
+        } else {
+            DrawDenseGalaxy(v_cx, v_cy, galaxy_expansion);
         // ==========================================
         // 3D ORBIT-PHYSIK & Z-SORTIERUNG (ECHTES SYSTEM)
         // ==========================================
@@ -8486,7 +8490,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             { 1, p8_nep,    11,  0x2244AA }            // Neptun (Dunkelblau)
         };
 
-        if (cfg_firmament_mode) {
+        if (cfg_bg_mode == 1) {
             time_t now = time(NULL);
             struct tm *t = localtime(&now);
             float real_h = t->tm_hour + t->tm_min / 60.0f + t->tm_sec / 3600.0f;
@@ -8572,7 +8576,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         }
 
         // 6. ZEICHNEN der sortierten Liste
-        if (cfg_firmament_mode) {
+        if (cfg_bg_mode == 1) {
             time_t now = time(NULL);
             struct tm *t = localtime(&now);
             float real_h = t->tm_hour + t->tm_min / 60.0f + t->tm_sec / 3600.0f;
@@ -8755,6 +8759,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 if (cfg_planets_on) DrawPlanet3D(system[i].pos, system[i].radius, system[i].color, v_cx, v_cy);
             }
         }
+
 		static uint64_t fps_last_time = 0;
 		static int fps_frames = 0;
 		static int fps_current = 0;
@@ -8772,7 +8777,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         Vec2 moon2d = {-1, -1};
         Vec2 sun2d = {-1, -1};
         
-        if (cfg_firmament_mode) {
+        if (cfg_bg_mode == 1) {
             // Nach der Z-Sortierung sind Sonne und Mond irgendwo im Array verstreut. Wir suchen sie:
             for(int i=0; i<9; i++) {
                 if (system[i].type == 0) sun2d = Project3D(system[i].pos, v_cx, v_cy);
@@ -8813,7 +8818,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         ds[3]='0'+rtc_mon/10; ds[4]='0'+rtc_mon%10; 
         ds[8]='0'+(rtc_year%100)/10; ds[9]='0'+rtc_year%10; 
         
-        if (cfg_firmament_mode) {
+        if (cfg_bg_mode == 1) {
             if (sun2d.x != -1) {
                 TextC(sun2d.x, sun2d.y - 12, ts, 0x000000, _128);
                 TextC(sun2d.x, sun2d.y + 4, ds, 0x000000, _128);
@@ -8821,6 +8826,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         } else {
             TextC(v_cx, v_cy+35, ds, 0x000000, _128);
         }
+        } // Close else for cfg_bg_mode != 2
         /// ==========================================
         /// 2A. PLANETEN UPDATE
         /// ==========================================
@@ -9647,9 +9653,10 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 // FIRMAMENT BUTTON
                 _44 hov_fm = is_over_rect(mouse_x, mouse_y, wx+405, wy+320, 80, 20);
                 DrawRoundedRect(wx+405, wy+320, 80, 20, 3, hov_fm ? 0x0066CC : 0x004488);
-                TextC(wx+445, wy+327, cfg_firmament_mode ? "FIRMAMENT" : "COSMOS", 0xFFFFFF, _86);
+                const char* bg_label = (cfg_bg_mode == 1) ? "FIRMAMENT" : ((cfg_bg_mode == 0) ? "COSMOS" : "EARTHQUK");
+                TextC(wx+445, wy+327, bg_label, 0xFFFFFF, _86);
                 _15(input_cooldown == 0 && mouse_just_pressed && is_active && hov_fm) { 
-                    cfg_firmament_mode = !cfg_firmament_mode; 
+                    cfg_bg_mode = (cfg_bg_mode + 1) % 3; 
                     input_cooldown = 25; 
                 }
 

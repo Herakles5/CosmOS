@@ -12,7 +12,7 @@ extern float global_cam_rot_x;
 extern float global_cam_rot_y;
 extern float camera_z_offset;
 extern float camera_fov;
-extern bool cfg_firmament_mode;
+extern int cfg_bg_mode;
 // Globals used by app.cpp and kernel_linux.cpp
 extern uint32_t input_cooldown;
 extern bool mouse_just_pressed;
@@ -654,7 +654,7 @@ int main(int argc, char** argv) {
             // ========== GPU-BESCHLEUNIGTER NEBEL-RING (Terra Infinita) ==========
             // Zeichne den Fog-Ring als OpenGL Triangle Strip direkt auf der GPU!
             // Dies ersetzt das CPU-basierte DrawLineAlpha und gibt massive FPS-Verbesserung.
-            if (cfg_firmament_mode) {
+            if (cfg_bg_mode == 1) {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                 glDisable(GL_DEPTH_TEST);

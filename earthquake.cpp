@@ -146,7 +146,7 @@ void InitEarthquakeApp() {
 #endif
 }
 
-void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active) {
+void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool map_only) {
     static long long last_latest_time = 0;
     static float line_expiry = 0.0f;
     static float auto_reset_timer = 0.0f;
@@ -516,9 +516,11 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active) {
     time_pulse += 0.1f;
     float pulse = (sinf(time_pulse) + 1.0f) * 0.5f;
     
-    // Draw Long-Term Stats on the left
-    DrawRoundedRect(cx, cy, 320, ch, 0, 0x111111);
-    Text(cx + 10, cy + 15, "LONG-TERM STATS (30 DAYS)", 0xFF8800, true);
+    if (!map_only) {
+        // Draw Long-Term Stats on the left
+        DrawRoundedRect(cx, cy, 320, ch, 0, 0x111111);
+        Text(cx + 10, cy + 15, "LONG-TERM STATS (30 DAYS)", 0xFF8800, true);
+    }
     
     if (g_eq_stats.loaded) {
         auto format_countdown = [](long long pred_time, char* out, uint32_t& color, uint32_t normal_color) {
@@ -589,14 +591,18 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active) {
         Text(cx + 140, stat_y, buf, col, true); stat_y += 35;
         
     } else {
-        Text(cx + 15, cy + 45, "Downloading 30-Day Data...", 0x888888, true);
-        Text(cx + 15, cy + 65, "Please wait...", 0x888888, true);
+        if (!map_only) {
+            Text(cx + 15, cy + 45, "Downloading 30-Day Data...", 0x888888, true);
+            Text(cx + 15, cy + 65, "Please wait...", 0x888888, true);
+        }
     }
     
     int list_y = cy + 40;
-    // Draw background for list to make it readable
-    DrawRoundedRect(cx + cw - 290, cy, 290, ch, 0, 0x222222);
-    Text(cx + cw - 280, cy + 15, "RECENT EARTHQUAKES (24H)", 0xFF8800, true);
+    if (!map_only) {
+        // Draw background for list to make it readable
+        DrawRoundedRect(cx + cw - 290, cy, 290, ch, 0, 0x222222);
+        Text(cx + cw - 280, cy + 15, "RECENT EARTHQUAKES (24H)", 0xFF8800, true);
+    }
     
     if (line_expiry > 0) line_expiry -= 0.016f;
     
@@ -646,30 +652,34 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active) {
             }
         }
         
-        if (i < 20) {
-            Text(cx + cw - 280, list_y, eq.time_str.c_str(), col, false);
-            list_y += 15;
+        if (!map_only) {
+            if (i < 20) {
+                Text(cx + cw - 280, list_y, eq.time_str.c_str(), col, false);
+                list_y += 15;
+            }
         }
     }
     
-    // Zoom UI Buttons (+ und - Symbole manuell zeichnen, da + im Font evtl fehlt)
-    DrawRoundedRect(cx + 15, cy + 15, 30, 30, 4, 0x333333);
-    // + Horizontal
-    DrawRoundedRect(cx + 22, cy + 28, 16, 4, 1, 0xFFFFFF);
-    // + Vertikal
-    DrawRoundedRect(cx + 28, cy + 22, 4, 16, 1, 0xFFFFFF);
-    
-    DrawRoundedRect(cx + 15, cy + 55, 30, 30, 4, 0x333333);
-    // - Horizontal
-    DrawRoundedRect(cx + 22, cy + 68, 16, 4, 1, 0xFFFFFF);
-    
-    // Refresh Button
-    DrawRoundedRect(cx + 15, cy + 95, 80, 30, 4, 0x333333);
-    Text(cx + 25, cy + 105, "REFRESH", 0xCCCCCC, true);
-    
-    if (!data_loaded && fetch_started) {
-        Text(map_cx - 60, map_cy, "FETCHING LIVE DATA...", 0x00FF00, true);
-    } else if (data_loaded && earthquakes.empty()) {
-        Text(map_cx - 60, map_cy, "NO EARTHQUAKES FOUND", 0xFF0000, true);
+    if (!map_only) {
+        // Zoom UI Buttons (+ und - Symbole manuell zeichnen, da + im Font evtl fehlt)
+        DrawRoundedRect(cx + 15, cy + 15, 30, 30, 4, 0x333333);
+        // + Horizontal
+        DrawRoundedRect(cx + 22, cy + 28, 16, 4, 1, 0xFFFFFF);
+        // + Vertikal
+        DrawRoundedRect(cx + 28, cy + 22, 4, 16, 1, 0xFFFFFF);
+        
+        DrawRoundedRect(cx + 15, cy + 55, 30, 30, 4, 0x333333);
+        // - Horizontal
+        DrawRoundedRect(cx + 22, cy + 68, 16, 4, 1, 0xFFFFFF);
+        
+        // Refresh Button
+        DrawRoundedRect(cx + 15, cy + 95, 80, 30, 4, 0x333333);
+        Text(cx + 25, cy + 105, "REFRESH", 0xCCCCCC, true);
+        
+        if (!data_loaded && fetch_started) {
+            Text(map_cx - 60, map_cy, "FETCHING LIVE DATA...", 0x00FF00, true);
+        } else if (data_loaded && earthquakes.empty()) {
+            Text(map_cx - 60, map_cy, "NO EARTHQUAKES FOUND", 0xFF0000, true);
+        }
     }
 }
