@@ -128,18 +128,19 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
                     materials[i].texture_id = gl_textures[tex_idx];
                 }
             }
+        } else if (mat->has_pbr_specular_glossiness) {
+            materials[i].base_color[0] = mat->pbr_specular_glossiness.diffuse_factor[0];
+            materials[i].base_color[1] = mat->pbr_specular_glossiness.diffuse_factor[1];
+            materials[i].base_color[2] = mat->pbr_specular_glossiness.diffuse_factor[2];
+            materials[i].base_color[3] = mat->pbr_specular_glossiness.diffuse_factor[3];
+            
+            if (mat->pbr_specular_glossiness.diffuse_texture.texture) {
+                int tex_idx = mat->pbr_specular_glossiness.diffuse_texture.texture - data->textures;
+                if (tex_idx >= 0 && tex_idx < (int)data->textures_count) {
+                    materials[i].texture_id = gl_textures[tex_idx];
+                }
+            }
         }
-        FILE* log = fopen("/tmp/meinos_debug.log", "a");
-        if (log) {
-            fprintf(log, "Loaded material %d: texture_id = %u, has_pbr = %d, tex_idx = %d\n", 
-                (int)i, materials[i].texture_id, mat->has_pbr_metallic_roughness, 
-                mat->has_pbr_metallic_roughness && mat->pbr_metallic_roughness.base_color_texture.texture ? 
-                (int)(mat->pbr_metallic_roughness.base_color_texture.texture - data->textures) : -1);
-            fclose(log);
-        }
-        
-        printf("Loaded material %d: texture_id = %u\n", (int)i, materials[i].texture_id);
-
         materials[i].double_sided = mat->double_sided;
         materials[i].alpha_blend = (mat->alpha_mode == cgltf_alpha_mode_blend);
         materials[i].alpha_test = (mat->alpha_mode == cgltf_alpha_mode_mask);
@@ -549,11 +550,25 @@ void SkeletalAvatar::draw() {
             Material& mat = materials[prim.material_idx];
             
             if (mat.texture_id != 0) {
-                // Textured: no lighting needed, use texture color directly
-                glDisable(GL_LIGHTING);
+                // Textured AND lit
                 glEnable(GL_TEXTURE_2D);
+                glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
                 glBindTexture(GL_TEXTURE_2D, mat.texture_id);
-                glColor4fv(mat.base_color);
+                
+                glEnable(GL_LIGHTING);
+                glEnable(GL_LIGHT0);
+                float light_pos[] = {0.5f, 1.0f, 1.0f, 0.0f};
+                float light_amb[] = {0.3f, 0.3f, 0.35f, 1.0f};
+                float light_dif[] = {0.8f, 0.75f, 0.7f, 1.0f};
+                glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
+                glLightfv(GL_LIGHT0, GL_AMBIENT, light_amb);
+                glLightfv(GL_LIGHT0, GL_DIFFUSE, light_dif);
+                
+                float mat_color[] = {1.0f, 1.0f, 1.0f, 1.0f};
+                glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, mat_color);
+                glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+                glEnable(GL_COLOR_MATERIAL);
+                glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
             } else {
                 // Untextured: enable lighting for proper 3D shading
                 glDisable(GL_TEXTURE_2D);

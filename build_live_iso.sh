@@ -8,11 +8,7 @@ echo "=========================================="
 echo "Welche ISO-Version möchtest du bauen?"
 echo " [1] FAST MODE    (Gzip: Baut in Sekunden, ca. 1.2 GB, für schnelle Tests)"
 echo " [2] RELEASE MODE (XZ Max: Dauert sehr lange, kleinste Datei für Hardware)"
-if [ -n "$1" ]; then
-    BUILD_MODE="$1"
-else
-    read -t 5 -p "Wähle 1 oder 2 (Standard ist 1 nach 5 Sekunden): " BUILD_MODE || BUILD_MODE="1"
-fi
+read -t 5 -p "Wähle 1 oder 2 (Standard ist 1 nach 5 Sekunden): " BUILD_MODE || BUILD_MODE="1"
 if [ -z "$BUILD_MODE" ]; then BUILD_MODE="1"; fi
 
 if [ "$BUILD_MODE" == "2" ]; then

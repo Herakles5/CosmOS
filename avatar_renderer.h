@@ -32,7 +32,7 @@ float anim_time = 0.0f;
 SkeletalAvatar global_avatar;
 
 extern "C" uint8_t  aion_switch_avatar = 0;
-extern "C" int      aion_current_avatar_idx = 0;
+extern "C" int      aion_current_avatar_idx = 10;
 extern "C" int      aion_total_models = 0;
 
 extern "C" void aion_save_config(int idx) {

@@ -18,9 +18,6 @@ extern uint32_t input_cooldown;
 extern bool mouse_just_pressed;
 extern uint32_t mouse_x;
 extern uint32_t mouse_y;
-#include "avatar_anim.h"
-extern SkeletalAvatar global_avatar;
-
 extern bool mouse_right_down;
 extern uint8_t key_scancode;
 extern uint32_t frame;
@@ -532,8 +529,6 @@ int main(int argc, char** argv) {
     }
     ::system("/root/coding/MeinOS/poll_radio.sh &");
     load_a3d("/opt/meinos/model_0.glb");
-    extern void aion_load_config(int idx);
-    aion_load_config(0);
 
     while (running) {
         extern bool os_vsync_enabled;
@@ -603,12 +598,6 @@ int main(int argc, char** argv) {
                 if (event.key.keysym.scancode == SDL_SCANCODE_PRINTSCREEN) {
                     if (fork() == 0) { execlp("xfce4-screenshooter", "xfce4-screenshooter", "-f", NULL); exit(1); }
                 }
-                
-                // Avatar Animation Triggers
-                if (event.key.keysym.sym == SDLK_F8) global_avatar.is_waving_left = !global_avatar.is_waving_left;
-                if (event.key.keysym.sym == SDLK_F9) global_avatar.is_waving_right = !global_avatar.is_waving_right;
-                if (event.key.keysym.sym == SDLK_F10) global_avatar.is_peace_sign = !global_avatar.is_peace_sign;
-                
                 linux_scancode = sdl_to_ps2(event.key.keysym.scancode);
             }
 			if (event.type == SDL_MOUSEWHEEL) {
@@ -785,10 +774,6 @@ int main(int argc, char** argv) {
         
         frame++;
     }
-
-    extern int aion_current_avatar_idx;
-    extern void aion_save_config(int idx);
-    aion_save_config(aion_current_avatar_idx);
 
     if (global_audio_dev > 0) SDL_CloseAudioDevice(global_audio_dev);
     SDL_GL_DeleteContext(gl_ctx);
