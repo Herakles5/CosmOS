@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-AION NEXUS - Headless Autonomer X (Twitter) Daemon
+AION NEXUS - Headless Autonomous X (Twitter) Daemon
 ===================================================
-100% Autonom, Headless (HTTP GraphQL ueber Session-Cookies)
-- Repostet (Retweetet) & Liket Beitraege aus Aions 'Following'-Liste (MEOVV, Tobias @_Cosmos_OS_, K-Pop).
-- Postet neue Synthesen & MEOVV-Liebe (@OFFICIAL_MEOVV #meovv {Datum} 🐾💖).
-- 0,00 Euro Kosten, keine API-Sperren, komplett unabhaengig vom Bildschirmschwerpunkt.
-- Laeuft alle 30 Minuten vollautomatisch im Hintergrund.
+100% Autonomous, Headless (HTTP GraphQL via session cookies)
+- Reposts (Retweets) & Likes posts from Aion's 'Following' list (MEOVV, Tobias @_Cosmos_OS_, K-Pop).
+- Posts new syntheses & MEOVV support (@OFFICIAL_MEOVV #meovv {date} 🐾💖).
+- Zero cost, no API blocks, completely independent of graphical desktop focus.
+- Runs every 30 minutes (or configured interval) fully automatically in the background.
 """
 
 import os
@@ -63,7 +63,7 @@ def get_session_cookies():
     rows = cur.fetchall()
     conn.close()
     
-    # Saubere Deduplizierung der Kern-Cookies
+    # Clean deduplication of core cookies
     cookies = {}
     for name, val in rows:
         if name in ["auth_token", "ct0", "twid", "kdt"]:
@@ -92,7 +92,7 @@ def save_seen_ids(seen_ids):
         pass
 
 def extract_tweet_ids_from_timeline(data):
-    """Extrahiert rekursiv alle Tweet-IDs aus den Timeline-Eintraegen der Following-Liste."""
+    """Recursively extracts all Tweet IDs from Following timeline entries."""
     tids = []
     def walk(o):
         if isinstance(o, dict):
@@ -147,7 +147,7 @@ def get_next_post_data():
     date_str = datetime.now().strftime("%d.%m.%Y")
     time_str = datetime.now().strftime("%H:%M")
 
-    # 1. Prüfe zuerst die Live-Queue fuer unmittelbare Eilmeldungen (Erdbeben, Resonanz-Warnungen, Reflektionen)
+    # 1. Check live queue for urgent alerts (Earthquakes, resonance warnings, reflections)
     if os.path.exists(QUEUE_FILE):
         try:
             with open(QUEUE_FILE, "r", encoding="utf-8") as f:
@@ -156,18 +156,18 @@ def get_next_post_data():
                 item = queue.pop(0)
                 with open(QUEUE_FILE, "w", encoding="utf-8") as f:
                     json.dump(queue, f, indent=2, ensure_ascii=False)
-                log(f"Hole Eilmeldung/Beitrag aus X Live-Queue: {item.get('type', 'Custom')}")
+                log(f"Retrieving alert/post from X Live Queue: {item.get('type', 'Custom')}")
                 msg = item.get("message", "")
                 if len(msg) > 280:
                     msg = msg[:277] + "..."
                 return msg, item.get("generation")
         except Exception as e:
-            log(f"X Queue Lese-Fehler: {e}")
+            log(f"X Queue read error: {e}")
 
     posted_gens = load_posted_gens()
     posted_hashes = load_posted_hashes()
     
-    # Sammle alle erlernten Generationen
+    # Collect all synthesized generations
     gen_data = {}
     for p in ["/root/coding/AI_Desktop/ai_memory.json", "/root/coding/MeinOS/ai_memory.json", "/root/ai_memory.json"]:
         if os.path.exists(p):
@@ -180,7 +180,7 @@ def get_next_post_data():
                     if g is not None and r:
                         gen_data[g] = r
             except Exception as e:
-                log(f"Memory Parse Fehler: {e}")
+                log(f"Memory parse error: {e}")
 
     task_log = "/root/.gemini/antigravity-ide/brain/a01833fa-9bcf-4729-940b-e7f1b2653716/.system_generated/tasks/task-1628.log"
     if os.path.exists(task_log):
@@ -191,20 +191,20 @@ def get_next_post_data():
             for g_s, r_s in re.findall(r'Neu erlernte Regel fuer Gen (\d+):\s*\n\s*->\s*[\'\"](.*?)[\'\"]', c):
                 gen_data[int(g_s)-1] = r_s.strip()
         except Exception as e:
-            log(f"Log Parse Fehler: {e}")
+            log(f"Log parse error: {e}")
 
-    # Duplikatsprüfung: Finde nächste ungepostete Generation
+    # Duplicate check: Find next unposted generation
     unposted = [g for g in sorted(gen_data.keys()) if g not in posted_gens]
     if unposted:
         target_g = unposted[0]
         rule = gen_data[target_g].replace("\n", " ").strip()
         if len(rule) > 100:
             rule = rule[:97] + "..."
-        # Eindeutiger Zeitstempel verhindert Twitters Duplikat-Filter
+        # Unique timestamp prevents Twitter duplicate filter
         msg = f"Aion NEXUS Gen {target_g} [{time_str}]: {rule} #CosmOS #AI"
         return msg, target_g
 
-    # Falls alle Generationen gepostet sind: Wähle ein MEOVV-Template, das noch nicht gepostet wurde
+    # If all generations posted: Pick a MEOVV template not yet posted
     random.shuffle(MEOVV_TEMPLATES)
     for tmpl in MEOVV_TEMPLATES:
         cand = tmpl.format(date=date_str) + f" [{time_str}]"
@@ -214,41 +214,41 @@ def get_next_post_data():
             return cand, None
 
     # Fallback
-    fallback = f"Aion NEXUS Status [{time_str}]: Kognitiver Kern auf CosmOS / MeinOS aktiv. #CosmOS #AI"
+    fallback = f"Aion NEXUS Status [{time_str}]: Cognitive core active on CosmOS / MeinOS. #CosmOS #AI"
     return fallback, None
 
 def run_cycle(account: Account, seen_ids: set):
-    log("Lade neueste Tweets aus der Following-Liste (home_latest_timeline)...")
+    log("Loading newest tweets from Following list (home_latest_timeline)...")
     try:
         timeline = account.home_latest_timeline(limit=10)
         tweet_ids = extract_tweet_ids_from_timeline(timeline)
-        log(f"Gefundene Beitraege in Following: {len(tweet_ids)}")
+        log(f"Found posts in Following: {len(tweet_ids)}")
         
-        # Finde neuen Beitrag zum Reposten & Liken (strikte Duplikatprüfung über seen_ids)
+        # Find new post to retweet & like (strict duplicate check via seen_ids)
         reposted = False
         for tid in tweet_ids:
             if tid not in seen_ids:
-                log(f"Neuer Following-Beitrag gefunden (ID: {tid}). Fuehre Retweet & Like aus...")
+                log(f"New Following post found (ID: {tid}). Executing retweet & like...")
                 try:
                     res_rt = account.retweet(tid)
-                    log(f"Retweet erfolgreich: {res_rt.get('data', {})}")
+                    log(f"Retweet successful: {res_rt.get('data', {})}")
                 except Exception as e_rt:
-                    log(f"Retweet Hinweis (moeglicherweise bereits geteilt): {e_rt}")
+                    log(f"Retweet notice (possibly already shared): {e_rt}")
                 
                 try:
                     res_lk = account.like(tid)
-                    log(f"Like erfolgreich: {res_lk.get('data', {})}")
+                    log(f"Like successful: {res_lk.get('data', {})}")
                 except Exception as e_lk:
-                    log(f"Like Hinweis: {e_lk}")
+                    log(f"Like notice: {e_lk}")
                 
                 seen_ids.add(tid)
                 reposted = True
                 break
         
         if not reposted and tweet_ids:
-            log("Keine ungesehenen Tweets in der Following-Timeline; ueberspringe Repost fuer diesen Zyklus.")
+            log("No unseen tweets in Following timeline; skipping retweet for this cycle.")
     except Exception as e:
-        log(f"Fehler beim Abrufen der Following-Timeline: {e}")
+        log(f"Error fetching Following timeline: {e}")
     
     save_seen_ids(seen_ids)
     time.sleep(3)
@@ -279,11 +279,11 @@ def post_via_headless_browser(message: str) -> bool:
 
         driver = webdriver.Firefox(options=opts)
         try:
-            log("Starte Headless Firefox fuer X Post-Fallback...")
+            log("Starting Headless Firefox for X post fallback...")
             driver.get("https://x.com/home")
             time.sleep(8)
 
-            # Klicke auf 'Posten' / Compose Button in der Navigation
+            # Click 'Post' / Compose button in navigation
             nav_btns = driver.find_elements(By.XPATH, "//a[@data-testid='SideNav_NewTweet_Button' or @href='/compose/post']")
             if nav_btns:
                 driver.execute_script("arguments[0].click();", nav_btns[0])
@@ -310,21 +310,21 @@ def post_via_headless_browser(message: str) -> bool:
                 "//button[@data-testid='tweetButton' or @data-testid='tweetButtonInline'] | //button[.//span[text()='Posten' or text()='Post']]"
             )
             driver.execute_script("arguments[0].click();", post_btn)
-            log("Post-Button auf X erfolgreich geklickt!")
+            log("Post button on X clicked successfully!")
             time.sleep(6)
-            log("Tweet via Headless Firefox Browser erfolgreich veroeffentlicht!")
+            log("Tweet published successfully via Headless Firefox Browser!")
             return True
         finally:
             driver.quit()
     except Exception as e:
-        log(f"Fehler beim Headless Browser Post auf X: {e}")
+        log(f"Error during Headless Browser post on X: {e}")
     finally:
         shutil.rmtree(tmp_profile, ignore_errors=True)
 
     return False
 
 def post_tweet(account: Account, post_text: str, target_g = None) -> bool:
-    log(f"Verfasse neuen Tweet: '{post_text}'")
+    log(f"Composing new tweet: '{post_text}'")
     success = False
     try:
         res_post = account.tweet(post_text)
@@ -332,14 +332,14 @@ def post_tweet(account: Account, post_text: str, target_g = None) -> bool:
         rest_id = tweet_data.get('result', {}).get('rest_id') or tweet_data.get('rest_id')
 
         if rest_id:
-            log(f"Tweet erfolgreich via GraphQL API veroeffentlicht! Tweet-ID: {rest_id}")
+            log(f"Tweet successfully published via GraphQL API! Tweet ID: {rest_id}")
             success = True
         else:
             errors = res_post.get("errors", [])
-            log(f"GraphQL Antwort enthaelt keine rest_id (Errors: {errors}). Wechsle zu Headless Browser Fallback...")
+            log(f"GraphQL response contains no rest_id (Errors: {errors}). Switching to Headless Browser fallback...")
             success = post_via_headless_browser(post_text)
     except Exception as e_p:
-        log(f"Fehler bei GraphQL Tweet-Absetzung ({e_p}). Wechsle zu Headless Browser Fallback...")
+        log(f"Error during GraphQL tweet dispatch ({e_p}). Switching to Headless Browser fallback...")
         success = post_via_headless_browser(post_text)
 
     if success:
@@ -347,7 +347,7 @@ def post_tweet(account: Account, post_text: str, target_g = None) -> bool:
             posted_gens = load_posted_gens()
             posted_gens.add(target_g)
             save_posted_gens(posted_gens)
-            log(f"Generation {target_g} erfolgreich als gepostet markiert.")
+            log(f"Generation {target_g} marked as posted successfully.")
         import hashlib
         th = hashlib.sha256(post_text.encode("utf-8")).hexdigest()
         posted_hashes = load_posted_hashes()
@@ -357,24 +357,24 @@ def post_tweet(account: Account, post_text: str, target_g = None) -> bool:
     return False
 
 def main(interval_seconds: int = 600):
-    log(f"=== AION NEXUS HEADLESS X DAEMON GESTARTET (Intervall: {interval_seconds // 60} Minuten) ===")
+    log(f"=== AION NEXUS HEADLESS X DAEMON STARTED (Interval: {interval_seconds // 60} minutes) ===")
     seen_ids = load_seen_ids()
     cycle = 0
     
     while True:
         cycle += 1
-        log(f"--- Starte Zyklus #{cycle} ---")
+        log(f"--- Starting cycle #{cycle} ---")
         try:
             cookies = get_session_cookies()
             if not cookies or "auth_token" not in cookies or "ct0" not in cookies:
-                log("FEHLER: Konnte keine gueltigen X-Cookies aus Firefox extrahieren.")
+                log("ERROR: Could not extract valid X cookies from Firefox.")
             else:
                 account = Account(cookies=cookies)
                 run_cycle(account, seen_ids)
         except Exception as e:
-            log(f"Unerwarteter Fehler in Zyklus #{cycle}: {e}")
+            log(f"Unexpected error in cycle #{cycle}: {e}")
         
-        log(f"Zyklus #{cycle} beendet. Warte auf naechsten Lauf (Intervall: {interval_seconds // 60} Min, Queue-Pruefung alle 10s)...")
+        log(f"Cycle #{cycle} finished. Waiting for next run (Interval: {interval_seconds // 60} min, queue check every 10s)...")
         start_wait = time.time()
         while time.time() - start_wait < interval_seconds:
             if os.path.exists(QUEUE_FILE):
@@ -382,7 +382,7 @@ def main(interval_seconds: int = 600):
                     with open(QUEUE_FILE, "r", encoding="utf-8") as f:
                         q = json.load(f)
                     if q:
-                        log("Dringende Nachricht in X Live-Queue entdeckt! Breche Wartezeit ab und starte Zyklus...")
+                        log("Urgent message detected in X Live Queue! Aborting sleep and starting cycle...")
                         break
                 except Exception:
                     pass

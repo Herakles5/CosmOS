@@ -3,21 +3,21 @@
  *  COSMOS HYPERVISOR - VM Launch & Guest Management
  * ============================================================================
  *
- *  Phase 1.6: Erster VM-Launch
+ *  Phase 1.6: First VM-Launch
  *
- *  Dieses Modul startet den Gast in der VM. Es kann:
- *  1. Den aktuellen Host als Gast "unterklappen" (Host → wird zum Gast)
- *  2. Einen separaten Gast-Kernel starten (z.B. Windows NT)
+ *  This module launches the guest in the VM. It can:
+ *  1. Subvert the current host into a guest (Host → becomes guest)
+ *  2. Launch a separate guest kernel (e.g. Windows NT)
  *
- *  Modus 1 (Subvert Host):
- *    Der Hypervisor schiebt sich UNTER den laufenden Kernel.
- *    Der Host merkt nichts und läuft normal weiter, aber jeder
- *    CPUID/RDTSC/MSR-Aufruf geht jetzt durch unseren Stealth-Handler.
- *    → Das ist der Modus für "den Hypervisor unsichtbar machen"
+ *  Mode 1 (Subvert Host):
+ *    The hypervisor slides UNDER the running kernel.
+ *    The host notices nothing and continues running normally, but every
+ *    CPUID/RDTSC/MSR invocation now goes through our stealth handler.
+ *    → This is the mode to "make the hypervisor invisible"
  *
- *  Modus 2 (Separate Guest):
- *    Ein komplett separater Gast (z.B. Windows) wird in der VM gestartet.
- *    → Das ist der Modus für "Windows mit GPU-Passthrough"
+ *  Mode 2 (Separate Guest):
+ *    A completely separate guest (e.g. Windows) is started inside the VM.
+ *    → This is the mode for "Windows with GPU passthrough"
  * ============================================================================
  */
 
@@ -42,12 +42,12 @@ extern void* cosmos_alloc_page_aligned(uint64_t* out_phys);
 /* ============================================================================
  *  GUEST TEST CODE
  *
- *  Ein minimaler "Gast", der nur CPUID ausführt und dann via VMCALL
- *  zurückkehrt. Damit testen wir, ob der gesamte VMX-Kreislauf funktioniert.
+ *  A minimal "guest" executing only CPUID and returning via VMCALL.
+ *  Used to verify that the entire VMX cycle works.
  * ============================================================================ */
 
-// Dieser Code wird als Gast ausgeführt
-// Er ist absichtlich simpel: CPUID → VMCALL → fertig
+// This code is executed as a guest
+// It is intentionally simple: CPUID → VMCALL → done
 static void __attribute__((naked, aligned(4096))) guest_test_code(void) {
     __asm__ __volatile__(
         // Test 1: CPUID Leaf 0 (Vendor String)
@@ -55,37 +55,37 @@ static void __attribute__((naked, aligned(4096))) guest_test_code(void) {
         "cpuid\n"
         
         // Test 2: CPUID Leaf 1 (Feature Info)
-        // Der Stealth-Handler sollte Bit 31 von ECX löschen!
+        // Stealth handler should clear Bit 31 of ECX!
         "mov $1, %%eax\n"
         "cpuid\n"
-        // ECX sollte jetzt KEIN Hypervisor-Bit haben
-        // Speichere ECX in R12 für spätere Prüfung
+        // ECX should now have NO hypervisor bit
+        // Store ECX in R12 for later check
         "mov %%ecx, %%r12d\n"
         
         // Test 3: CPUID Leaf 0x40000000 (Hypervisor Vendor)
-        // Sollte 0 zurückgeben (kein Hypervisor sichtbar)
+        // Should return 0 (no hypervisor visible)
         "mov $0x40000000, %%eax\n"
         "cpuid\n"
-        // EAX sollte 0 sein
+        // EAX should be 0
         "mov %%eax, %%r13d\n"
         
         // Test 4: RDTSC (Timing Check)
         "rdtsc\n"
-        "mov %%eax, %%r14d\n"  // Low 32 bits des TSC
+        "mov %%eax, %%r14d\n"  // Low 32 bits of TSC
         
-        // Test 5: VMCALL - Hypercall an den Hypervisor
-        // RAX = 0xC0DE = "Cosmos Test erfolgreich"
+        // Test 5: VMCALL - Hypercall to hypervisor
+        // RAX = 0xC0DE = "Cosmos Test successful"
         "mov $0xC0DE, %%eax\n"
         "vmcall\n"
         
-        // Sollte nie hierher kommen (VMCALL löst VM-Exit aus)
+        // Should never reach here (VMCALL causes VM-Exit)
         "hlt\n"
         
         ::: "memory"
     );
 }
 
-// Größe des Guest-Test-Codes (wird zur Laufzeit bestimmt)
+// Size of guest test code (determined at runtime)
 static void __attribute__((naked)) guest_test_code_end(void) {
     __asm__ __volatile__("nop\n" ::: "memory");
 }
@@ -93,27 +93,27 @@ static void __attribute__((naked)) guest_test_code_end(void) {
 /* ============================================================================
  *  SUBVERT HOST MODE
  *
- *  Schiebt den Hypervisor UNTER den aktuell laufenden Kernel.
- *  Nach dem VMLAUNCH läuft der Kernel als Gast weiter, ohne es zu merken.
+ *  Slides the hypervisor UNDER the currently running kernel.
+ *  After VMLAUNCH, the kernel continues running as guest without noticing.
  *
- *  Ablauf:
- *  1. Speichere den aktuellen CPU-Zustand (alle Register)
- *  2. Konfiguriere VMCS mit dem aktuellen Zustand als Guest State
- *  3. Setze Guest RIP auf die Rückkehradresse (nach VMLAUNCH)
- *  4. VMLAUNCH → Host wird zum Gast
- *  5. Der Code nach VMLAUNCH läuft jetzt IM GAST weiter
+ *  Workflow:
+ *  1. Save current CPU state (all registers)
+ *  2. Configure VMCS with current state as Guest State
+ *  3. Set Guest RIP to return address (after VMLAUNCH)
+ *  4. VMLAUNCH → Host becomes guest
+ *  5. Code following VMLAUNCH now runs INSIDE GUEST
  * ============================================================================ */
 
-// Flag das anzeigt ob wir bereits im Gast laufen
+// Flag indicating whether we are already running in guest
 static volatile int subverted = 0;
 
-// Return-Point Funktion für den subvertierten Host
-// Hierhin springt der Gast nach erfolgreicher VMLAUNCH
+// Return point function for subverted host
+// Guest jumps here after successful VMLAUNCH
 static void __attribute__((noinline)) subvert_return_point(void) {
     subverted = 1;
-    LAUNCH_LOG("★★★ HOST ERFOLGREICH SUBVERTIERT! ★★★");
-    LAUNCH_LOG("Der Kernel läuft jetzt als VM-Gast.");
-    LAUNCH_LOG("Alle CPUID-Aufrufe gehen durch den Stealth-Handler.");
+    LAUNCH_LOG("★★★ HOST SUCCESSFULLY SUBVERTED! ★★★");
+    LAUNCH_LOG("The kernel is now running as VM guest.");
+    LAUNCH_LOG("All CPUID calls route through the stealth handler.");
 }
 
 int cosmos_hv_subvert_host(cosmos_hypervisor* hv, uint32_t cpu_id) {
@@ -121,32 +121,32 @@ int cosmos_hv_subvert_host(cosmos_hypervisor* hv, uint32_t cpu_id) {
     
     cosmos_vcpu* vcpu = &hv->vcpus[cpu_id];
     if (!vcpu->vmcs_active) {
-        LAUNCH_LOG("CPU %u: VMCS nicht aktiv!", cpu_id);
+        LAUNCH_LOG("CPU %u: VMCS not active!", cpu_id);
         return -1;
     }
     
     LAUNCH_LOG("CPU %u: ═══════════════════════════════════", cpu_id);
     LAUNCH_LOG("CPU %u: SUBVERT HOST MODE", cpu_id);
-    LAUNCH_LOG("CPU %u: Der Kernel wird zum Gast...", cpu_id);
+    LAUNCH_LOG("CPU %u: Kernel is becoming guest...", cpu_id);
     LAUNCH_LOG("CPU %u: ═══════════════════════════════════", cpu_id);
     
     uint64_t guest_rsp, guest_rip, guest_rflags;
     
-    // Erfasse RFLAGS und RSP
+    // Capture RFLAGS and RSP
     guest_rflags = cosmos_read_rflags();
     __asm__ __volatile__("mov %%rsp, %0" : "=r"(guest_rsp));
     
-    // Setze Guest State
+    // Set Guest State
     cosmos_vmwrite(VMCS_GUEST_RFLAGS, guest_rflags | 0x2);
     cosmos_vmwrite(VMCS_GUEST_RSP, guest_rsp);
     cosmos_vmwrite(VMCS_GUEST_CR3, cosmos_read_cr3());
     
-    // Guest RIP auf lokales C-Label setzen
+    // Set Guest RIP to local C label
     void* resume_ptr = &&guest_resume;
     guest_rip = (uint64_t)resume_ptr;
     cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip);
     
-    // Callee-saved Register erfassen, damit der Gast-Context sauber zurückkehren kann
+    // Capture callee-saved registers for clean guest context return
     uint64_t c_rbp, c_rbx, c_r12, c_r13, c_r14, c_r15;
     __asm__ __volatile__("mov %%rbp, %0" : "=r"(c_rbp));
     __asm__ __volatile__("mov %%rbx, %0" : "=r"(c_rbx));
@@ -163,42 +163,42 @@ int cosmos_hv_subvert_host(cosmos_hypervisor* hv, uint32_t cpu_id) {
     vcpu->guest_regs.r14 = c_r14;
     vcpu->guest_regs.r15 = c_r15;
     
-    LAUNCH_LOG("CPU %u: Starte VMLAUNCH...", cpu_id);
+    LAUNCH_LOG("CPU %u: Starting VMLAUNCH...", cpu_id);
     
-    // Wir zwingen GCC, das Label zu behalten und markieren es als
-    // erreichbar, damit GCC es nicht ans Ende der Funktion wegoptimiert!
+    // Force GCC to keep label and mark as reachable
+    // so GCC does not optimize it away to the end of function!
     __asm__ goto("" : : "r"(resume_ptr) : "memory" : guest_resume);
     
     cosmos_vmlaunch_trampoline(&vcpu->guest_regs);
     
-    // Wenn wir hier landen, ist VMLAUNCH FEHLGESCHLAGEN
+    // If we land here, VMLAUNCH FAILED
     {
         uint64_t vmx_error = 0;
         cosmos_vmread(0x4400, &vmx_error);
-        LAUNCH_LOG("CPU %u: ★ VMLAUNCH FEHLGESCHLAGEN! Error=%llu ★", cpu_id, (unsigned long long)vmx_error);
+        LAUNCH_LOG("CPU %u: ★ VMLAUNCH FAILED! Error=%llu ★", cpu_id, (unsigned long long)vmx_error);
     }
     return -2;
 
 guest_resume:
     __asm__ __volatile__("" ::: "memory");
     subverted = 1;
-    LAUNCH_LOG("★★★ HOST ERFOLGREICH SUBVERTIERT! ★★★");
-    LAUNCH_LOG("Der Kernel läuft jetzt als VM-Gast.");
+    LAUNCH_LOG("★★★ HOST SUCCESSFULLY SUBVERTED! ★★★");
+    LAUNCH_LOG("The kernel is now running as VM guest.");
     return 0;
 }
 
 /* ============================================================================
  *  LAUNCH SEPARATE GUEST
  *
- *  Startet einen separaten Gast (z.B. den Test-Code oder später Windows).
- *  Der Gast bekommt einen eigenen Adressraum via EPT.
+ *  Starts a separate guest (e.g. test code or later Windows).
+ *  Guest receives its own address space via EPT.
  * ============================================================================ */
 int cosmos_hv_launch_test_guest(cosmos_hypervisor* hv, uint32_t cpu_id) {
     if (!hv || cpu_id >= 256) return -1;
     
     cosmos_vcpu* vcpu = &hv->vcpus[cpu_id];
     if (!vcpu->vmcs_active) {
-        LAUNCH_LOG("CPU %u: VMCS nicht aktiv!", cpu_id);
+        LAUNCH_LOG("CPU %u: VMCS not active!", cpu_id);
         return -1;
     }
     
@@ -206,18 +206,18 @@ int cosmos_hv_launch_test_guest(cosmos_hypervisor* hv, uint32_t cpu_id) {
     LAUNCH_LOG("CPU %u: TEST GUEST LAUNCH", cpu_id);
     LAUNCH_LOG("CPU %u: ═══════════════════════════════════", cpu_id);
     
-    // Guest Code Adresse
+    // Guest Code Address
     uint64_t guest_entry = (uint64_t)&guest_test_code;
     uint64_t code_size = (uint64_t)&guest_test_code_end - (uint64_t)&guest_test_code;
     
     LAUNCH_LOG("CPU %u: Guest Code @ 0x%llX (%llu bytes)", cpu_id,
               (unsigned long long)guest_entry, (unsigned long long)code_size);
     
-    // Guest RIP auf Test-Code setzen
+    // Set Guest RIP to test code
     cosmos_vmwrite(VMCS_GUEST_RIP, guest_entry);
     
-    // Guest Stack (Top of a 4KB page, wächst nach unten)
-    // Guest Stack allozieren
+    // Guest Stack (top of 4KB page, grows downward)
+    // Allocate Guest Stack
     uint64_t guest_stack_phys;
 #ifdef __linux__
     uint8_t* guest_stack = (uint8_t*)mmap(NULL, 4096, PROT_READ | PROT_WRITE,
@@ -228,38 +228,38 @@ int cosmos_hv_launch_test_guest(cosmos_hypervisor* hv, uint32_t cpu_id) {
     uint8_t* guest_stack = (uint8_t*)cosmos_alloc_page_aligned(&guest_stack_phys);
 #endif
     if (!guest_stack) {
-        LAUNCH_LOG("CPU %u: Guest Stack Allokation fehlgeschlagen!", cpu_id);
+        LAUNCH_LOG("CPU %u: Guest stack allocation failed!", cpu_id);
         return -2;
     }
     cosmos_vmwrite(VMCS_GUEST_RSP, (uint64_t)(guest_stack + 4096 - 8));
     
-    // Guest Register auf 0 initialisieren
+    // Initialize guest registers to 0
     memset(&vcpu->guest_regs, 0, sizeof(vmx_guest_regs));
     
     LAUNCH_LOG("CPU %u: Guest Entry: 0x%llX", cpu_id, (unsigned long long)guest_entry);
     LAUNCH_LOG("CPU %u: Guest Stack: 0x%llX", cpu_id, 
               (unsigned long long)(guest_stack + 4096 - 8));
-    LAUNCH_LOG("CPU %u: Starte VMLAUNCH für Test-Gast...", cpu_id);
+    LAUNCH_LOG("CPU %u: Starting VMLAUNCH for test guest...", cpu_id);
     
     // ★ VMLAUNCH! ★
     cosmos_vmlaunch_trampoline(&vcpu->guest_regs);
     
-    // Wenn VMLAUNCH fehlschlägt:
+    // If VMLAUNCH fails:
     uint64_t vmx_error = 0;
     cosmos_vmread(0x4400, &vmx_error);
-    LAUNCH_LOG("CPU %u: VMLAUNCH fehlgeschlagen! Error=%llu", cpu_id,
+    LAUNCH_LOG("CPU %u: VMLAUNCH failed! Error=%llu", cpu_id,
               (unsigned long long)vmx_error);
     
     // Error Codes:
-    // 1 = VMCALL in VMX root
-    // 2 = VMCLEAR mit ungültiger Adresse
-    // 3 = VMCLEAR mit VMXON Pointer
-    // 4 = VMLAUNCH mit non-clear VMCS
-    // 5 = VMRESUME mit non-launched VMCS
-    // 7 = VM entry mit ungültigen Control-Feldern
-    // 8 = VM entry mit ungültigen Host-State-Feldern
-    // 9 = VMPTRLD mit ungültiger Adresse
-    // usw.
+    // 1 = VMCALL in VMX root operation
+    // 2 = VMCLEAR with invalid address
+    // 3 = VMCLEAR with VMXON pointer
+    // 4 = VMLAUNCH with non-clear VMCS
+    // 5 = VMRESUME with non-launched VMCS
+    // 7 = VM entry with invalid control fields
+    // 8 = VM entry with invalid host-state fields
+    // 9 = VMPTRLD with invalid address
+    // etc.
     
     const char* error_names[] = {
         "Unknown",                                      // 0
@@ -288,7 +288,7 @@ int cosmos_hv_launch_test_guest(cosmos_hypervisor* hv, uint32_t cpu_id) {
 /* ============================================================================
  *  HYPERVISOR FULL INITIALIZATION
  *
- *  Komplette Initialisierung in einem Aufruf:
+ *  Complete initialization in one call:
  *  1. VMX Detection
  *  2. VMX Enable (VMXON)
  *  3. VMCS Setup
@@ -301,19 +301,19 @@ int cosmos_hv_init(cosmos_hypervisor* hv) {
     LAUNCH_LOG("║   Type-1 Bare-Metal VMX Hypervisor       ║");
     LAUNCH_LOG("║   Target: Intel i7-7700 (Kaby Lake)      ║");
     LAUNCH_LOG("╚══════════════════════════════════════════╝");
-    // Die eigentliche Initialisierung (Detect, Enable, VMCS, EPT)
-    // wird jetzt vom LKM (cosmos_lkm.c) gesteuert, um sauberes Thread-Pinning
-    // auf den einzelnen Kernen (smp_call_function) zu garantieren.
+    // The actual initialization (Detect, Enable, VMCS, EPT)
+    // is now managed by the LKM (cosmos_lkm.c) to ensure clean thread pinning
+    // across individual cores (smp_call_function).
     
-    // Stealth Mode aktivieren
+    // Activate stealth mode
     hv->stealth_mode = 1;
     hv->initialized = 1;
     
     LAUNCH_LOG("╔══════════════════════════════════════════╗");
-    LAUNCH_LOG("║  ★ HYPERVISOR BEREIT!                    ║");
-    LAUNCH_LOG("║  Stealth Mode: AKTIV                     ║");
-    LAUNCH_LOG("║  EPT: %s                             ║", hv->has_ept ? "AKTIV  " : "INAKTIV");
-    LAUNCH_LOG("║  VPID: %s                            ║", hv->has_vpid ? "AKTIV  " : "INAKTIV");
+    LAUNCH_LOG("║  ★ HYPERVISOR READY!                     ║");
+    LAUNCH_LOG("║  Stealth Mode: ACTIVE                    ║");
+    LAUNCH_LOG("║  EPT: %s                             ║", hv->has_ept ? "ACTIVE  " : "INACTIVE");
+    LAUNCH_LOG("║  VPID: %s                            ║", hv->has_vpid ? "ACTIVE  " : "INACTIVE");
     LAUNCH_LOG("╚══════════════════════════════════════════╝");
     
     return 0;
@@ -325,7 +325,7 @@ int cosmos_hv_init(cosmos_hypervisor* hv) {
 void cosmos_hv_shutdown(cosmos_hypervisor* hv) {
     if (!hv) return;
     
-    LAUNCH_LOG("Hypervisor wird heruntergefahren...");
+    LAUNCH_LOG("Shutting down hypervisor...");
     
     for (uint32_t cpu = 0; cpu < 256; cpu++) {
         if (hv->vcpus[cpu].vmx_enabled) {
@@ -336,6 +336,5 @@ void cosmos_hv_shutdown(cosmos_hypervisor* hv) {
     hv->initialized = 0;
     hv->stealth_mode = 0;
     
-    LAUNCH_LOG("Hypervisor sauber heruntergefahren.");
+    LAUNCH_LOG("Hypervisor cleanly shut down.");
 }
-

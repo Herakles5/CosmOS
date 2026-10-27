@@ -3,12 +3,12 @@
  *  COSMOS I/O TRAP MANAGER
  * ============================================================================
  *
- *  Phase 2.3: I/O Virtualisierung
+ *  Phase 2.3: I/O Virtualization
  *
- *  Diese Komponente fängt Zugriffe des Windows-Gastes auf Hardware-Ports (IN/OUT)
- *  und Memory-Mapped I/O (MMIO via EPT-Violations) ab.
- *  Dadurch können wir virtuelle Geräte (wie Festplatten oder Netzwerkkarten)
- *  emulieren, ohne echte Hardware zu benötigen.
+ *  This component intercepts Windows guest access to hardware ports (IN/OUT)
+ *  and Memory-Mapped I/O (MMIO via EPT violations).
+ *  This allows us to emulate virtual devices (such as disks or network cards)
+ *  without requiring physical hardware.
  * ============================================================================
  */
 
@@ -18,18 +18,18 @@
 #include <stdint.h>
 #include "cosmos_hypervisor.h"
 
-// Typ des I/O Zugriffs
+// Type of I/O access
 enum io_access_type {
     IO_READ,
     IO_WRITE
 };
 
-// Callback für einen I/O Port Zugriff
+// Callback for I/O port access
 typedef void (*io_port_handler_t)(cosmos_hypervisor* hv, cosmos_vcpu* vcpu, 
                                   uint16_t port, io_access_type type, 
                                   uint8_t size, uint32_t* value);
 
-// Callback für einen MMIO Zugriff
+// Callback for MMIO access
 typedef void (*mmio_handler_t)(cosmos_hypervisor* hv, cosmos_vcpu* vcpu, 
                                uint64_t phys_addr, io_access_type type, 
                                uint8_t size, uint64_t* value);
@@ -56,8 +56,8 @@ struct cosmos_io_manager {
     mmio_trap mmio_traps[MAX_MMIO_TRAPS];
     uint32_t num_mmio_traps;
     
-    // I/O Bitmap (2 x 4KB Pages) für das VMCS
-    // 1 Bit = 1 Port. Wenn Bit 1 -> VM-Exit bei IN/OUT
+    // I/O Bitmap (2 x 4KB Pages) for the VMCS
+    // 1 Bit = 1 Port. If Bit is 1 -> VM-Exit on IN/OUT
     uint8_t* io_bitmap_a; // Ports 0x0000 - 0x7FFF
     uint8_t* io_bitmap_b; // Ports 0x8000 - 0xFFFF
     uint64_t io_bitmap_a_phys;
@@ -69,7 +69,7 @@ int cosmos_io_init(cosmos_io_manager* io);
 int cosmos_io_register_port_trap(cosmos_io_manager* io, uint16_t start, uint16_t end, io_port_handler_t handler);
 int cosmos_io_register_mmio_trap(cosmos_io_manager* io, uint64_t start, uint64_t end, mmio_handler_t handler);
 
-// Handler die vom VMX Exit Dispatcher aufgerufen werden
+// Handlers called by the VMX Exit Dispatcher
 void cosmos_io_handle_port_access(cosmos_hypervisor* hv, cosmos_vcpu* vcpu);
 void cosmos_io_handle_mmio_access(cosmos_hypervisor* hv, cosmos_vcpu* vcpu, uint64_t guest_phys);
 

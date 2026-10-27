@@ -5,7 +5,7 @@
 #include "schneider_lang.h"
 #include "surreal_gl.h"
 
-// === FEHLENDE GLOBALE VARIABLEN ===
+// === MISSING GLOBAL VARIABLES ===
 volatile int os_app_x = 312;
 volatile int os_app_y = 234;
 volatile int os_app_w = 800;
@@ -25,25 +25,25 @@ extern uint32_t frame;
 extern _44 is_over_rect(_43 mx, _43 my, _43 x, _43 y, _43 w, _43 h);
 
 extern uint32_t frame;
-extern volatile uint64_t system_ticks; // NEU: Für den FPS Zähler!
+extern volatile uint64_t system_ticks; // For FPS counter
 
 // === KEYBOARD STATE ===
 extern "C" uint8_t os2_key_scancode;
 static bool sc_keys[256] = {false};
 
-// === PERFEKTE START-KAMERA (3rd Person Action Sicht) ===
-float sc_cam_rot_x = -30.0f; // NEGATIV: Kamera blickt von oben nach unten!
-float sc_cam_rot_y = 0.0f;   // Geradeaus
-float sc_cam_dist = 35.0f;  // Zoom nach hinten (Abstand zur Katze)
+// === STARTING CAMERA (3rd Person Action View) ===
+float sc_cam_rot_x = -30.0f; // Negative: Camera tilts top-down
+float sc_cam_rot_y = 0.0f;   // Forward
+float sc_cam_dist = 35.0f;  // Zoom distance behind cat
 
 float sc_cat_x = 0.0f;
 float sc_cat_z = 0.0f;
 float sc_cat_rot = 0.0f;
-float sc_walk_t = 0.0f; // Animations-Timer fürs Laufen
+float sc_walk_t = 0.0f; // Walk animation timer
 
 // === INVENTORY SYSTEM ===
 struct ScInvSlot { int type; int value; int count; };
-ScInvSlot sc_inv[20] = {0}; // 20 Slots gesamt (5 Hotbar + 15 Rucksack)
+ScInvSlot sc_inv[20] = {0}; // 20 slots total (5 hotbar + 15 backpack)
 bool sc_show_inv = false;
 int sc_msg_timer = 0;
 // === CHAR SLOTS & 9 LIVES ===
@@ -75,28 +75,28 @@ void load_sc_save() {
     }
 }
 
-// === SURREAL GRAFIK EDITOR: MORPH SYSTEM ===
+// === SURREAL GRAPHICS EDITOR: MORPH SYSTEM ===
 struct CatMorph {
-    // Kopf
+    // Head
     float head_scale;      // Default: 1.0
     float ear_height;      // Default: 1.0
     float ear_width;       // Default: 1.0
     float ear_spread;      // Default: 1.0
-    // Koerper
+    // Body
     float body_width;      // Default: 1.0
     float body_height;     // Default: 1.0
     float body_depth;      // Default: 1.0
-    // Arme
+    // Arms
     float arm_length;      // Default: 1.0
     float arm_thickness;   // Default: 1.0
-    // Beine
+    // Legs
     float leg_length;      // Default: 1.0
     float leg_thickness;   // Default: 1.0
-    // Schwanz
+    // Tail
     float tail_length;     // Default: 1.0
     float tail_curl;       // Default: 1.0
     float tail_thickness;  // Default: 1.0
-    // Gesicht
+    // Face
     float eye_size;        // Default: 1.0
     float eye_distance;    // Default: 1.0
     float pupil_size;      // Default: 1.0
@@ -117,17 +117,17 @@ CatMorph slot_morphs[3];
 bool morph_initialized = false;
 
 // Editor State
-int ed_selected_part = 0;     // 0=Kopf, 1=Ohren, 2=Koerper, 3=Arme, 4=Beine, 5=Schwanz, 6=Augen, 7=Nase, 8=Items
-int ed_selected_slider = -1;  // Welcher Slider wird gerade gezogen
+int ed_selected_part = 0;     // 0=Head, 1=Ears, 2=Body, 3=Arms, 4=Legs, 5=Tail, 6=Eyes, 7=Nose, 8=Items
+int ed_selected_slider = -1;  // Active slider being dragged
 
-float ed_cam_rot_y = 180.0f;  // FIX: 180 Grad, damit die Katze uns ansieht!
-float ed_cam_rot_x = 0.0f;   // Editor Kamera X-Rotation
-float ed_cam_dist = 35.0f;    // NEU: Eigene Zoom-Variable für den Editor!
+float ed_cam_rot_y = 180.0f;  // 180 degrees so the cat faces forward
+float ed_cam_rot_x = 0.0f;   // Editor camera X-rotation
+float ed_cam_dist = 35.0f;    // Editor zoom variable
 
-bool ed_wireframe = true;     // Wireframe Overlay aktiv
-bool ed_show_items = false;   // Item-Tab aktiv
+bool ed_wireframe = true;     // Wireframe overlay active
+bool ed_show_items = false;   // Item tab active
 
-// Hilfsfunktion: Wandelt Zahlen in Text um, damit wir Stack-Zahlen zeichnen können
+// Helper: convert number to string for stack counts
 static void num_to_str(int n, char* buf) {
     if(n==0) { buf[0]='0'; buf[1]=0; return; }
     int i=0; char rev[16];
@@ -140,8 +140,8 @@ int sc_last_mx = 0;
 int sc_last_my = 0;
 
 int sc_state = 0;
-int sc_attack_l_timer = 0; // Timer für Linken Arm
-int sc_attack_r_timer = 0; // Timer für Rechten Arm
+int sc_attack_l_timer = 0; // Left arm attack timer
+int sc_attack_r_timer = 0; // Right arm attack timer
 
 int drop_active = 0;
 int drop_type = 0; 
@@ -154,15 +154,15 @@ char drop_name[64] = "NOTHING";
 int drop_stat = 0;
 
 #define MAX_ENEMIES 5
-float sc_cat_y = 0.0f;       // Höhe der Katze
-float sc_cat_vy = 0.0f;      // Sprung-Geschwindigkeit
-int sc_jump_count = 0;       // 0 = Boden, 1 = Sprung, 2 = Salto, 3 = Slam
+float sc_cat_y = 0.0f;       // Cat altitude / Y-height
+float sc_cat_vy = 0.0f;      // Jump vertical velocity
+int sc_jump_count = 0;       // 0 = Ground, 1 = Jump, 2 = Somersault, 3 = Slam
 int sc_slam_cooldown = 0;
 int sc_slam_fx_timer = 0;
 int sc_landing_timer = 0;
 float sc_slam_x = 0;
 float sc_slam_z = 0;
-float sc_cat_flip = 0.0f;    // Drehwinkel für den Salto
+float sc_cat_flip = 0.0f;    // Somersault flip angle
 
 float sc_enemy_x[MAX_ENEMIES] = {20.0f, -20.0f, 30.0f};
 float sc_enemy_z[MAX_ENEMIES] = {20.0f, 20.0f, -20.0f};
@@ -170,9 +170,9 @@ float sc_enemy_rot[MAX_ENEMIES] = {180.0f, 180.0f, 0.0f};
 int sc_enemy_hp[MAX_ENEMIES] = {5, 6, 7, 8, 9};
 int sc_enemy_hit_timer[MAX_ENEMIES] = {0};
 int sc_enemy_attack_timer[MAX_ENEMIES] = {0};
-int sc_enemy_respawn_timer[MAX_ENEMIES] = {0}; // NEU: RESPAWN TIMER
+int sc_enemy_respawn_timer[MAX_ENEMIES] = {0}; // Respawn timer
 
-int sc_player_hp = 10; // NEU: 10 LEBEN!
+int sc_player_hp = 10; // 10 HP
 int sc_player_hit_timer = 0;
 
 int player_color_idx = 0;   
@@ -202,11 +202,11 @@ const uint8_t voxel_cat_pixels[12][12] = {
     {0,1,1,0,0,0,0,0,0,1,1,0}
 };
 
-// === HOCHPRÄZISE TRIGONOMETRIE GEGEN DIE FELL-LÖCHER ===
+// === HIGH-PRECISION TRIGONOMETRY FOR FUR INTEGRITY ===
 static float app_sinf(float x) {
     x = x - (int)(x / 6.2831853f) * 6.2831853f;
     if (x < 0) x += 6.2831853f;
-    x -= 3.14159265f; // Verschiebung auf das Zentrum 0
+    x -= 3.14159265f; // Shift to center 0
     
     float abs_x = x < 0 ? -x : x;
     float y = (4.0f / 3.14159265f) * x - (4.0f / (3.14159265f * 3.14159265f)) * x * abs_x;
@@ -216,13 +216,13 @@ static float app_cosf(float x) { return app_sinf(x + 1.5707963f); }
 
 static void GetCatColor(int idx, uint8_t* r, uint8_t* g, uint8_t* b) {
     if (idx == 0)      { *r = 255; *g = 140; *b = 0;   } // Orange
-    else if (idx == 1) { *r = 140; *g = 50;  *b = 180; } // Lila (Deep Purple)
+    else if (idx == 1) { *r = 140; *g = 50;  *b = 180; } // Purple (Deep Purple)
     else if (idx == 2) { *r = 50;  *g = 150; *b = 255; } // Blue
     else if (idx == 3) { *r = 240; *g = 240; *b = 240; } // White
     else if (idx == 4) { *r = 30;  *g = 30;  *b = 40;  } // Black
-    else if (idx == 5) { *r = 255; *g = 175; *b = 185; } // Rosa (Soft Rose)
+    else if (idx == 5) { *r = 255; *g = 175; *b = 185; } // Pink (Soft Rose)
     else if (idx == 6) { *r = 255; *g = 20;  *b = 147; } // Pink (Hot Pink)
-    else               { *r = 220; *g = 30;  *b = 30;  } // Rot (Crimson)
+    else               { *r = 220; *g = 30;  *b = 30;  } // Red (Crimson)
 }
 
 static void DrawBox(float px, float py, float pz, float sx, float sy, float sz) {
@@ -255,40 +255,40 @@ int dragged_extra_idx = -1;
 float drag_start_x = 0, drag_start_y = 0;
 float drag_orig_x = 0, drag_orig_y = 0, drag_orig_z = 0;
 
-// === DEZENTER & NATÜRLICHER GLANZ-NEBEL (Keine Billardkugel mehr!) ===
+// === SUBTLE & NATURAL SPECULAR HAZE ===
 static void DrawStardustFur(float px, float py, float pz, float sx, float sy, float sz, int pattern_idx, float anim_t, uint8_t base_r, uint8_t base_g, uint8_t base_b, bool add_bristles, int part_id = -1) {
     uint8_t cr = base_r, cg = base_g, cb = base_b;
     if (pattern_idx == 1) { cr = (cr * 3) / 4; cg = (cg * 3) / 4; cb = (cb * 3) / 4; } 
     else if (pattern_idx == 2) { cr = cr + (255-cr)/2; cg = cg + (255-cg)/2; cb = cb + (255-cb)/2; }
     
-    // 1. Der feste Körper (Hautschicht - matt & deckend)
-    // Echtes Kätzchen-Rosa als Hautfarbe unter dem Fell!
+    // 1. Solid body (skin layer - matte & opaque)
+    // Kitten pink as skin color beneath fur
     uint8_t skin_r = 255;
     uint8_t skin_g = 160;
     uint8_t skin_b = 180;
     
-    // Verhindern von Überlauf
+    // Clamp to prevent overflow
     if (skin_r > 255) skin_r = 255;
     if (skin_g > 255) skin_g = 255;
     if (skin_b > 255) skin_b = 255;
     
     sglColor3ub(skin_r, skin_g, skin_b); 
-    sglDisable(SGL_LIGHTING); // Schaltet das Rasterizer-Lighting ab, damit der Körper komplett matt bleibt
+    sglDisable(SGL_LIGHTING); // Disable rasterizer lighting so body remains matte
     DrawSurrealBlob(px, py, pz, sx, sy, sz);
-    sglEnable(SGL_LIGHTING);  // Wieder an für andere Dinge
+    sglEnable(SGL_LIGHTING);  // Re-enable lighting for remaining passes
     
-    // 2. Die dezent glänzende Nebel-Haut
+    // 2. Subtle specular mist layer
     if (add_bristles) {
         sglPushMatrix(); 
         sglTranslatef(px, py, pz);
         sglScalef(sx * 0.5f, sy * 0.5f, sz * 0.5f); 
         
-        sglBegin(4); // Modus 4 = SGL_POINTS
+        sglBegin(4); // Mode 4 = SGL_POINTS
         
         int lat_bands = 25;  
         int lon_slices = 40; 
         
-        // Optimierter Half-Vector für die Lichtreflexion
+        // Optimized half-vector for specular reflection
         float hx = 0.22f;
         float hy = 0.39f;
         float hz = 0.89f;
@@ -323,8 +323,7 @@ static void DrawStardustFur(float px, float py, float pz, float sx, float sy, fl
                 float spec16 = spec4 * spec4;
                 float spec32 = spec16 * spec16; 
                 
-                // DÄMPFUNG: Wir multiplizieren mit 0.35f, damit das Highlight das Fell nicht komplett weiß blendet,
-                // sondern nur einen dezenten, echten Seidenglanz erzeugt.
+                // DAMPING: Multiply by 0.35f to produce a soft silk sheen without blowout
                 float final_spec = spec32 * 0.35f;
                 
                 uint8_t pr = cr + (uint8_t)((255 - cr) * final_spec);
@@ -437,23 +436,23 @@ static void DrawStardustFur(float px, float py, float pz, float sx, float sy, fl
     }
 }
 
-// === 2. DIE SCHÖNHEITS-OP FÜR DIE AUGEN (Tiefe Glubschaugen) ===
+// === 2. CAT FACIAL FEATURES & EYES ===
 static void DrawCatFace(uint8_t mr, uint8_t mg, uint8_t mb, const CatMorph* morph) {
     float ed = morph ? morph->eye_distance : 1.0f;
     float es = morph ? morph->eye_size : 1.0f;
     float ps = morph ? morph->pupil_size : 1.0f;
     float ns = morph ? morph->nose_size : 1.0f;
     
-    // Linkes Auge (Große Kugel, aber ganz tief in den Kopf geschoben! z=0.15)
+    // Left eye (recessed into head at z=0.15)
     sglPushMatrix(); sglTranslatef(-0.35f * ed, 0.15f, 0.15f); 
     sglColor3ub(230, 230, 220); 
     sglDrawSphere(0.4f * es, 16); 
-    sglTranslatef(0.0f, 0.0f, 0.35f * es); // Pupille auf die Oberfläche schieben
+    sglTranslatef(0.0f, 0.0f, 0.35f * es); // Position pupil on eye surface
     sglColor3ub(20, 25, 20); 
     sglDrawSphere(0.15f * ps, 12); 
     sglPopMatrix();
     
-    // Rechtes Auge (Große Kugel, ganz tief im Kopf)
+    // Right eye (recessed into head)
     sglPushMatrix(); sglTranslatef(0.35f * ed, 0.15f, 0.15f); 
     sglColor3ub(230, 230, 220); 
     sglDrawSphere(0.4f * es, 16); 
@@ -462,7 +461,7 @@ static void DrawCatFace(uint8_t mr, uint8_t mg, uint8_t mb, const CatMorph* morp
     sglDrawSphere(0.15f * ps, 12); 
     sglPopMatrix();
     
-    // Nase (Etwas tiefer gesetzt)
+    // Nose (positioned slightly lower)
     sglPushMatrix(); sglTranslatef(0.0f, -0.2f, 0.4f); 
     sglColor3ub(180, 100, 110); 
     sglDrawSphere(0.15f * ns, 8); 
@@ -472,7 +471,7 @@ static void DrawCatFace(uint8_t mr, uint8_t mg, uint8_t mb, const CatMorph* morp
 void Draw3DCat(float scale, uint8_t mr, uint8_t mg, uint8_t mb, float anim_t, float walk_t, int attack_l, int attack_r, int pattern_idx, int armor_idx, int face_idx, int weapon_idx, const CatMorph* morph = 0) {
     sglPushMatrix(); sglScalef(scale, scale, scale);
     
-    // Morph-Werte extrahieren (Fallback: 1.0)
+    // Extract morph values (fallback: 1.0)
     float m_hs = morph ? morph->head_scale : 1.0f;
     float m_eh = morph ? morph->ear_height : 1.0f;
     float m_ew = morph ? morph->ear_width : 1.0f;
@@ -488,7 +487,7 @@ void Draw3DCat(float scale, uint8_t mr, uint8_t mg, uint8_t mb, float anim_t, fl
     float m_tc = morph ? morph->tail_curl : 1.0f;
     float m_tt = morph ? morph->tail_thickness : 1.0f;
 
-    // --- KÖRPER & BAUCH ---
+    // --- BODY & TORSO ---
     if (armor_idx >= 1) { 
         sglPushMatrix(); sglColor3ub(100, 100, 100); DrawBox(0.0f, 0.0f, 0.0f, 4.2f * m_bw, 3.0f * m_bh, 4.0f * m_bd);
         if (armor_idx == 2) { 
@@ -502,13 +501,13 @@ void Draw3DCat(float scale, uint8_t mr, uint8_t mg, uint8_t mb, float anim_t, fl
         DrawStardustFur(0.0f, -0.5f, 0.5f, 3.5f * m_bw, 5.0f * m_bh, 3.8f * m_bd, pattern_idx, anim_t, br, bg, bb2, true, 2); 
     }
 
-    // --- KOPF & OHREN ---
+    // --- HEAD & EARS ---
     sglPushMatrix(); sglTranslatef(0.0f, 4.5f * m_bh, 0.0f); 
     DrawStardustFur(0.0f, 0.0f, 0.0f, 5.5f * m_hs, 5.5f * m_hs, 5.0f * m_hs, pattern_idx, anim_t, mr, mg, mb, true, 0); 
-    DrawStardustFur(-1.8f * m_es * m_hs, 3.0f * m_eh * m_hs, 0.0f, 1.5f * m_ew * m_hs, 2.5f * m_eh * m_hs, 1.5f * m_ew * m_hs, pattern_idx, anim_t, mr, mg, mb, true, 1); // Ohr Links
-    DrawStardustFur(1.8f * m_es * m_hs, 3.0f * m_eh * m_hs, 0.0f, 1.5f * m_ew * m_hs, 2.5f * m_eh * m_hs, 1.5f * m_ew * m_hs, pattern_idx, anim_t, mr, mg, mb, true, 1);  // Ohr Rechts
+    DrawStardustFur(-1.8f * m_es * m_hs, 3.0f * m_eh * m_hs, 0.0f, 1.5f * m_ew * m_hs, 2.5f * m_eh * m_hs, 1.5f * m_ew * m_hs, pattern_idx, anim_t, mr, mg, mb, true, 1); // Left Ear
+    DrawStardustFur(1.8f * m_es * m_hs, 3.0f * m_eh * m_hs, 0.0f, 1.5f * m_ew * m_hs, 2.5f * m_eh * m_hs, 1.5f * m_ew * m_hs, pattern_idx, anim_t, mr, mg, mb, true, 1);  // Right Ear
     
-    // --- GESICHT / VISIER ---
+    // --- FACE / VISOR ---
     sglPushMatrix(); 
     sglScalef(m_hs, m_hs, m_hs);
     sglTranslatef(0.0f, 0.2f, 2.2f); 
@@ -516,24 +515,24 @@ void Draw3DCat(float scale, uint8_t mr, uint8_t mg, uint8_t mb, float anim_t, fl
         sglColor3ub(50, 50, 200); DrawBox(0.0f, 0.2f, 2.2f, 2.5f, 1.0f, 0.5f);
         sglColor3ub(0, 0, 0); DrawBox(1.0f, 0.2f, 2.5f, 0.8f, 0.4f, 0.2f);
         sglColor3ub(0, 0, 0); DrawBox(-1.0f, 0.2f, 2.5f, 0.8f, 0.4f, 0.2f);
-        sglColor3ub(255, 100, 100); DrawBox(0.0f, -0.4f, 2.5f, 0.3f, 0.2f, 0.2f); // Nase unterm Visier
+        sglColor3ub(255, 100, 100); DrawBox(0.0f, -0.4f, 2.5f, 0.3f, 0.2f, 0.2f); // Nose under visor
     } else {
         DrawCatFace(mr, mg, mb, morph);
-        sglColor3ub(255, 100, 100); DrawBox(0.0f, -0.2f, 0.2f, 0.4f, 0.2f, 0.2f); // Normale Nase
+        sglColor3ub(255, 100, 100); DrawBox(0.0f, -0.2f, 0.2f, 0.4f, 0.2f, 0.2f); // Standard nose
     }
     sglPopMatrix();
-    sglPopMatrix(); // Kopf Ende
+    sglPopMatrix(); // End head
 
     uint8_t dr = (uint8_t)(mr * 8/10), dg = (uint8_t)(mg * 8/10), db = (uint8_t)(mb * 8/10);
     float leg_swing = app_sinf(walk_t) * 2.0f;
 
-    // --- BEINE ---
+    // --- LEGS ---
     DrawStardustFur(-1.2f * m_lt, -3.5f * m_ll, leg_swing, 1.5f * m_lt, 4.0f * m_ll, 1.5f * m_lt, pattern_idx, anim_t, dr, dg, db, true, 4); 
     DrawStardustFur(1.2f * m_lt, -3.5f * m_ll, -leg_swing, 1.5f * m_lt, 4.0f * m_ll, 1.5f * m_lt, pattern_idx, anim_t, dr, dg, db, true, 4);
     DrawStardustFur(-1.2f * m_lt, -5.5f * m_ll, leg_swing + 0.5f, 1.6f * m_lt, 1.0f, 2.5f * m_lt, 0, anim_t, 255, 255, 255, true, 4); 
     DrawStardustFur(1.2f * m_lt, -5.5f * m_ll, -leg_swing + 0.5f, 1.6f * m_lt, 1.0f, 2.5f * m_lt, 0, anim_t, 255, 255, 255, true, 4);
 
-    // --- LINKER ARM ---
+    // --- LEFT ARM ---
     sglPushMatrix();
     sglTranslatef(-2.5f * m_bw, 2.0f, 0.0f);
     if (attack_l > 0) {
@@ -544,7 +543,7 @@ void Draw3DCat(float scale, uint8_t mr, uint8_t mg, uint8_t mb, float anim_t, fl
     DrawStardustFur(0.0f, -3.5f * m_al, 0.0f, 1.2f * m_at, 1.2f * m_at, 1.2f * m_at, 0, anim_t, 255, 255, 255, true, 3); 
     sglPopMatrix();
 
-    // --- RECHTER ARM & SCHWERT ---
+    // --- RIGHT ARM & SWORD ---
     sglPushMatrix();
     sglTranslatef(2.5f * m_bw, 2.0f, 0.0f);
     if (attack_r > 0) {
@@ -564,7 +563,7 @@ void Draw3DCat(float scale, uint8_t mr, uint8_t mg, uint8_t mb, float anim_t, fl
     }
     sglPopMatrix();
     
-    // --- SCHWANZ ---
+    // --- TAIL ---
     float tail_wave = app_sinf(anim_t * 4.0f) * 1.5f * m_tc;
     DrawStardustFur(tail_wave * 0.3f, -1.0f, -2.5f * m_tl, 1.5f * m_tt, 1.5f * m_tt, 3.5f * m_tl, pattern_idx, anim_t, mr, mg, mb, true, 5); 
     DrawStardustFur(tail_wave * 0.6f, -1.5f, -4.5f * m_tl, 1.5f * m_tt, 1.5f * m_tt, 3.0f * m_tl, pattern_idx, anim_t, mr, mg, mb, true, 5);
@@ -574,14 +573,14 @@ void Draw3DCat(float scale, uint8_t mr, uint8_t mg, uint8_t mb, float anim_t, fl
     sglPopMatrix();
 }
 
-// === DIE PRE-CACHED BLUME DES LEBENS (Maximal FPS & Hauchdünn!) ===
+// === PRE-CACHED FLOWER OF LIFE (Maximum FPS & razor thin!) ===
 static void DrawFluidMeadow(float anim_t) {
     sglPushMatrix();
     sglDisable(SGL_LIGHTING); 
-    sglBegin(4); // Modus 4 = SGL_POINTS
+    sglBegin(4); // Mode 4 = SGL_POINTS
     
-    // STATIC CACHE: Wir berechnen das Muster nur ein EINZIGES MAL!
-    // Das spart zehntausende Sinus/Cosinus Rechnungen pro Frame.
+    // STATIC CACHE: Compute the pattern only ONCE!
+    // Saves tens of thousands of sin/cos calculations per frame.
     static bool is_cached = false;
     static int pt_count = 0;
     // === 3D POINT EDITOR LOGIC ===
@@ -652,7 +651,7 @@ static void DrawFluidMeadow(float anim_t) {
     last_drag_mx = mouse_x;
     last_drag_my = mouse_y;
 
-    // === MAUS-STEUERUNG DER KAMERA ===
+    // === MOUSE CAMERA CONTROLS ===
     static float pt_x[40000];
     static float pt_z[40000];
     static uint8_t pt_r[40000];
@@ -671,8 +670,8 @@ static void DrawFluidMeadow(float anim_t) {
                 float cx = col * R + offset;
                 float cz = row * v_dist;
                 
-                // 72 winzige Punkte pro Kreis (exakt alle 5 Grad). 
-                // Dadurch entsteht eine hauchdünne, perfekte Linie!
+                // 72 tiny points per circle (every 5 degrees). 
+                // Creates an ultra-fine, crisp line!
                 for(int a = 0; a < 360; a += 5) { 
                     float angle = (float)a * 3.14159f / 180.0f; 
                     float px = cx + app_cosf(angle) * R;
@@ -682,22 +681,22 @@ static void DrawFluidMeadow(float anim_t) {
                         seed = seed * 1103515245 + 12345;
                         pt_x[pt_count] = px;
                         pt_z[pt_count] = pz;
-                        pt_r[pt_count] = 80 + (seed % 80);         // Rot
-                        pt_g[pt_count] = 10 + ((seed >> 4) % 15);  // Grün
-                        pt_b[pt_count] = 100 + ((seed >> 8) % 90); // Blau
+                        pt_r[pt_count] = 80 + (seed % 80);         // Red
+                        pt_g[pt_count] = 10 + ((seed >> 4) % 15);  // Green
+                        pt_b[pt_count] = 100 + ((seed >> 8) % 90); // Blue
                         pt_count++;
                         
-                        if (pt_count >= 39999) break; // Speicher-Sicherheit
+                        if (pt_count >= 39999) break; // Buffer bounds safety
                     }
                 }
                 if (pt_count >= 39999) break;
             }
             if (pt_count >= 39999) break;
         }
-        is_cached = true; // Muster ist gespeichert, nie wieder neu rechnen!
+        is_cached = true; // Pattern cached, never recomputed!
     }
 
-    // --- RENDERING LOOP (Extrem schnell, da 0 Mathematik!) ---
+    // --- RENDERING LOOP (Fast zero-math loop) ---
     for(int i = 0; i < pt_count; i++) {
         sglColor3ub(pt_r[i], pt_g[i], pt_b[i]);
         sglVertex3f(pt_x[i], 1.0f, pt_z[i]);
@@ -709,7 +708,7 @@ static void DrawFluidMeadow(float anim_t) {
 }
 
 extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_blocked) {
-    // === NEU: Eigener FPS Zähler für das HUD ===
+    // === FPS Counter for HUD ===
     static uint64_t sc_last_fps_tick = 0;
     static int sc_fps_counter = 0;
     static int sc_display_fps = 60;
@@ -723,7 +722,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
     
     sglViewport(wx, wy + 35, ww, wh - 35);
     
-    // MORPH INITIALISIERUNG (nur einmal!)
+    // Morph initialization (runs once)
     if (!morph_initialized) {
         load_sc_save();
         morph_reset(&player_morph);
@@ -731,11 +730,11 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
         morph_initialized = true;
     }
     
-    // TASTEN VERARBEITEN (Jetzt mit deiner echten Variable: os2_key_scancode)
+    // KEYBOARD INPUT HANDLING (using os2_key_scancode)
     if (os2_key_scancode != 0) {
         if (os2_key_scancode < 0x80) sc_keys[os2_key_scancode] = true;
         else sc_keys[os2_key_scancode & 0x7F] = false;
-        os2_key_scancode = 0; // Direkt aufräumen
+        os2_key_scancode = 0; // Clear immediately
     }
 
     static bool last_mouse_right = false;
@@ -746,32 +745,32 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
     bool space_just_pressed = sc_keys[0x39] && !last_space;
     last_space = sc_keys[0x39];
     
-    // NEU: Taste 'I' abfragen
+    // Query 'I' key
     static bool last_i_key = false;
     bool i_just_pressed = sc_keys[0x17] && !last_i_key;
     last_i_key = sc_keys[0x17];
     
-    // NEU: ESC-Taste (Scancode 0x01) für Rückkehr ins Menü!
+    // ESC key (scancode 0x01) to return to menu
     static bool last_esc = false;
     bool esc_just_pressed = sc_keys[0x01] && !last_esc;
     last_esc = sc_keys[0x01];
     
-    // NEU: Taste 'E' (Scancode 0x12) fuer den Grafik-Editor!
+    // 'E' key (scancode 0x12) for graphics editor
     static bool last_e_key = false;
     bool e_just_pressed = sc_keys[0x12] && !last_e_key;
     last_e_key = sc_keys[0x12];
 
     if (i_just_pressed && sc_state == 1) { sc_show_inv = !sc_show_inv; }
     
-    // Wenn ESC gedrückt wird, sofort zurück zum Character Creator
+    // When ESC is pressed, return to Character Creator
     if (esc_just_pressed && sc_state == 1) { sc_state = 0; sc_show_inv = false; }
     
-    // E-Taste: Creator -> Editor
+    // 'E' key: Creator -> Editor
     if (e_just_pressed && sc_state == 0) { 
         sc_state = 3; 
-        ed_cam_rot_y = 180.0f; // Wieder auf Gesicht drehen
+        ed_cam_rot_y = 180.0f; // Face forward again
         ed_cam_rot_x = 15.0f; 
-        ed_cam_dist = 35.0f;   // Zoom resetten
+        ed_cam_dist = 35.0f;   // Reset zoom
         ed_selected_part = 0; 
     }
     
@@ -781,35 +780,35 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
     if (sc_msg_timer > 0) sc_msg_timer--;
 
     if (!is_blocked) {
-        // === KAMERA DREHEN (Spiel & Editor) ===
+        // === CAMERA ROTATION (Game & Editor) ===
         if (mouse_right_down && !mouse_right_just_pressed) {
             if (sc_state == 3) {
-                // Editor Kamera drehen!
+                // Rotate editor camera
                 ed_cam_rot_y += (float)(mouse_x - sc_last_mx) * 0.5f;
                 ed_cam_rot_x += (float)(mouse_y - sc_last_my) * 0.5f;
                 if (ed_cam_rot_x < -30.0f) ed_cam_rot_x = -30.0f;
                 if (ed_cam_rot_x > 60.0f) ed_cam_rot_x = 60.0f;
             } else {
-                // Spiel Kamera drehen!
+                // Rotate game camera
                 sc_cam_rot_y += (float)(mouse_x - sc_last_mx) * 0.5f;
                 sc_cam_rot_x += (float)(mouse_y - sc_last_my) * 0.5f;
                 if (sc_cam_rot_x < -60.0f) sc_cam_rot_x = -60.0f;
                 if (sc_cam_rot_x > 20.0f) sc_cam_rot_x = 20.0f;
             }
         } else if (!mouse_right_down && sc_state == 1) {
-            // Auto-Follow Kamera: Dreht sich sanft hinter die Katze, wenn die Maus nicht gedrueckt wird!
+            // Auto-follow camera: smoothly turns behind the cat when mouse is released
             float target_rot = sc_cat_rot;
             float diff = target_rot - sc_cam_rot_y;
             while (diff > 180.0f) diff -= 360.0f;
             while (diff < -180.0f) diff += 360.0f;
-            sc_cam_rot_y += diff * 0.05f; // Sanftes interpolieren
+            sc_cam_rot_y += diff * 0.05f; // Smooth interpolation
         }
-        // === KAMERA ZOOMEN (Spiel & Editor) ===
+        // === CAMERA ZOOM (Game & Editor) ===
         if (mouse_wheel != 0) {
             if (sc_state == 3) {
                 ed_cam_dist -= (float)mouse_wheel * 2.5f; 
-                if (ed_cam_dist < 10.0f) ed_cam_dist = 10.0f; // Nah ran
-                if (ed_cam_dist > 80.0f) ed_cam_dist = 80.0f; // Weit weg
+                if (ed_cam_dist < 10.0f) ed_cam_dist = 10.0f; // Near limit
+                if (ed_cam_dist > 80.0f) ed_cam_dist = 80.0f; // Far limit
 } else {
                 sc_cam_dist -= (float)mouse_wheel * 2.5f; 
                 if (sc_cam_dist < 12.0f) sc_cam_dist = 12.0f; 
@@ -818,35 +817,35 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
             mouse_wheel = 0; 
         }
         
-        // === PANZER-STEUERUNG (Freies Drehen & Schräg gehen!) ===
+        // === TANK CONTROLS (Smooth turning & strafing) ===
         bool is_walking = false;
         
         if (sc_landing_timer == 0) {
-            // A und D = Butterweich auf der Stelle drehen
-            if (sc_keys[0x1E]) sc_cat_rot += 4.5f; // A (Links drehen)
-            if (sc_keys[0x20]) sc_cat_rot -= 4.5f; // D (Rechts drehen)
+            // A and D = Smooth in-place turning
+            if (sc_keys[0x1E]) sc_cat_rot += 4.5f; // A (Turn left)
+            if (sc_keys[0x20]) sc_cat_rot -= 4.5f; // D (Turn right)
             
-            // W und S = Exakt in Blickrichtung laufen!
+            // W and S = Walk along forward vector
             if (sc_keys[0x11] || sc_keys[0x1F]) {
-                float rad = sc_cat_rot * 0.01745329f; // Winkel in Bogenmaß
+                float rad = sc_cat_rot * 0.01745329f; // Angle in radians
                 float move_x = app_sinf(rad);
                 float move_z = app_cosf(rad);
                 
-                if (sc_keys[0x11]) { // W = Vorwärts
+                if (sc_keys[0x11]) { // W = Forward
                     sc_cat_x += move_x * 1.5f; 
                     sc_cat_z += move_z * 1.5f; 
                     is_walking = true; 
                 }
-                if (sc_keys[0x1F]) { // S = Rückwärts
-                    sc_cat_x -= move_x * 1.0f; // Rückwärts geht man etwas langsamer
+                if (sc_keys[0x1F]) { // S = Backward
+                    sc_cat_x -= move_x * 1.0f; // Slower walking backward
                     sc_cat_z -= move_z * 1.0f; 
                     is_walking = true; 
                 }
             }
         }
         
-        // ARENA-BEGRENZUNG (Der kleine Park, 50x50 Einheiten)
-        // ARENA-BEGRENZUNG (Jetzt 10x größer: von -240 bis +240)
+        // ARENA BOUNDS
+        // Map bounds: -240 to +240
         if (sc_cat_x > 240.0f) sc_cat_x = 240.0f;
         if (sc_cat_x < -240.0f) sc_cat_x = -240.0f;
         if (sc_cat_z > 240.0f) sc_cat_z = 240.0f;
@@ -855,18 +854,18 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
         if (is_walking && sc_jump_count == 0) sc_walk_t += 0.4f; 
         else if (sc_jump_count == 0) sc_walk_t = 0.0f;
         
-        // SPRUNG & SLAM LOGIK!
+        // JUMP & SLAM LOGIC
         if (space_just_pressed && sc_state == 1) {
             if (sc_jump_count == 0) {
-                sc_cat_vy = 3.5f; // Normaler Sprung
+                sc_cat_vy = 3.5f; // Normal jump
                 sc_jump_count = 1;
             } else if (sc_jump_count == 1 && sc_slam_cooldown == 0) {
-                sc_cat_vy = -6.0f; // Harter Fall nach unten!
+                sc_cat_vy = -6.0f; // Rapid descent
                 sc_jump_count = 3; // 3 = Slam
             }
         }
         
-        // BOXEN LINKS (Mausklick)
+        // PUNCH LEFT (Left click)
         if (mouse_just_pressed && sc_state == 1 && sc_attack_l_timer == 0) {
             sc_attack_l_timer = 15;
             for (int i=0; i<MAX_ENEMIES; i++) {
@@ -879,7 +878,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
             }
         }
         
-        // BOXEN RECHTS (Rechtsklick)
+        // PUNCH RIGHT (Right click)
         if (mouse_right_just_pressed && sc_state == 1 && sc_attack_r_timer == 0) {
             sc_attack_r_timer = 15;
             for (int i=0; i<MAX_ENEMIES; i++) {
@@ -887,33 +886,33 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 float dist = (dx<0?-dx:dx) + (dz<0?-dz:dz);
                 if (dist < 15.0f && sc_enemy_hp[i] > 0) { 
                     sc_enemy_hp[i]--; sc_enemy_hit_timer[i] = 10; 
-                    meow_type = 4; meow_timer = 20;
+                    meow_type = 4; meow_timer = 20; 
                 }
             }
         }
     }
     
-    // PHYSIK UPDATE (Gravitation & Salto-Attacke)
+    // PHYSICS UPDATE (Gravity & somersault attack)
     sc_cat_y += sc_cat_vy;
-    sc_cat_vy -= 0.35f; // Schwerkraft
+    sc_cat_vy -= 0.35f; // Gravity
     
     if (sc_jump_count == 2) {
-        // ROTATION VORWÄRTS: Wir addieren positiv (Engine freundlich!)
+        // FORWARD ROTATION
         sc_cat_flip += 22.0f; 
-        if (sc_cat_flip >= 360.0f) sc_cat_flip = 360.0f; // Bei einem Salto exakt stoppen
+        if (sc_cat_flip >= 360.0f) sc_cat_flip = 360.0f; // Clamp somersault at 360
         
-        // Salto ist eine Flächenattacke!
+        // Somersault is an AoE attack
         for (int i=0; i<MAX_ENEMIES; i++) {
             float dx = sc_cat_x - sc_enemy_x[i]; float dz = sc_cat_z - sc_enemy_z[i];
             float dist = (dx<0?-dx:dx) + (dz<0?-dz:dz);
             if (dist < 18.0f && sc_enemy_hp[i] > 0 && sc_enemy_hit_timer[i] == 0) { 
                 sc_enemy_hp[i]--; sc_enemy_hit_timer[i] = 10; 
-                meow_type = 3; meow_timer = 20;
+                meow_type = 3; meow_timer = 20; 
             }
         }
     }
 
-    // Harte Kollision mit dem Boden
+    // Floor collision
     if (sc_cat_y <= 0.0f) {
         if (sc_jump_count == 3) { // Slam Impact!
             sc_slam_cooldown = 600; // 10 seconds cooldown
@@ -943,21 +942,20 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                             if (sc_enemy_z[i] > 240.0f) sc_enemy_z[i] = 240.0f;
                             if (sc_enemy_z[i] < -240.0f) sc_enemy_z[i] = -240.0f;
                         }
-                        meow_type = 4; meow_timer = 20;
+                        meow_type = 4; meow_timer = 20; 
                     }
                 }
             }
         }
-        sc_cat_y = 0.0f; // Boden berührt
+        sc_cat_y = 0.0f; // Floor touched
         sc_cat_vy = 0.0f;
         sc_jump_count = 0;
     }
     
-    // DIE MAGIE: Wenn wir gelandet sind, aber schief stehen, 
-    // drehen wir die Katze butterweich zurück! KEINE harter Matrix-Schnitt mehr!
+    // Smooth recovery: smoothly realign cat upright after landing
     if (sc_jump_count != 2 && sc_cat_flip > 0.0f) {
-        sc_cat_flip += 35.0f; // Schnell zu Ende drehen
-        if (sc_cat_flip >= 360.0f) sc_cat_flip = 0.0f; // Perfekter Reset auf 0!
+        sc_cat_flip += 35.0f; // Complete rotation
+        if (sc_cat_flip >= 360.0f) sc_cat_flip = 0.0f; // Reset to 0
     }
     
     if (sc_attack_l_timer > 0) sc_attack_l_timer--;
@@ -969,7 +967,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
     }
 	
     // ==========================================
-    // ENEMY LOGIC (Patrouille + Zentrum-Fokus + Aggro)
+    // ENEMY LOGIC (Patrol + center focus + aggro)
     // ==========================================
     if (sc_state == 1) {
         for (int i=0; i<5; i++) {
@@ -997,28 +995,28 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 float dx = target_x - sc_enemy_x[i]; float dz = target_z - sc_enemy_z[i];
                 float adx = dx<0?-dx:dx; float adz = dz<0?-dz:dz; 
                 
-                // === AGGRO-RADIUS: GANZE MAP (Immer auf den Spieler zu!) ===
-                if (min_dist < 99999.0f) { // Vorher 60.0f
+                // === AGGRO RADIUS: FULL MAP (Always track player) ===
+                if (min_dist < 99999.0f) { // Previously 60.0f
                     if (min_dist > 8.0f) {
-                        // VERFOLGEN (Aggro!)
+                        // PURSUE (Aggro!)
                         sc_enemy_x[i] += (dx / min_dist) * 0.4f; sc_enemy_z[i] += (dz / min_dist) * 0.4f;
                         if (adx > adz) { sc_enemy_rot[i] = dx > 0 ? 90.0f : 270.0f; } else { sc_enemy_rot[i] = dz > 0 ? 0.0f : 180.0f; }
                     } else if (sc_enemy_attack_timer[i] == 0) { 
                         sc_enemy_attack_timer[i] = 20; 
                     }
                 } else {
-                    // === PATROUILLE (Zieht immer zur Mitte zurück!) ===
-                    // Distanz zur Map-Mitte (0,0) berechnen
+                    // === PATROL (Returns toward center) ===
+                    // Calculate distance to map center (0,0)
                     float cx = -sc_enemy_x[i];
                     float cz = -sc_enemy_z[i];
                     float cdist = (cx<0?-cx:cx) + (cz<0?-cz:cz);
                     
-                    // Modulo 628 (2 * Pi * 100) verhindert Matrix-Glitch und Aufblähen absolut sicher!
+                    // Modulo 628 (2 * Pi * 100) safely prevents matrix glitches
                     float roam_rad = (float)((frame + i * 314) % 628) / 100.0f; 
                     float rx = app_cosf(roam_rad);
                     float rz = app_sinf(roam_rad);
                     
-                    // Gummiband-Effekt: Wenn weiter als 120 Einheiten weg, zieht es sie stark zur Mitte
+                    // Rubber-band pull: If beyond 120 units, pull strongly toward center
                     float pull = (cdist > 120.0f) ? 0.8f : 0.15f; 
                     
                     float ncx = (cdist > 0.0f) ? (cx / cdist) : 0.0f;
@@ -1030,7 +1028,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                     sc_enemy_x[i] += move_x * 0.15f;
                     sc_enemy_z[i] += move_z * 0.15f;
                     
-                    // Sichere 4-Wege-Rotation beim Schlendern (verhindert Glitches)
+                    // Safe 4-way rotation during roaming
                     float amx = move_x < 0 ? -move_x : move_x;
                     float amz = move_z < 0 ? -move_z : move_z;
                     if (amx > amz) { sc_enemy_rot[i] = move_x > 0 ? 90.0f : 270.0f; } 
@@ -1061,7 +1059,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 }
                 sc_enemy_hp[i] = -1; 
                 
-                // 20 bis 40 Sekunden Respawn (1200 + max 1200 Frames)
+                // 20 to 40 second respawn (1200 + max 1200 frames)
                 sc_enemy_respawn_timer[i] = 1200 + (frame % 1200); 
                 
             } else if (sc_enemy_hp[i] == -1) {
@@ -1078,29 +1076,29 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
             }
         }
         
-        // === ITEM AUFHEBEN & INS INVENTAR STAPELN ===
+        // === PICK UP ITEM & STACK INTO INVENTORY ===
         if (drop_active) {
             float pdx = sc_cat_x - drop_x; float pdz = sc_cat_z - drop_z;
             if (pdx*pdx + pdz*pdz < 25.0f) {
                 drop_active = 0;
                 
-                // 1. Schauen, ob wir es stapeln können
+                // 1. Check if stackable
                 int found_slot = -1;
                 for(int s=0; s<20; s++) { 
                     if(sc_inv[s].type == drop_type && sc_inv[s].value == drop_value) { found_slot = s; break; } 
                 }
-                // 2. Wenn nicht stapelbar, ersten leeren Slot suchen
+                // 2. If not stackable, find first empty slot
                 if(found_slot == -1) { 
                     for(int s=0; s<20; s++) { if(sc_inv[s].count == 0) { found_slot = s; break; } } 
                 }
-                // 3. Item ins Inventar packen!
+                // 3. Store item in inventory!
                 if(found_slot != -1) {
                     sc_inv[found_slot].type = drop_type;
                     sc_inv[found_slot].value = drop_value;
                     sc_inv[found_slot].count++;
                 }
                 
-                // Effekt/Ausrüstung wie bisher anwenden
+                // Apply effect/equipment
                 if (drop_type == 1 && sc_player_hp < 10) sc_player_hp += drop_value; 
                 else if (drop_type == 2) player_armor_idx = drop_value;
                 else if (drop_type == 3) player_weapon_idx = drop_value;
@@ -1111,14 +1109,14 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 }
                 
                 sc_player_hit_timer = 5;
-                sc_msg_timer = 120; // NEU: Text bleibt 120 Frames (2 Sekunden) sichtbar!
+                sc_msg_timer = 120; // Message visible for 120 frames (2 seconds)
             }
         }
     }
     
     if (sc_player_hit_timer > 0) sc_player_hit_timer--;
     
-    // === TOD, 9 LIVES & GAME OVER RESET ===
+    // === DEATH, 9 LIVES & GAME OVER RESET ===
     static int sc_death_timer = 0;
     if (sc_state == 1 && sc_player_hp <= 0) { 
         if (sc_death_timer == 0) {
@@ -1127,13 +1125,13 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
             sc_player_lives--;
             sc_slots[sc_current_slot].lives = sc_player_lives;
             
-            // NEU: Rekord checken und speichern (bevor irgendwas resettet wird!)
+            // Check and save record before resetting
             if (sc_slots[sc_current_slot].playtime > sc_slots[sc_current_slot].record_playtime) {
                 sc_slots[sc_current_slot].record_playtime = sc_slots[sc_current_slot].playtime;
             }
             save_sc_save();
             
-            // NEU: Wir speichern die exakte Playtime als "Deathtime" ab!
+            // Save exact playtime as "Deathtime"
             sc_slots[sc_current_slot].deathtime = sc_slots[sc_current_slot].playtime;
 
             for (int s = 0; s < 20; s++) {
@@ -1148,15 +1146,15 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
         
         if (sc_death_timer == 0) { 
             if (sc_player_lives <= 0) {
-                // GAME OVER! SLOT WIRD GELÖSCHT!
+                // GAME OVER! SLOT DELETED!
                 sc_slots[sc_current_slot].active = false;
                 sc_slots[sc_current_slot].lives = 9;
                 sc_slots[sc_current_slot].playtime = 0;
-                for(int i=0; i<20; i++) sc_inv[i].count = 0; // Inventar weg
-                sc_state = 0; // Zurück zum Startbildschirm
+                for(int i=0; i<20; i++) sc_inv[i].count = 0; // Clear inventory
+                sc_state = 0; // Return to start screen
                 save_sc_save();
             } else {
-                sc_state = 2; // Normaler Tod, darf respawnen
+                sc_state = 2; // Normal death, allowed to respawn
                 save_sc_save();
             }
             sc_show_inv = false; 
@@ -1169,40 +1167,39 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
     float anim_t = (float)frame * 0.05f;
 
     // ==========================================
-    // RENDERING (3D Szene + UI)
+    // RENDERING (3D Scene + UI)
     // ==========================================
     if (sc_state == 0 || sc_state == 1 || sc_state == 3) {
         sglClear(sc_state == 1 ? 0x05080C : 0x0C1218);
         sglClearDepth();
         sglEnable(SGL_DEPTH_TEST);
         
-        // HIER DIE WIESE SOFORT ZEICHNEN (Und nur exakt EINMAL!)
+        // Render meadow once
         DrawFluidMeadow(anim_t);
         sglLoadIdentity();
         
-        // Kamera Setup
+        // Camera setup
         if (sc_state == 0) {
-            // FIX: Kamera ist jetzt FEST! Keine Endlos-Rotation (anim_t) mehr!
-            // Das verhindert den Matrix-Overflow/Grafik-Bug im Spiel endgültig.
+            // Fixed camera: No continuous rotation (anim_t) to prevent matrix overflow
             sglTranslatef(0.0f, -6.0f, 35.0f); 
             sglRotatef(10.0f, 1.0f, 0.0f, 0.0f);
-            sglRotatef(180.0f, 0.0f, 1.0f, 0.0f); // Katze schaut nach vorne!
+            sglRotatef(180.0f, 0.0f, 1.0f, 0.0f); // Cat faces forward
             sglScalef(1.8f, 1.8f, 1.8f);
         } else if (sc_state == 3) {
-            // EDITOR-KAMERA (Nutzt jetzt die ed_cam_dist Variable!)
+            // EDITOR CAMERA (using ed_cam_dist)
             sglTranslatef(0.0f, -6.0f, ed_cam_dist); 
             sglRotatef(ed_cam_rot_x, 1.0f, 0.0f, 0.0f);
             sglRotatef(ed_cam_rot_y, 0.0f, 1.0f, 0.0f); 
             sglScalef(1.8f, 1.8f, 1.8f);
         } else {
-            // SPIEL-KAMERA
+            // GAME CAMERA
             sglTranslatef(0.0f, 0.0f, sc_cam_dist);
             sglRotatef(sc_cam_rot_x, 1.0f, 0.0f, 0.0f);
             sglRotatef(sc_cam_rot_y, 0.0f, 1.0f, 0.0f);
             sglTranslatef(-sc_cat_x, -12.0f, -sc_cat_z);
         }
         
-        // === SPIELER RENDERN ===
+        // === RENDER PLAYER ===
         sglPushMatrix();
         if (sc_state == 1) { 
             sglTranslatef(sc_cat_x, 6.5f + sc_cat_y, sc_cat_z);
@@ -1213,7 +1210,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 sglTranslatef(0.0f, -3.0f, 0.0f); 
             } 
         } else if (sc_state == 3) {
-            sglTranslatef(0.0f, 6.5f, 0.0f); // Editor: Katze in der Mitte
+            sglTranslatef(0.0f, 6.5f, 0.0f); // Editor: center cat
         } else { 
             sglTranslatef(0.0f, 6.5f, 0.0f); 
         }
@@ -1248,8 +1245,8 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
         
         sglDisable(SGL_LIGHTING); 
         sglPopMatrix();
-        // === GEGNER RENDERN ===
-        for (int i=0; i<5; i++) { // Auch hier max 5 Gegner!
+        // === RENDER ENEMIES ===
+        for (int i=0; i<5; i++) { // Max 5 enemies
             if (sc_state == 1 && (sc_enemy_hp[i] > 0 || sc_enemy_hit_timer[i] > 0)) {
                 sglPushMatrix(); 
                 sglTranslatef(sc_enemy_x[i], 6.5f, sc_enemy_z[i]); 
@@ -1264,7 +1261,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 float dx = sc_cat_x - sc_enemy_x[i]; 
                 float dz = sc_cat_z - sc_enemy_z[i]; 
                 float dist = (dx<0?-dx:dx) + (dz<0?-dz:dz);
-                // NEU: Wenn weit weg -> Langsames Schlendern (1.5f). Wenn Aggro -> Sprint (4.0f)
+                // Distant: slow roam (1.5f); Aggro: sprint (4.0f)
                 float enemy_walk_t = 0.0f;
                 if (dist > 8.0f) {
                     if (dist < 60.0f) enemy_walk_t = anim_t * 4.0f; 
@@ -1279,22 +1276,22 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 sglPopMatrix();
             }
         }
-        // === ITEMS AUF DEM BODEN RENDERN ===
+        // === RENDER GROUND DROPS ===
         if (drop_active && sc_state == 1) {
             sglPushMatrix(); 
             sglTranslatef(drop_x, 2.0f + app_sinf(anim_t*3.0f)*0.5f, drop_z); 
             sglRotatef(anim_t * 60.0f, 0.0f, 1.0f, 0.0f);
-            // --- NEU: WEISSE UMRANDUNG (Leuchtender Rahmen) ---
+            // --- GLOWING WHITE OUTLINE ---
             sglDisable(SGL_LIGHTING);
-            sglColor3ub(255, 255, 255); // Strahlendes Weiß
-            float w = 2.2f + app_sinf(anim_t * 8.0f) * 0.2f; // Pulsiert leicht
-            float t = 0.15f; // Dicke der Rahmenlinie
-            // Wir zeichnen 4 dünne weiße Stangen als Quadrat um das Item
-            DrawBox(0.0f, 0.0f, w, w, t, t);   // Vorne
-            DrawBox(0.0f, 0.0f, -w, w, t, t);  // Hinten
-            DrawBox(w, 0.0f, 0.0f, t, t, w);   // Rechts
-            DrawBox(-w, 0.0f, 0.0f, t, t, w);  // Links
-            // --- EIGENTLICHES ITEM (IN FARBE) ---
+            sglColor3ub(255, 255, 255); // Bright white
+            float w = 2.2f + app_sinf(anim_t * 8.0f) * 0.2f; // Subtle pulse
+            float t = 0.15f; // Frame thickness
+            // Draw 4 thin white bars forming bounding square around item
+            DrawBox(0.0f, 0.0f, w, w, t, t);   // Front
+            DrawBox(0.0f, 0.0f, -w, w, t, t);  // Back
+            DrawBox(w, 0.0f, 0.0f, t, t, w);   // Right
+            DrawBox(-w, 0.0f, 0.0f, t, t, w);  // Left
+            // --- ITEM BODY (COLORED) ---
             sglEnable(SGL_LIGHTING);
             if (drop_type == 1) { sglColor3ub(200, 40, 40); sglDrawSphere(1.5f, 16); }
             else if (drop_type == 2) { sglColor3ub(130, 135, 140); DrawBox(0.0f, 0.0f, 0.0f, 2.0f, 2.5f, 1.5f); sglColor3ub(80, 85, 90); DrawBox(0.0f, 0.0f, 1.0f, 1.0f, 1.5f, 0.5f); }
@@ -1308,7 +1305,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
             sglPopMatrix();
         }
         
-        // === SLAM EFFECT RENDERN ===
+        // === RENDER SLAM EFFECT ===
         if (sc_state == 1 && sc_slam_fx_timer > 0) {
             sglPushMatrix();
             sglTranslatef(sc_slam_x, 0.2f, sc_slam_z); // Slightly above ground
@@ -1342,7 +1339,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
         if (sc_state == 0) {
             TextC(wx + ww/2, wy + 20, "CHARACTER CREATOR", 0xFFFFFF, _128);
             
-            // === 3 CHARAKTER SLOTS ===
+            // === 3 CHARACTER SLOTS ===
             for(int sl=0; sl<3; sl++) {
                 uint32_t bg_col = (sc_current_slot == sl) ? 0x00FF00 : 0x555555;
                 DrawRoundedRect(wx + ww/2 - 130 + sl*90, wy + 40, 80, 20, 2, bg_col);
@@ -1359,7 +1356,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 }
             }
             
-            // === MENÜ KNÖPFE (Links) ===
+            // === MENU BUTTONS (Left) ===
             int ypos = 80; 
             TextC(wx + 30, wy + ypos + 4, "COLOR", 0xAAAAAA, _86); DrawRoundedRect(wx + 110, wy + ypos, 20, 20, 2, 0x555555); TextC(wx + 116, wy + ypos+4, "<", 0xFFFFFF, _86); DrawRoundedRect(wx + 140, wy + ypos, 20, 20, 2, 0x555555); TextC(wx + 146, wy + ypos+4, ">", 0xFFFFFF, _86); ypos += 40;
             TextC(wx + 30, wy + ypos + 4, "PATTERN", 0xAAAAAA, _86); DrawRoundedRect(wx + 110, wy + ypos, 20, 20, 2, 0x555555); TextC(wx + 116, wy + ypos+4, "<", 0xFFFFFF, _86); DrawRoundedRect(wx + 140, wy + ypos, 20, 20, 2, 0x555555); TextC(wx + 146, wy + ypos+4, ">", 0xFFFFFF, _86); ypos += 40;
@@ -1381,7 +1378,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 if (is_over_rect(mouse_x, mouse_y, wx + 140, wy + yp, 20, 20)) { player_face_idx = (player_face_idx + 1) % 3; input_cooldown = 10; }
             }
             
-            // === STATS PANEL (Rechts) ===
+            // === STATS PANEL (Right) ===
             int st_w = 180;
             int st_x = wx + ww - st_w - 30;
             int st_y = wy + 80;
@@ -1394,7 +1391,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
             lbuf[7] = '0' + draw_lives;
             TextC(st_x + st_w/2, st_y + 40, lbuf, 0xFF00FF, _86); 
             
-            // 2. ENERGY (Dynamisch berechnet!)
+            // 2. ENERGY (Dynamically calculated)
             char ebuf[16] = "ENERGY: 10"; 
             int draw_energy = sc_slots[sc_current_slot].active ? sc_player_hp : 10;
             if (draw_energy < 0) draw_energy = 0;
@@ -1429,11 +1426,11 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
             TextC(wx + ww/2, wy + wh - 90, "EDIT [E]", 0x00FFCC, _86);
             
             if (input_cooldown == 0 && mouse_just_pressed && !is_blocked) {
-                // Klick auf "EDIT"
+                // Click on "EDIT"
                 if (is_over_rect(mouse_x, mouse_y, wx + ww/2 - 50, wy + wh - 100, 100, 28)) {
                     sc_state = 3; ed_cam_rot_y = 180.0f; ed_cam_rot_x = 15.0f; ed_cam_dist = 35.0f; ed_selected_part = 0; input_cooldown = 10;
                 }
-                // Klick auf "FIGHT"
+                // Click on "FIGHT"
                 else if (is_over_rect(mouse_x, mouse_y, wx + ww/2 - 50, wy + wh - 60, 100, 30)) {
                     sc_slots[sc_current_slot].c = player_color_idx; sc_slots[sc_current_slot].p = player_pattern_idx;
                     sc_slots[sc_current_slot].a = player_armor_idx; sc_slots[sc_current_slot].w = player_weapon_idx;
@@ -1444,11 +1441,11 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                         sc_player_lives = 9; 
                         sc_slots[sc_current_slot].playtime = 0; 
                         sc_slots[sc_current_slot].deathtime = 0; 
-                        sc_player_hp = 0; // Zwingt das Spiel zum echten Neustart!
+                        sc_player_hp = 0; // Forces fresh start
                     }
                     sc_slots[sc_current_slot].lives = sc_player_lives;
                     
-                    // === PAUSE ODER NEUSTART CHECK ===
+                    // === PAUSE OR RESTART CHECK ===
                     if (sc_player_hp <= 0 || sc_slots[sc_current_slot].playtime == 0) {
                         sc_cam_dist = 35.0f; 
                         sc_cam_rot_x = -30.0f;
@@ -1470,14 +1467,14 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                     sc_inv[2].type = 7; sc_inv[2].value = 1; sc_inv[2].count = 1; // Big Feet
                     sc_inv[3].type = 8; sc_inv[3].value = 1; sc_inv[3].count = 1; // Big Tail
                     
-                    sc_state = 1; // Spiel starten / fortsetzen
+                    sc_state = 1; // Start / resume game
                     input_cooldown = 20;
                     save_sc_save();
                 }
             }
         } 
         // ==========================================
-        // INGAME HUD & INVENTAR (sc_state == 1)
+        // INGAME HUD & INVENTORY (sc_state == 1)
         // ==========================================
         else if (sc_state == 1) {
             if (!is_blocked) sc_slots[sc_current_slot].playtime++; 
@@ -1502,14 +1499,14 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 TextC(wx + 450, hud_y + 15, cd_buf, 0xFF5555, _86); // Display right under the buff
             }
             
-            // 3. INGAME-UHRZEIT (Echte Systemzeit)
+            // 3. INGAME TIME (System time)
             time_t t = time(NULL);
             struct tm *tm_info = localtime(&t);
             char tbuf[32];
             sprintf(tbuf, "%02d.%02d.%04d - %02d:%02d:%02d", tm_info->tm_mday, tm_info->tm_mon + 1, tm_info->tm_year + 1900, tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec);
             TextC(wx + ww/2 - 20, hud_y, tbuf, 0x00FF00, _86); 
             
-            // === 4. FPS IN WEISS (Exakt zwischen Uhrzeit und Playtime) ===
+            // === 4. FPS (White, between clock and playtime) ===
             char fbuf[16] = "FPS: 60";
             if (sc_display_fps >= 100) {
                 fbuf[5] = '0' + (sc_display_fps / 100) % 10;
@@ -1553,7 +1550,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
             pbuf[16] = '0'+(d_s/10); pbuf[17] = '0'+(d_s%10);
             TextC(wx + ww - 100, hud_y, pbuf, 0x00FFFF, _86); 
 
-            // === INVENTAR HOTBAR ===
+            // === INVENTORY HOTBAR ===
             int slot_w = 38; int slot_space = 4; int bar_w = 5 * (slot_w + slot_space);
             int start_x = wx + ww/2 - bar_w/2; int start_y = wy + wh - 45;
             const char* hovered_item_name = 0;
@@ -1598,7 +1595,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 }
             }
             
-            // === INVENTAR RUCKSACK ===
+            // === INVENTORY BACKPACK ===
             static int inv_wx = -1; static int inv_wy = -1; static bool is_dragging = false;
             if (inv_wx == -1) { inv_wx = wx + ww/2 - 110; inv_wy = wy + wh/2 - 100; }
             if (sc_show_inv) {
@@ -1660,10 +1657,10 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
             }
         } 
         // ==========================================
-        // SURREAL GRAFIK EDITOR (sc_state == 3)
+        // SURREAL GRAPHICS EDITOR (sc_state == 3)
         // ==========================================
         else if (sc_state == 3) {
-            // === HINTERGRUND PANEL (Links) ===
+            // === BACKGROUND PANEL (Left) ===
             int panel_x = wx + 10;
             int panel_y = wy + 40;
             int panel_w = 140;
@@ -1701,7 +1698,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
                 ed_wireframe = !ed_wireframe; input_cooldown = 8;
             }
             
-            // === SLIDER PANEL (Rechts) ===
+            // === SLIDER PANEL (Right) ===
             int sl_panel_x = wx + ww - 200;
             int sl_panel_y = wy + 40;
             int sl_panel_w = 185;
@@ -1717,7 +1714,7 @@ extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_bl
             else if (ed_selected_part == 2) { sliders[0] = {"WIDTH", &pm->body_width}; sliders[1] = {"HEIGHT", &pm->body_height}; sliders[2] = {"DEPTH", &pm->body_depth}; slider_count = 3; } 
             else if (ed_selected_part == 3) { sliders[0] = {"LENGTH", &pm->arm_length}; sliders[1] = {"THICKNESS", &pm->arm_thickness}; slider_count = 2; } 
             else if (ed_selected_part == 4) { sliders[0] = {"LENGTH", &pm->leg_length}; sliders[1] = {"THICKNESS", &pm->leg_thickness}; slider_count = 2; } 
-            else if (ed_selected_part == 5) { sliders[0] = {"LENGTH", &pm->tail_length}; sliders[1] = {"KRUEMMUNG", &pm->tail_curl}; sliders[2] = {"THICKNESS", &pm->tail_thickness}; slider_count = 3; } 
+            else if (ed_selected_part == 5) { sliders[0] = {"LENGTH", &pm->tail_length}; sliders[1] = {"CURL", &pm->tail_curl}; sliders[2] = {"THICKNESS", &pm->tail_thickness}; slider_count = 3; } 
             else if (ed_selected_part == 6) { sliders[0] = {"SIZE", &pm->eye_size}; sliders[1] = {"DISTANCE", &pm->eye_distance}; sliders[2] = {"PUPIL", &pm->pupil_size}; slider_count = 3; } 
             else if (ed_selected_part == 7) { sliders[0] = {"SIZE", &pm->nose_size}; slider_count = 1; } 
             

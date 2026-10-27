@@ -3,11 +3,11 @@
  *  COSMOS VIRTIO BLOCK EMULATOR
  * ============================================================================
  *
- *  Phase 2.4: Virtuelle Festplatte (VirtIO-Blk)
+ *  Phase 2.4: Virtual Hard Disk (VirtIO-Blk)
  *
- *  Emuliert eine Festplatte nach dem VirtIO-Standard über den virtuellen PCI-Bus.
- *  OVMF bringt native Treiber für VirtIO-Blockgeräte mit, was das Booten
- *  von Windows extrem schnell und einfach macht.
+ *  Emulates a hard drive following the VirtIO standard over virtual PCI bus.
+ *  OVMF provides native drivers for VirtIO block devices, making booting
+ *  Windows extremely fast and straightforward.
  * ============================================================================
  */
 
@@ -32,10 +32,10 @@
 #define VIRTIO_BLK_F_FLUSH      9
 #define VIRTIO_BLK_F_TOPOLOGY   10
 
-// Virtqueue Größen
+// Virtqueue Sizes
 #define VIRTIO_BLK_QUEUE_SIZE   128
 
-// Virtqueue Strukturen (vring)
+// Virtqueue Structures (vring)
 struct vring_desc {
     uint64_t addr;
     uint32_t len;
@@ -79,7 +79,7 @@ struct virtio_blk_req {
 
 // Device State
 struct cosmos_virtio_blk {
-    // Backend File/Disk (Pointer zum RAM-Disk oder echten Dateihandle)
+    // Backend File/Disk (Pointer to RAM disk or raw file handle)
     uint8_t*  disk_image;
     uint64_t  disk_size_bytes;
     
@@ -90,20 +90,20 @@ struct cosmos_virtio_blk {
     
     // Queue State
     uint16_t  queue_select;
-    uint32_t  queue_pfn; // Physical Page Number des vrings
+    uint32_t  queue_pfn; // Physical Page Number of vring
     uint16_t  last_avail_idx;
     
-    // Vring Pointers (werden berechnet wenn queue_pfn gesetzt wird)
+    // Vring Pointers (computed when queue_pfn is set)
     vring_desc*  desc;
     vring_avail* avail;
     vring_used*  used;
     
-    // Virtuelle PCI Konfiguration
+    // Virtual PCI Configuration
     uint8_t   pci_bus;
     uint8_t   pci_dev;
     uint8_t   pci_func;
-    uint16_t  io_base;      // Port I/O Base (z.B. 0xC000)
-    uint64_t  mmio_base;    // MMIO Base (z.B. 0xFEB00000)
+    uint16_t  io_base;      // Port I/O Base (e.g. 0xC000)
+    uint64_t  mmio_base;    // MMIO Base (e.g. 0xFEB00000)
 };
 
 // API

@@ -10,10 +10,10 @@
 // 26-Byte Handshake Packet Structure
 _202 cosmos_hs_packet {
     _184 magic_start[2];       // [0..1]: 0x2A, 0xC0
-    _184 type_flag;            // [2]: Handshake-Typ (Init / Reply / Data)
+    _184 type_flag;            // [2]: Handshake type (Init / Reply / Data)
     _89  client_nonce;         // [3..6]: 4-Byte Client Nonce
     _89  server_nonce;         // [7..10]: 4-Byte Server Nonce
-    _184 padding[13];          // [11..23]: Auffüllung
+    _184 padding[13];          // [11..23]: Padding
     _184 magic_end[2];         // [24..25]: 0xEE, 0xFF
 } __attribute__((packed));
 
@@ -59,7 +59,7 @@ _189 _182 calculate_checksum(_71 _184* data, _89 len) {
 }
 
 // XOR Stream Cipher that incorporates the frame_id to prevent trivial replays/analysis
-// 64-Bit optimiert: Verarbeitet 8 Bytes auf einmal statt Byte-für-Byte
+// 64-bit optimized: Processes 8 bytes at a time instead of byte-by-byte
 _189 _50 encrypt_decrypt_payload(_184* payload, _89 len, _71 _184* session_key, _89 frame_id) {
     // Expand frame_id into a pseudo-random 8-byte modifier
     _94 frame_mix = (_94)frame_id * 0xBF58476D1CE4E5B9ULL;

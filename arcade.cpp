@@ -27,15 +27,15 @@ extern _50 send_tcp_syn(_89 ip, _182 port);
 extern _50 Put(_43 x, _43 y, _89 col);
 extern _50 DrawGlassRect(_43 x, _43 y, _43 rw, _43 rh, _43 r, _89 c);
 extern "C" void open_browser_save_as();
-/// BARE METAL FIX: Die exakten Kernel-Signaturen!
+/// BARE METAL FIX: Exact kernel signatures!
 extern _44 ahci_read_sectors(_43 port_no, _43 lba, _43 count, _94 buffer_addr);
 extern _44 ahci_write_sectors(_43 port_no, _43 lba, _43 count, _94 buffer_addr);
-// Dem Compiler die Funktion bekannt machen (Global!)
+// Forward declare function to compiler (Global)
 extern "C" void kernel_save_download(unsigned long long source_ram, int file_size, const char* name);
 
-/// Deine CFS (Cosmos File System) Struktur aus dem Kernel
+/// CFS (Cosmos File System) directory entry structure
 struct CFS_DIR_ENTRY {
-    uint8_t  type;        /// 0 = Leer, 1 = Datei, 2 = Ordner
+    uint8_t  type;        /// 0 = Empty, 1 = File, 2 = Folder
     char     filename[11];
     uint32_t file_size;
     uint32_t start_lba;
@@ -48,8 +48,8 @@ _184* browser_stb_img = 0;
 _43 browser_stb_w = 0;
 _43 browser_stb_h = 0;
 _43 browser_stb_tried = 0;
-_44 auto_img_state = 0; /// 0=Aus, 1=Triggered, 2=Lädt runter, 3=Fertig & Inline
-_30 image_download_url[128] = {0}; // Separater Speicher für Bild-Downloads
+_44 auto_img_state = 0; /// 0=Off, 1=Triggered, 2=Downloading, 3=Finished & Inline
+_30 image_download_url[128] = {0}; // Dedicated buffer for image downloads
 
 _184 browser_download_buffer[3000000];
 _43 browser_download_len = 0;
@@ -181,10 +181,10 @@ bool str_starts(const char* str, const char* prefix) {
         str++;
         prefix++;
     }
-    return true; /// Treffer! Der Text fängt genau so an.
+    return true; /// Match! Prefix matches exactly.
 }
 /// ==========================================
-/// APP ID 8: DIE 2-in-1 WEB & NETWORK ENGINE
+/// APP ID 8: 2-IN-1 WEB & NETWORK ENGINE
 /// ==========================================
 _43 browser_view = 0; /// 0 = Web Browser, 1 = LAN Configurator
 _43 browser_state = 0;
@@ -192,18 +192,18 @@ _30 browser_url[512] = "home";
 _30 browser_last_url[512] = "home";
 _43 browser_url_idx = 4;
 _30 browser_content[65536] = "<br><br><br><h1>       MEIN-OS HTML6 BROWSER</h1><br><p>             Welcome to the Next Generation Web.</p><br><br><form action=\"http://wiby.me/\"><input name=\"q\"><input type=\"submit\" value=\"SEARCH\"></form><br><br><br><p>         <a href=\"http://wiby.me/\">Powered by Wiby Search</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"http://www.google.com/\">Google</a></p>";
-/// Variablen für die Config-Ansicht
+/// Variables for config view
 _43 netcfg_state = 0;
-_30 netcfg_ip[64] = "192.168.14.100"; /// <--- DAS ist die IP für deinen Laptop!
+_30 netcfg_ip[64] = "192.168.14.100"; /// Target IP for laptop
 _43 netcfg_ip_idx = 14;
 _30 netcfg_content[2048] = "LAN PARTY MODE: STATIC IP CONFIGURATION\n\nENTER DESIRED IP AND PRESS APP TO SET YOUR MACHINE IP.";
-/// Netzwerk-Variablen aus dem Kernel
+/// Network variables from kernel
 extern _30 ip_address[32]; 
 extern _30 gateway_ip[32];
 extern _184 router_mac[6];
 extern _30 mac_str[24];
 //_172 _30 cmd_status[256];
-/// BARE METAL FIX: Fehlende Brücken für den Browser!
+/// BARE METAL FIX: Browser bridges
 _172 _50 DrawChar(_43 x, _43 y, _30 c, _89 col, _44 bold);
 _172 _50 str_cpy(_30* d, _71 _30* s);
 _172 _50 str_cat(_30* dest, _71 _30* src);
@@ -211,7 +211,7 @@ _172 _43 str_len(_71 _30* s);
 _172 volatile char last_app_key;
 
 /// ==========================================
-/// BARE METAL FIX: EXTERNE BRÜCKEN ZUM KERNEL
+/// BARE METAL FIX: EXTERNAL BRIDGES TO KERNEL
 /// ==========================================
 _172 _43 mouse_x;
 _172 _43 mouse_y;
@@ -226,7 +226,7 @@ _172 _44 blocked;
 _172 _43 os2_win_z[20];
 #define win_z os2_win_z
 
-/// Grafik & Sound (Aus kernel_main.cpp)
+/// Graphics & Sound (from kernel_main.cpp)
 _172 _50 TextC(_43 cp, _43 y, _71 _30* s, _89 col, _44 bold);
 _172 _50 Text(_43 x, _43 y, _71 _30* s, _89 col, _44 bold);
 _172 _50 DrawRoundedRect(_43 x, _43 y, _43 rw, _43 rh, _43 r, _89 c);
@@ -237,13 +237,13 @@ _172 _50 play_sound(_89 n_freq, _43 duration);
 _172 _50 play_freq(_89 f);
 /// Emulator
 /// ==========================================
-/// DIE CHIP-8 VIRTUAL MACHINE (UNIVERSAL EMULATOR)
+/// CHIP-8 VIRTUAL MACHINE (UNIVERSAL EMULATOR)
 /// ==========================================
-// 1. Deklarationen vorziehen, damit der Compiler sie kennt
+// 1. Forward declarations for compiler
 void c8_step();
 extern "C" void c8_reset();
-void c8_render(_43 x, _43 y, _43 s) { /* Rendering Logik hier */ }
-// 2. VM Interface Struktur
+void c8_render(_43 x, _43 y, _43 s) { /* Rendering logic here */ }
+// 2. VM Interface structure
 struct VM_INTERFACE {
     void (*reset)();
     void (*step)();
@@ -253,13 +253,13 @@ struct VM_INTERFACE {
 VM_INTERFACE chip8_vm = { c8_reset, c8_step, c8_render, "CHIP-8" };
 VM_INTERFACE* current_vm = &chip8_vm;
 /// ==========================================
-/// DIE CHIP-8 VIRTUAL MACHINE (UNIVERSAL EMULATOR)
+/// CHIP-8 VIRTUAL MACHINE (UNIVERSAL EMULATOR)
 /// ==========================================
-// A. EXTERNS (Damit der Compiler weiß, dass diese Funktionen existieren)
+// A. EXTERNS (Declare external function signatures)
 extern _50 sys_print(const char* text);
 extern bool disk_read_auto(uint32_t lba, uint64_t target_ram_addr);
 
-// C. GLOBALE VARIABLEN (Hier gehören c8_ram, c8_pc, etc. hin!)
+// C. GLOBAL VARIABLES (c8_ram, c8_pc, etc.)
 unsigned char c8_ram[4096];
 unsigned char c8_v[16];
 unsigned short c8_i, c8_pc;
@@ -269,8 +269,8 @@ unsigned char c8_gfx[64 * 32];
 unsigned char c8_key[16];
 _44 c8_draw;
 _43 c8_state = 0;
-_89 c8_rand_seed = 12345;         /// Eigener Zufallsgenerator für die VM
-// In arcade.cpp muss das exakt so stehen:
+_89 c8_rand_seed = 12345;         /// Dedicated RNG for VM
+// In arcade.cpp:
 extern "C" void c8_reset() { 
 	for (int i=0; i<4096; i++) c8_ram[i] = 0;
 	for (int i=0; i<16; i++) { c8_v[i] = 0; c8_key[i] = 0; c8_stack[i] = 0; }
@@ -278,7 +278,7 @@ extern "C" void c8_reset() {
 	c8_pc = 0x200; c8_i = 0; c8_sp = 0; c8_dt = 0; c8_st = 0;
 }
 
-/// Die CHIP-8 Schriftart (0-F) fest in der Hardware verankert
+/// CHIP-8 font set (0-F) built into VM
 unsigned char c8_font[80] = {
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -312,21 +312,21 @@ unsigned char c8_rom_ibm[] = {
 };
 
 /// ==========================================
-/// VM CPU CORE: Führt genau EINEN Befehl aus!
+/// VM CPU CORE: Executes exactly ONE instruction!
 /// ==========================================
 void c8_step() {
-    /// 1. Fetch (Hole 2 Bytes aus dem Speicher)
+    /// 1. Fetch (Fetch 2 bytes from memory)
     unsigned short opcode = (c8_ram[c8_pc] << 8) | c8_ram[c8_pc + 1];
     c8_pc += 2;
     
-    /// 2. Decode (Zerlege den Befehl)
+    /// 2. Decode (Deconstruct instruction)
     unsigned short x = (opcode & 0x0F00) >> 8;
     unsigned short y = (opcode & 0x00F0) >> 4;
     unsigned short nnn = opcode & 0x0FFF;
     unsigned char nn = opcode & 0x00FF;
     unsigned char n = opcode & 0x000F;
 
-    /// 3. Execute (Maschinensprache übersetzen)
+    /// 3. Execute (Translate machine instructions)
     switch (opcode & 0xF000) {
         case 0x0000:
             if (opcode == 0x00E0) { /// Clear Screen
@@ -359,11 +359,11 @@ void c8_step() {
         case 0x9000: if (c8_v[x] != c8_v[y]) c8_pc += 2; break;
         case 0xA000: c8_i = nnn; break; /// Set Index
         case 0xB000: c8_pc = nnn + c8_v[0]; break;
-        case 0xC000: /// Random (Eigene Formel, da rand() bare-metal fehlt)
+        case 0xC000: /// Random (Custom formula since rand() is absent bare-metal)
             c8_rand_seed = c8_rand_seed * 1664525 + 1013904223;
             c8_v[x] = ((c8_rand_seed >> 16) & 0xFF) & nn;
             break;
-        case 0xD000: { /// Draw Sprite an Position (x,y)
+        case 0xD000: { /// Draw Sprite at position (x,y)
             unsigned char px = c8_v[x] % 64;
             unsigned char py = c8_v[y] % 32;
             c8_v[0xF] = 0;
@@ -372,7 +372,7 @@ void c8_step() {
                 for (int col = 0; col < 8; col++) {
                     if ((sprite & (0x80 >> col)) != 0) {
                         int index = ((py + row) % 32) * 64 + ((px + col) % 64);
-                        if (c8_gfx[index] == 1) c8_v[0xF] = 1; /// Kollision!
+                        if (c8_gfx[index] == 1) c8_v[0xF] = 1; /// Collision detected!
                         c8_gfx[index] ^= 1;
                     }
                 }
@@ -389,19 +389,19 @@ void c8_step() {
                 case 0x0A: { /// Wait for Key
                     bool pressed = false;
                     for(int k=0; k<16; k++) if(c8_key[k]) { c8_v[x] = k; pressed = true; break; }
-                    if(!pressed) c8_pc -= 2; /// Bleibe hier, bis Taste gedrückt
+                    if(!pressed) c8_pc -= 2; /// Wait here until key is pressed
                 } break;
                 case 0x15: c8_dt = c8_v[x]; break;
                 case 0x18: c8_st = c8_v[x]; break;
                 case 0x1E: c8_i += c8_v[x]; break;
-                case 0x29: c8_i = c8_v[x] * 5 + 0x50; break; /// Lade Font
+                case 0x29: c8_i = c8_v[x] * 5 + 0x50; break; /// Load Font
                 
                 /// ==========================================
                 /// BARE METAL FIX: MEMORY PROTECTION!
-                /// Schützt den Kernel vor HTML-Müll oder Bugs
+                /// Protects kernel against malformed HTML or bugs
                 /// ==========================================
-                case 0x33: /// BCD Umwandlung
-                    if (c8_i < 4094) { // Darf nicht über 4095 hinaus schreiben!
+                case 0x33: /// BCD Conversion
+                    if (c8_i < 4094) { // Bound writes to <= 4095
                         c8_ram[c8_i] = c8_v[x] / 100;
                         c8_ram[c8_i + 1] = (c8_v[x] / 10) % 10;
                         c8_ram[c8_i + 2] = c8_v[x] % 10;
@@ -409,7 +409,7 @@ void c8_step() {
                     break;
                 case 0x55: 
                     for (int i = 0; i <= x; i++) {
-                        // Die Bitmaske & 0x0FFF zwingt den Index zwischen 0 und 4095
+                        // Bitmask & 0x0FFF restricts index between 0 and 4095
                         c8_ram[(c8_i + i) & 0x0FFF] = c8_v[i]; 
                     }
                     break;
@@ -424,35 +424,35 @@ void c8_step() {
 }
 _44 load_rom_from_disk(const char* filename, _89 target_addr) {
     sys_print("SCANNING DISK FOR ROM...");
-    // 1. Suche die Datei im Dateisystem (Wir nehmen mal LBA 1002 als Root-Dir an)
+    // 1. Locate file in filesystem (Assume LBA 1002 as root directory)
     uint32_t buf_dir = 0x00901000; 
     disk_read_auto(1002, buf_dir); 
     CFS_DIR_ENTRY* dir = (CFS_DIR_ENTRY*)(unsigned long long)buf_dir;
     _43 found_lba = 0;
     _43 found_size = 0;
-    // 2. Dateisystem durchsuchen nach *.BIN
+    // 2. Scan directory for *.BIN
     for (int i = 0; i < 8; i++) {
-        if (dir[i].type == 1) { // Typ 1 = Datei
-            _44 is_bin = _86; // Standard: false
+        if (dir[i].type == 1) { // Type 1 = File
+            _44 is_bin = _86; // Default: false
             
-            // Wir suchen den Punkt '.' in den ersten 8 Zeichen
+            // Scan for dot '.' in first 8 characters
             for(int k=0; k<8; k++) {
                 if(dir[i].filename[k] == '.') {
-                    // Prüfen, ob nach dem Punkt B-I-N kommt
+                    // Check whether extension matches B-I-N
                     if ((dir[i].filename[k+1] == 'B' || dir[i].filename[k+1] == 'b') &&
                         (dir[i].filename[k+2] == 'I' || dir[i].filename[k+2] == 'i') &&
                         (dir[i].filename[k+3] == 'N' || dir[i].filename[k+3] == 'n')) {
-                        is_bin = _128; // Treffer!
+                        is_bin = _128; // Match!
                     }
-                    break; // Punkt gefunden, Schleife für diesen Namen beenden
+                    break; // Dot found, finish loop for this entry
                 }
             }
 
             if (is_bin) {
-                // TREFFER! Wir haben eine .BIN Datei gefunden!
+                // Match found: .BIN file located
                 found_lba = dir[i].start_lba;
                 found_size = dir[i].file_size;
-                break; // Nimm die erste gefundene .BIN Datei
+                break; // Use first matching .BIN file
             }
         }
     }
@@ -460,13 +460,13 @@ _44 load_rom_from_disk(const char* filename, _89 target_addr) {
         sys_print("ERROR: ROM FILE NOT FOUND!");
         return _86;
     }
-    // 3. ROM Sektorweise laden
+    // 3. Load ROM sector by sector
     sys_print("LOADING ROM DATA...");
     
-    /// BARE METAL FIX: Verhindere RAM-Overflow!
-    /// Ein CHIP-8 ROM darf maximal 3584 Bytes groß sein (4096 RAM - 512 Offset)
+    /// BARE METAL FIX: Prevent RAM overflow!
+    /// CHIP-8 ROM size limit: 3584 bytes (4096 RAM - 512 offset)
     if (found_size > 3584) {
-        found_size = 3584; // Knallhart abschneiden!
+        found_size = 3584; // Truncate
         sys_print("WARNING: ROM TOO LARGE, TRUNCATED!");
     }
     
@@ -509,15 +509,15 @@ _30 hs_spectator_input[64] = {0};
 _43 hs_spectator_idx = 0;
 _43 hs_crawlers_active = 3;
 /// --- SHIVA SHIELD ---
-_43 shiva_shield_active = 0;      /// 0 = aus, 1 = an
-_43 shiva_shield_phase = 0;       /// Aktuelle Shiva-Phase (0=VOID, 1=MORGENSTERN, 2=ERKENNUNG, 3=HITZE, 4=COLLAPS, 5=RUHE, 6=LEVEL0, 7=NEUGEBURT)
-_43 shiva_shield_timer = 0;       /// Frame-Counter für Phase-Timing
-_43 shiva_shield_blocked = 0;     /// Angriffe geblockt in diesem Zyklus
-_43 shiva_shield_total = 0;       /// Gesamtzahl aller geblockten Angriffe
-_94 shiva_shield_word = 0;        /// Das 64-Bit Shiva-Wort (Bit-Visualisierung)
-_43 shiva_shield_bit = 63;        /// Aktuelles Bit (MSB → LSB)
-_43 shiva_shield_cycle_active = 0;/// 1 = Shiva-Zyklus läuft gerade (nach Angriffs-Block)
-static _71 _30* shiva_phase_names[] = {"VOID", "MORGENSTERN", "ERKENNUNG", "HITZE", "COLLAPS", "RUHE", "LEVEL 0", "NEUGEBURT"};
+_43 shiva_shield_active = 0;      /// 0 = off, 1 = on
+_43 shiva_shield_phase = 0;       /// Active Shiva phase (0=VOID, 1=MORGENSTERN, 2=RECOGNITION, 3=HEAT, 4=COLLAPSE, 5=REST, 6=LEVEL0, 7=REBIRTH)
+_43 shiva_shield_timer = 0;       /// Frame counter for phase timing
+_43 shiva_shield_blocked = 0;     /// Attacks blocked in current cycle
+_43 shiva_shield_total = 0;       /// Total blocked attacks
+_94 shiva_shield_word = 0;        /// 64-bit Shiva word (bit visualization)
+_43 shiva_shield_bit = 63;        /// Current bit pointer (MSB -> LSB)
+_43 shiva_shield_cycle_active = 0;/// 1 = Shiva cycle actively running (after attack block)
+static _71 _30* shiva_phase_names[] = {"VOID", "MORGENSTERN", "RECOGNITION", "HEAT", "COLLAPSE", "REST", "LEVEL 0", "REBIRTH"};
 _30 hs_log[10][64]; // Omni-Crawler Log
 _43 hs_log_lines = 0;
 struct DetectedIP {
@@ -764,27 +764,27 @@ extern "C" void hs_start_sniffer() {}
 
 
 /// ========================================================
-/// BARE METAL TERMINAL (Der Text-Puffer)
+/// BARE METAL TERMINAL (Text buffer)
 /// ========================================================
-char term_buffer[15][64];  /// Speicher für 15 Zeilen mit max 64 Zeichen
-int term_line = 0;         /// Aktuelle Zeile
+char term_buffer[15][64];  /// Buffer for 15 lines of max 64 characters
+int term_line = 0;         /// Current line
 /// ========================================================
 void clear_screen() {
-    /// Wir leeren einfach unseren Speicher (nicht den Monitor!)
+    /// Clear memory buffer (not physical display)
     for(int i = 0; i < 15; i++) term_buffer[i][0] = 0; 
     term_line = 0;
 }
 
 void sys_print(const char* text) {
-    /// Wenn das Terminal voll ist (15 Zeilen erreicht) -> SCROLLEN!
+    /// When terminal is full (15 lines reached) -> SCROLL!
     if (term_line >= 15) {
         for(int i = 1; i < 15; i++) {
-            str_cpy(term_buffer[i-1], term_buffer[i]); /// Alles eins hoch schieben
+            str_cpy(term_buffer[i-1], term_buffer[i]); /// Shift lines up
         }
-        term_line = 14; /// Unten Platz machen
+        term_line = 14; /// Free bottom line
     }
     
-    /// Neuen Text in die aktuelle unterste Zeile kopieren
+    /// Copy new text into bottom line
     str_cpy(term_buffer[term_line], (char*)text);
     term_line++;
 }         
@@ -796,33 +796,33 @@ _50 run_cosmos_script(char* file_buffer, int file_size) {
 
     str_cpy(cmd_status, "RUNNING SCRIPT...");
 
-    /// Gehe jedes Zeichen der geladenen Datei durch
+    /// Iterate through every character in loaded file
     for (int i = 0; i < file_size; i++) {
         char c = file_buffer[i];
 
-        /// Wenn die Zeile zu Ende ist (\n) oder das Dateiende erreicht ist
+        /// When line ends (\n) or EOF is reached
         if (c == '\n' || i == file_size - 1) {
             
-            /// Letztes Zeichen noch mitnehmen, falls kein Umbruch am Ende war
+            /// Capture final character if no newline at EOF
             if (i == file_size - 1 && c != '\n' && c != '\r') {
                 if (line_pos < 127) current_line[line_pos++] = c;
             }
             
-            current_line[line_pos] = 0; /// String sauber abschließen
+            current_line[line_pos] = 0; /// Null-terminate string
 
             /// ====================================================
-            /// DER BEFEHLS-PARSER (Die komplette Cosmos Matrix!)
+            /// COMMAND PARSER
             /// ====================================================
             
-            /// 1. BATCH-Style: ECHO (Text ausgeben)
+            /// 1. BATCH-Style: ECHO (Print text)
             if (str_starts(current_line, "ECHO ")) {
                 sys_print(&current_line[5]); 
             }
-            /// 2. BATCH-Style: CLS (Bildschirm leeren)
+            /// 2. BATCH-Style: CLS (Clear terminal)
             else if (str_starts(current_line, "CLS")) {
                 clear_screen(); 
             }
-            /// 3. OS-Befehl: TITLE
+            /// 3. OS command: TITLE
             else if (str_starts(current_line, "TITLE ")) {
                 str_cpy(cmd_status, &current_line[6]);
             }
@@ -838,13 +838,13 @@ _50 run_cosmos_script(char* file_buffer, int file_size) {
                 sys_print("USED : 14 MB (KERNEL)");
                 sys_print("FREE : 8178 MB AVAILABLE");
             }
-            /// 6. INFO: NET (Netzwerk Status)
+            /// 6. INFO: NET (Network Status)
             else if (str_starts(current_line, "NET")) {
                 sys_print("ETH0 : INTEL PRO/1000 E1000");
                 sys_print("MAC  : B8:AE:ED:00:11:22");
                 sys_print("STAT : TX=1 RX=0 (WAITING)");
             }
-            /// 7. INFO: HELP (Die Befehlsübersicht)
+            /// 7. INFO: HELP (Command overview)
             else if (str_starts(current_line, "HELP")) {
                 sys_print("AVAILABLE COMMANDS:");
                 sys_print(" SYSINFO, MEM, NET, DIR, CLS");
@@ -962,7 +962,7 @@ _50 run_pong_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
             pong_state = 0; input_cooldown = 10;
         }
     } _41 {
-        /// Spielfeld & Physik
+        /// Playfield & Physics
         DrawRoundedRect(wx+10, py, ww-20, inner_h-10, 0, 0x000000);
         _39(_43 i=0; i<inner_h-10; i+=20) DrawRoundedRect(wx+ww/2-2, py+i, 4, 10, 0, 0x555555);
         _30 s1[10], s2[10]; int_to_str(pong_score1, s1); int_to_str(pong_score2, s2);
@@ -1074,7 +1074,7 @@ _50 run_blobby_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
         
         _15(key_new AND key_scancode EQ 0x01) { bv_state = 0; } 
         
-        /// Physik
+        /// Physics
         _15(win_z[19] EQ 12) {
             bv_ball_vy += 1; 
             _15(bv_ball_vy > 12) bv_ball_vy = 12; 
@@ -1135,19 +1135,19 @@ _50 run_blobby_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
             bv_p2_vy += 1; bv_p2_y += bv_p2_vy; 
             _15(bv_p2_y > floor_y - 30) { bv_p2_y = floor_y - 30; bv_p2_vy = 0; }
             
-            /// Wände & Decke
+            /// Walls & Ceiling
             _15(bv_ball_x < 15) { bv_ball_x = 15; bv_ball_vx = -bv_ball_vx; play_freq(800); }
             _15(bv_ball_x > ww-15) { bv_ball_x = ww-15; bv_ball_vx = -bv_ball_vx; play_freq(800); }
             _15(bv_ball_y < 15) { bv_ball_y = 15; bv_ball_vy = 2; }
             
-            /// Netz-Kollision
+            /// Net collision
             _15(bv_ball_x > ww/2-10 AND bv_ball_x < ww/2+10 AND bv_ball_y > floor_y-70) {
                 _15(bv_ball_y < floor_y-65 AND bv_ball_vy > 0) { bv_ball_vy = -8; } 
                 _41 { bv_ball_vx = -bv_ball_vx; bv_ball_x += bv_ball_vx*2; } 
                 play_freq(600);
             }
             
-            /// Ball trifft Blobs
+            /// Ball strikes blobs
             _15(bv_ball_vy > 0) {
                 _15(bv_ball_y+10 > bv_p1_y AND bv_ball_y-10 < bv_p1_y+30 AND bv_ball_x > bv_p1_x-10 AND bv_ball_x < bv_p1_x+50) {
                     bv_ball_vy = -14; 
@@ -1177,7 +1177,7 @@ _50 run_blobby_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
                 }
             }
             
-            /// Punkt!
+            /// Point scored!
             _15(bv_ball_y > floor_y) {
                 _15(bv_ball_x < ww/2) { bv_score2++; bv_ball_x = ww/4; }
                 _41 { bv_score1++; bv_ball_x = ww*3/4; }
@@ -1408,7 +1408,7 @@ _43 render_html(_43 x, _43 y, _43 max_w, _43 max_y, _71 _30* html) {
                 if (num_links < 64) {
                     _43 width = x - link_rects[num_links][0];
                     if (x < link_rects[num_links][0] || width > max_w) width = max_w - link_rects[num_links][0] + ox;
-                    if (width < 5) width = 5; /// Klick-Bereich auch bei leeren Tags sichern
+                    if (width < 5) width = 5; /// Ensure click area even with empty tags
                     link_rects[num_links][2] = width;
                     num_links++;
                 }
@@ -1420,7 +1420,7 @@ _43 render_html(_43 x, _43 y, _43 max_w, _43 max_y, _71 _30* html) {
                         _43 s = i + 4; char quote_char = 0;
                         while(tag_buf[s] == ' ') s++;
                         if (tag_buf[s] == '"' || tag_buf[s] == '\'') { quote_char = tag_buf[s]; s++; }
-                        while(tag_buf[s] == ' ') s++; /// Extra Trim für schmutziges HTML!
+                        while(tag_buf[s] == ' ') s++; /// Extra trim for malformed HTML!
                         
                         while (tag_buf[s] && u_idx < 255) {
                             if (quote_char != 0 && tag_buf[s] == quote_char) break; 
@@ -1432,7 +1432,7 @@ _43 render_html(_43 x, _43 y, _43 max_w, _43 max_y, _71 _30* html) {
                 }
                 src_url[u_idx] = 0;
 
-                /// BARE METAL FIX: Kugelsicherer Filter gegen Base64 und Javascript
+                /// BARE METAL FIX: Bulletproof filter against Base64 and Javascript
                 _44 is_valid_url = _128;
                 if (str_starts(src_url, "data:") || str_starts(src_url, "DATA:") || 
                     str_starts(src_url, "javascript:") || src_url[0] == 0) {
@@ -1440,10 +1440,10 @@ _43 render_html(_43 x, _43 y, _43 max_w, _43 max_y, _71 _30* html) {
                 }
 
                 if (auto_img_state == 3 && browser_stb_img != 0) {
-                    /// BILD IST FERTIG -> ALS MINIATUR ZEICHNEN!
+                    /// IMAGE IS READY -> DRAW AS THUMBNAIL!
                     _43 img_w = browser_stb_w; _43 img_h = browser_stb_h;
                     
-                    /// Miniatur-Größe festlegen (Max 150x150 Pixel)
+                    /// Set thumbnail size (Max 150x150 pixels)
                     _43 max_draw_w = 150; 
                     if (max_draw_w > (max_w - (x - ox))) max_draw_w = max_w - (x - ox);
                     _43 max_draw_h = 150; 
@@ -1474,21 +1474,21 @@ _43 render_html(_43 x, _43 y, _43 max_w, _43 max_y, _71 _30* html) {
                     if (x - ox + 70 >= max_w) { y += (bold?22:18); x = ox; }
                     
                     if (!is_valid_url) {
-                        /// Base64-Müll wird als grauer Kasten ignoriert
+                        /// Base64 payload ignored as a gray box
                         DrawRoundedRect(x, y-2, 30, 15, 2, 0x888888);
                         x += 35;
                     } else {
-                        /// Echtes Bild! Zeige Placeholder-Rechteck
-                        _89 box_col = 0x8800AA; // Lila = noch nicht geladen
+                        /// Real image! Show placeholder rectangle
+                        _89 box_col = 0x8800AA; // Purple = not yet loaded
                         if (found_src && link_urls[63][0] != 0 && str_starts(link_urls[63], src_url)) {
-                            // Dieses Bild ist gerade aktiv
-                            if (auto_img_state == 2) box_col = 0x0088AA; // Blau = lädt
-                            else if (auto_img_state == 3) box_col = 0x005500; // Grün = fertig
+                            // This image is currently active
+                            if (auto_img_state == 2) box_col = 0x0088AA; // Blue = loading
+                            else if (auto_img_state == 3) box_col = 0x005500; // Green = done
                         }
                         DrawRoundedRect(x, y-2, 50, 15, 2, box_col); 
                         DrawHtmlChar(x+5, y-2, 'I', 0xFFFFFF, 0); DrawHtmlChar(x+12, y-2, 'M', 0xFFFFFF, 0); DrawHtmlChar(x+19, y-2, 'G', 0xFFFFFF, 0);
                         
-                        /// NUR bei Maus-Klick auf diesen Platzhalter den Download starten
+                        /// Trigger download ONLY upon mouse click on this placeholder
                         if (found_src && mouse_just_pressed &&
                             is_over_rect(mouse_x, mouse_y, x, y-2, 50, 15) &&
                             (auto_img_state == 0 || auto_img_state == 3)) {
@@ -1700,15 +1700,15 @@ _50 run_browser_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
                     }
                     
                     if (is_direct_img) {
-                        /// DECODER LOCK: Verhindert das 60FPS Dauer-Neuladen bei Direkt-Bildern!
+                        /// DECODER LOCK: Prevents continuous 60FPS reloading of direct images!
                         if (browser_is_tba_decoded == 0) {
                             int comp; if (browser_stb_img != 0) free_image(browser_stb_img);
                             browser_stb_img = decode_image(&browser_download_buffer[payload_start], browser_download_len - payload_start, (int*)&browser_stb_w, (int*)&browser_stb_h, &comp, 3);
                             str_cpy(browser_content, ""); 
-                            browser_is_tba_decoded = 1; /// Bild ist fertig, nicht nochmal decodieren!
+                            browser_is_tba_decoded = 1; /// Image is ready, do not decode again!
                         }
                     } else {
-                        /// SCHUTZSCHILD: Lösche das Bild NUR, wenn wir keine Miniatur anzeigen wollen!
+                        /// SHIELD: Free the image ONLY if we do not want to display a thumbnail!
                         if (auto_img_state == 0) {
                             if (browser_stb_img != 0) { free_image(browser_stb_img); browser_stb_img = 0; }
                         }
@@ -2016,7 +2016,7 @@ _50 run_browser_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
             }
         }
         
-        /// Wenn das Bild im Hintergrund fertig geladen wurde: Decodieren!
+        /// Once background image download finishes: decode it!
         if (auto_img_state == 2 && browser_download_complete == 1) {
             _43 payload_start = 0;
             for (_43 i=0; i<browser_download_len-4; i++) {
@@ -2047,7 +2047,7 @@ _50 run_browser_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
 		// --- BARE METAL DOWNLOAD FIX ---
         static _44 download_saved = _86;
         if (browser_download_complete == 1 && browser_download_len > 0 && !download_saved) {
-            // Ist es eine .BIN Datei? (Wir prüfen die URL)
+            // Is it a .BIN file? (Check the URL)
             _44 is_bin_url = _86;
             _43 ulen = str_len(browser_url);
             if (ulen > 4 && (browser_url[ulen-3] == 'b' || browser_url[ulen-3] == 'B') &&
@@ -2057,7 +2057,7 @@ _50 run_browser_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
             }
 
             if (is_bin_url) {
-                // Finde den Anfang der echten Daten (HTTP Header überspringen)
+                // Locate start of real data (skip HTTP headers)
                 _43 payload_start = 0;
                 for (_43 i=0; i<browser_download_len-4; i++) {
                     if (browser_download_buffer[i] == '\r' && browser_download_buffer[i+1] == '\n' && 
@@ -2216,7 +2216,7 @@ _50 run_holyspirit(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
     _44 shiva_hov = is_over_rect(mouse_x, mouse_y, shiva_btn_x, shiva_btn_y, shiva_btn_w, shiva_btn_h);
     
     _15(shiva_shield_active) {
-        /// Pulsierendes Gold wenn aktiv
+        /// Pulsing gold when active
         _43 pulse = 0xCC8800 + ((frame % 30) < 15 ? 0x331100 : 0x000000);
         DrawRoundedRect(shiva_btn_x, shiva_btn_y, shiva_btn_w, shiva_btn_h, 2, pulse);
         Text(shiva_btn_x + 5, shiva_btn_y + 5, "SHIVA ACTIVE", 0xFFFFFF, _128);
@@ -2262,22 +2262,22 @@ _50 run_holyspirit(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
     /// ★ SHIVA PHASE TICKER ★
     _15(shiva_shield_cycle_active) {
         shiva_shield_timer++;
-        /// Phase-Dauern in Frames (~30fps): VOID=90, MORGEN=150, ERKENN=36, HITZE=120, COLLAPS=60, RUHE=90, LVL0=75, NEU=24
+        /// Phase durations in frames (~30fps): VOID=90, MORGEN=150, ERKENN=36, HITZE=120, COLLAPS=60, RUHE=90, LVL0=75, NEU=24
         _43 phase_frames[] = {90, 150, 36, 120, 60, 90, 75, 24};
         _15(shiva_shield_timer >= phase_frames[shiva_shield_phase]) {
             shiva_shield_timer = 0;
             shiva_shield_phase++;
-            /// Bit-Kaskade: Setze Bits von MSB nach LSB während MORGENSTERN
+            /// Bit cascade: set bits from MSB to LSB during MORGENSTERN phase
             _15(shiva_shield_phase == 1) { shiva_shield_bit = 63; shiva_shield_word = 0; }
-            /// Level 0: Bits löschen
+            /// Level 0: Clear bits
             _15(shiva_shield_phase == 6) { shiva_shield_word = 0; shiva_shield_bit = 63; }
-            /// Zyklus Ende
+            /// End of cycle
             _15(shiva_shield_phase >= 8) {
                 shiva_shield_phase = 0;
                 shiva_shield_cycle_active = 0;
             }
         }
-        /// Bits setzen während MORGENSTERN Phase
+        /// Set bits during MORGENSTERN phase
         _15(shiva_shield_phase == 1 AND shiva_shield_bit >= 0) {
             _43 bits_per_frame = 2;  /// ~64 Bits in 32 Frames
             _39(_43 b = 0; b < bits_per_frame AND shiva_shield_bit >= 0; b++) {
@@ -2573,7 +2573,7 @@ _50 run_network_configurator(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
         DrawChar(wx+15+(netcfg_ip_idx*7), py+8, '_', 0x000000, _128);
     }
     
-    /// Tastatur nur abfangen, wenn Configurator (ID 9) im Fokus ist!
+    /// Only intercept keyboard when Configurator (ID 9) is focused!
     _15(key_new AND win_z[19] EQ 9) { 
         _30 c = last_app_key; 
         _15(c EQ '\b' OR c EQ 8) { 
@@ -2600,7 +2600,7 @@ _50 run_network_configurator(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
         str_cat(netcfg_content, netcfg_ip);
         str_cat(netcfg_content, "\nSUBNET: 255.255.255.0\nGATEWAY: 192.168.14.14\n\nSENDING GRATUITOUS ARP PING...");
         
-        /// Deine Bare Metal Funktion aus der net.cpp aufrufen!
+        /// Call bare-metal function from net.cpp!
         apply_static_ip(netcfg_ip);
         
         netcfg_state = 1;
@@ -2611,7 +2611,7 @@ _50 run_network_configurator(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
     Text(wx+15, py+40, netcfg_content, 0x000000, _86);
 }
 // ========================================================
-// DIE UNIVERSAL-WRAPPER (Greifen auf c8_step etc. zu)
+// UNIVERSAL WRAPPERS (Access c8_step etc.)
 // ========================================================
 void c8_load_rom(unsigned long long ram_addr, int size) { }
 
@@ -2647,7 +2647,7 @@ void c8_render(_43 wx, _43 wy, _43 ww, _43 wh) {
 
 void c8_input(int scancode, bool is_pressed) { }
 
-// --- GAMEBOY DUMMYS ---
+// --- GAMEBOY DUMMIES ---
 void gb_reset() { }
 void gb_load_rom(unsigned long long ram_addr, int size) { }
 void gb_run_frame() { }
@@ -2655,7 +2655,7 @@ void gb_render(_43 wx, _43 wy, _43 ww, _43 wh) { }
 void gb_input(int scancode, bool is_pressed) { }
 
 // ========================================================
-// MASCHINEN REGISTRIEREN
+// REGISTER MACHINES
 // ========================================================
 VirtualMachine emu_chip8 = {
     "CHIP-8 HYPERVISOR", 
@@ -2680,7 +2680,7 @@ VirtualMachine emu_gameboy = {
 VirtualMachine* active_vm = 0;
 
 // ========================================================
-// AB HIER KOMMT DEINE: _50 run_emulator_engine(...)
+// EMULATOR ENTRY POINT: _50 run_emulator_engine(...)
 // ========================================================
 /// ==========================================
 /// EMULATOR ENGINE
@@ -2688,11 +2688,11 @@ VirtualMachine* active_vm = 0;
 _50 run_emulator_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
     _44 is_titlebar = is_over_rect(mouse_x, mouse_y, wx, wy, ww, 30);
     _44 emulator_blocked = blocked || is_titlebar; 
-
+    
     _43 py = wy + 40;
     DrawRoundedRect(wx, py, ww, wh - 40, 0, 0x111112); 
     
-    // Wenn keine Maschine geladen ist ODER Status 0 ist: Zeige Standby!
+    // If no machine is loaded OR status is 0: Show standby!
     if (active_vm == 0 || c8_state == 0) {
         TextC(wx + ww/2, py + 80, "UNIVERSAL HYPERVISOR", 0x00FFBB, _128);
         TextC(wx + ww/2, py + 110, "SYSTEM READY.", 0xFFFFFF, _128);
@@ -2705,9 +2705,9 @@ _50 run_emulator_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
             DrawRoundedRect(wx + ww/2 - 5, py + 220, 10, 10, 0, 0x00FF00);
         }
     } else {
-        /// --- EINE MASCHINE LÄUFT ---
+        /// --- A MACHINE IS RUNNING ---
         
-        // Dynamischer Header (zeigt den Namen der aktiven Konsole an!)
+        // Dynamic header (displays active console name)
         TextC(wx + ww/2, py + 10, active_vm->system_name, 0x00FFBB, _128);
         TextC(wx + ww/2, py + 25, "RUNNING... [ESC] TO POWER OFF", 0x444444, _86);
         
@@ -2716,12 +2716,12 @@ _50 run_emulator_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
             active_vm = 0;
 }
         
-        // 1. Zyklen berechnen
+        // 1. Calculate cycles
         if (!emulator_blocked) {
             active_vm->run_frame();
         }
         
-        // 2. Bild zeichnen
+        // 2. Render frame
         active_vm->render(wx, py, ww, wh - 40);
     }
 }
@@ -2732,7 +2732,7 @@ _50 run_emulator_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked) {
 _44 load_rom_from_tba(const char* target_rom_name, _89 target_addr) {
     sys_print("MOUNTING ROMS.TBA...\n");
     
-    // 1. Suche ROMS.TBA im Disk-Manager Root
+    // 1. Search for ROMS.TBA in Disk Manager root
     uint32_t buf_dir = 0x00901000; 
     disk_read_auto(1002, buf_dir); 
     CFS_DIR_ENTRY* dir = (CFS_DIR_ENTRY*)(unsigned long long)buf_dir;
@@ -2750,8 +2750,8 @@ _44 load_rom_from_tba(const char* target_rom_name, _89 target_addr) {
         return _86;
     }
     
-    // 2. Lade den TBA Header (Erster Sektor der Datei)
-    uint64_t ram_buffer = 0x08000000; // Freier RAM Bereich für Datei-Operationen
+    // 2. Load TBA header (first sector of file)
+    uint64_t ram_buffer = 0x08000000; // Free RAM region for file operations
     disk_read_auto(tba_lba, ram_buffer);
     
     TBAHeader* header = (TBAHeader*)ram_buffer;
@@ -2760,19 +2760,19 @@ _44 load_rom_from_tba(const char* target_rom_name, _89 target_addr) {
         return _86;
     }
     
-    // 3. Lade das Inhaltsverzeichnis (Index) des Archivs
-    // Der Index beginnt bei byte offset "header->indexOffset"
+    // 3. Load directory index of the archive
+    // Index begins at byte offset "header->indexOffset"
     _43 idx_sec = header->indexOffset / 512;
     _43 idx_off = header->indexOffset % 512;
     
-    // Wir laden einfach mal 10 Sektoren Index in den RAM (reicht für viele ROMs)
+    // Load 10 sectors of index into RAM (sufficient for many ROMs)
     for(int s=0; s<10; s++) disk_read_auto(tba_lba + idx_sec + s, ram_buffer + (s * 512));
     
     TBAFileEntry* entries = (TBAFileEntry*)(ram_buffer + idx_off);
     uint64_t t_off = 0;
     uint64_t t_size = 0;
     
-    // 4. Suche die Wunsch-ROM im Archiv
+    // 4. Search for requested ROM in archive
     for (uint32_t i = 0; i < header->fileCount; i++) {
         if (str_starts(entries[i].name, target_rom_name)) {
             t_off = entries[i].offset;
@@ -2788,7 +2788,7 @@ _44 load_rom_from_tba(const char* target_rom_name, _89 target_addr) {
     
     sys_print("ROM FOUND! EXTRACTING...\n");
     
-    // 5. ROM aus dem Archiv in den Emulator-RAM laden
+    // 5. Load ROM from archive into emulator RAM
     _43 rom_sec = t_off / 512;
     _43 rom_off = t_off % 512;
     _43 sec_count = (t_size + rom_off + 511) / 512;
@@ -2802,7 +2802,7 @@ _44 load_rom_from_tba(const char* target_rom_name, _89 target_addr) {
     unsigned char* dest = (unsigned char*)target_addr;
     
     for (_43 i = 0; i < t_size; i++) {
-        if (i < 3584) { // Schutzschalter (Max CHIP-8 Größe)
+        if (i < 3584) { // Safety bound (Max CHIP-8 size)
             dest[i] = rom_src[i];
         }
     }

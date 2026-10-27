@@ -33,7 +33,7 @@ extern "C" void* memset(void*, int, unsigned long);
 static void virtio_io_handler(cosmos_hypervisor* hv, cosmos_vcpu* vcpu, 
                               uint16_t port, io_access_type type, 
                               uint8_t size, uint32_t* value) {
-    //TODO: Implement virtio-blk logic here
+    // TODO: Implement virtio-blk logic here
     (void)hv;
     (void)vcpu;
     (void)port;
@@ -41,8 +41,8 @@ static void virtio_io_handler(cosmos_hypervisor* hv, cosmos_vcpu* vcpu,
     (void)size;
     (void)value;
     
-    // Einfache Logik (wird in späteren Phasen komplett ausgebaut)
-    VIRTIO_LOG("Zugriff auf VirtIO Port 0x%04X (Typ: %s, Size: %u)", 
+    // Basic logic (will be fully extended in subsequent phases)
+    VIRTIO_LOG("Access to VirtIO port 0x%04X (Type: %s, Size: %u)", 
                port, type == IO_READ ? "IN" : "OUT", size);
 }
 
@@ -56,18 +56,18 @@ int cosmos_virtio_blk_init(cosmos_virtio_blk* dev, uint8_t* disk_buffer, uint64_
     dev->disk_image = disk_buffer;
     dev->disk_size_bytes = size_bytes;
     
-    // VirtIO Block Features: Wir unterstützen LBA Capacity (Sektorenanzahl) und Blockgröße
+    // VirtIO Block Features: We support LBA capacity (sector count) and block size
     dev->host_features = (1 << VIRTIO_BLK_F_BLK_SIZE);
     
-    // PCI-Konfiguration (Fake-Werte für unser virtuelles PCI-Gerät)
+    // PCI Configuration (fake values for our virtual PCI device)
     dev->pci_bus = 0;
-    dev->pci_dev = 4; // Virtuelles Gerät #4
+    dev->pci_dev = 4; // Virtual device #4
     dev->pci_func = 0;
     
-    // Weisen dem Gerät einen freien I/O Port-Bereich zu
+    // Assign free I/O port range to device
     dev->io_base = 0xC000;
     
-    VIRTIO_LOG("VirtIO Block Device initialisiert.");
+    VIRTIO_LOG("VirtIO Block Device initialized.");
     VIRTIO_LOG("  Disk Size: %llu MB", (unsigned long long)(size_bytes / (1024*1024)));
     VIRTIO_LOG("  I/O Base:  0x%04X", dev->io_base);
     
@@ -77,15 +77,15 @@ int cosmos_virtio_blk_init(cosmos_virtio_blk* dev, uint8_t* disk_buffer, uint64_
 int cosmos_virtio_blk_register_traps(cosmos_virtio_blk* dev, cosmos_io_manager* io_mgr) {
     if (!dev || !io_mgr) return -1;
     
-    // Legacy VirtIO nutzt 32 Bytes I/O Ports
-    // Wir registrieren einen Trap von io_base bis io_base + 31
+    // Legacy VirtIO uses 32 bytes I/O ports
+    // Register trap from io_base to io_base + 31
     int res = cosmos_io_register_port_trap(io_mgr, dev->io_base, dev->io_base + 0x1F, virtio_io_handler);
     if (res != 0) {
-        VIRTIO_LOG("FEHLER: Konnte I/O Traps nicht registrieren!");
+        VIRTIO_LOG("ERROR: Could not register I/O traps!");
         return res;
     }
     
-    VIRTIO_LOG("I/O Traps für VirtIO registriert (0x%04X - 0x%04X).", 
+    VIRTIO_LOG("I/O traps registered for VirtIO (0x%04X - 0x%04X).", 
                dev->io_base, dev->io_base + 0x1F);
     return 0;
 }

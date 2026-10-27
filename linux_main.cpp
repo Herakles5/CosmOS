@@ -380,7 +380,7 @@ apply_surreal:
     }
 
 calc_amp:
-    // Wenn gerade kein fester System-Beep spielt, nutze die Amplitude der Musik fuer die Visuals!
+    // If no fixed system beep is playing, use music amplitude for visuals!
     if (linux_sound_duration == 0) {
         int32_t avg_amp = 0;
         int32_t avg_high_amp = 0;
@@ -434,7 +434,7 @@ int main(int argc, char** argv) {
         printf("WARNING: Failed to allocate bare-metal 1GB RAM space!\n");
     }
 
-    // SDL wird nun automatisch Pipewire/PulseAudio nutzen, da wir das in der ISO installiert haben!
+    // SDL will automatically use Pipewire/PulseAudio as installed in the live image!
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL_Init failed: %s\n", SDL_GetError());
         return 1;
@@ -651,41 +651,41 @@ int main(int argc, char** argv) {
             glEnd();
             glDisable(GL_TEXTURE_2D);
             
-            // ========== GPU-BESCHLEUNIGTER NEBEL-RING (Terra Infinita) ==========
-            // Zeichne den Fog-Ring als OpenGL Triangle Strip direkt auf der GPU!
-            // Dies ersetzt das CPU-basierte DrawLineAlpha und gibt massive FPS-Verbesserung.
+            // ========== GPU-ACCELERATED FOG RING (Terra Infinita) ==========
+            // Render the fog ring as OpenGL triangle strip directly on GPU!
+            // Replaces CPU-based DrawLineAlpha for significant FPS improvement.
             if (cfg_bg_mode == 1) {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                 glDisable(GL_DEPTH_TEST);
                 glDisable(GL_TEXTURE_2D);
                 
-                // Perspektiv-Projektion passend zur CPU-Kamera aufsetzen
+                // Set up perspective projection matching CPU camera
                 glMatrixMode(GL_PROJECTION);
                 glLoadIdentity();
                 float near_p = 1.0f;
-                float far_p = 30000.0f; // Erhöht auf 30000, damit der riesige Nebel beim Rauszoomen nicht abgeschnitten wird
+                float far_p = 30000.0f; // Extended to 30000 so massive fog is not clipped during zoom-out
                 float right_p = near_p * (float)w / (2.0f * camera_fov);
                 float top_p = near_p * (float)h / (2.0f * camera_fov);
                 glFrustum(-right_p, right_p, -top_p, top_p, near_p, far_p);
                 
-                // ModelView: Kamera-Offset + Rotation (CPU-Konvention → OpenGL-Konvention)
+                // ModelView: Camera offset + rotation (CPU convention -> OpenGL convention)
                 glMatrixMode(GL_MODELVIEW);
                 glLoadIdentity();
                 
-                // 4. Kamera Offset (nach hinten = -Z in OpenGL)
+                // 4. Camera offset (backwards = -Z in OpenGL)
                 glTranslatef(0.0f, 0.0f, -camera_z_offset);
-                // 3. Z-Achse flippen, da CPU +Z nach "vorne" geht, OpenGL aber -Z
+                // 3. Flip Z-axis (CPU +Z is forward, OpenGL -Z is forward)
                 glScalef(1.0f, 1.0f, -1.0f);
-                // 2. X-Rotation (CPU-Formel entspricht genau OpenGL)
+                // 2. X-Rotation (matches OpenGL)
                 glRotatef(global_cam_rot_x * 57.2957795f, 1.0f, 0.0f, 0.0f);
-                // 1. Y-Rotation (CPU-Formel entspricht negativer OpenGL-Rotation)
+                // 1. Y-Rotation (CPU corresponds to negative OpenGL rotation)
                 glRotatef(-global_cam_rot_y * 57.2957795f, 0.0f, 1.0f, 0.0f);
                 
-                // Culling aus, um sicherzugehen, dass nichts verworfen wird
+                // Disable culling to ensure nothing is discarded
                 glDisable(GL_CULL_FACE);
                 
-                // Nebel-Ring zeichnen: r = 780 bis 3000 (Ring 2 und 3)
+                // Draw fog ring: r = 780 to 3000 (Rings 2 and 3)
                 int segments = 180;
                 float r_inner_start = 780.0f;
                 float r_outer_end = 3000.0f;
@@ -702,17 +702,17 @@ int main(int argc, char** argv) {
                     for (int i = 0; i <= segments; i++) {
                         float a = (float)i * 6.28318f / (float)segments;
                         
-                        // Nebel-Noise
+                        // Fog noise
                         float noise = sinf(a * 7.0f + r * 0.01f) * 0.15f + cosf(a * 13.0f - r * 0.005f) * 0.1f;
                         float noise_next = sinf(a * 7.0f + r_next * 0.01f) * 0.15f + cosf(a * 13.0f - r_next * 0.005f) * 0.1f;
                         
-                        // Alpha: innen dünn, außen dicht (erhöht für Sichtbarkeit)
+                        // Alpha: thin inner edge, dense outer edge (boosted for visibility)
                         float alpha1 = 0.10f + fog_t * fog_t * 0.75f + noise * fog_t;
                         float alpha2 = 0.10f + fog_t_next * fog_t_next * 0.75f + noise_next * fog_t_next;
                         if (alpha1 < 0.05f) alpha1 = 0.05f; if (alpha1 > 0.90f) alpha1 = 0.90f;
                         if (alpha2 < 0.05f) alpha2 = 0.05f; if (alpha2 > 0.90f) alpha2 = 0.90f;
                         
-                        // Farbe: Weiß-Grau mit leichtem Blau-Stich + Wirbel
+                        // Color: White-gray with light blue tint + vortex
                         float fr = 0.78f + sinf(a * 5.0f) * 0.12f;
                         float fg = 0.82f + cosf(a * 3.0f + r * 0.003f) * 0.10f;
                         float fb = 0.90f + sinf(a * 9.0f) * 0.08f;
@@ -720,7 +720,7 @@ int main(int argc, char** argv) {
                         float ca = cosf(a);
                         float sa = sinf(a);
                         
-                        // Vertices mit normalen Z-Koordinaten (wird durch glScalef geflippt)
+                        // Vertices with normal Z-coordinates (flipped via glScalef)
                         glColor4f(fr, fg, fb, alpha1);
                         glVertex3f(ca * r, 0.0f, sa * r);
                         
@@ -732,39 +732,38 @@ int main(int argc, char** argv) {
                 
                 glDisable(GL_BLEND);
                 
-                // Projektion zurücksetzen für den Rest
+                // Reset projection matrix for remaining scene
                 glMatrixMode(GL_PROJECTION);
                 glLoadIdentity();
                 glMatrixMode(GL_MODELVIEW);
                 glLoadIdentity();
             }
-            // ========== ENDE GPU NEBEL-RING ==========
+            // ========== END GPU FOG RING ==========
         }
 		if (app_window_active) {
-            // 1. GANZ WICHTIG: Tiefenpuffer leeren!
-            // Das sorgt dafür, dass die 3D-Katze räumlich VOR dem Cosmos-Desktop platziert wird.
+            // 1. Clear depth buffer to place 3D avatar in front of Cosmos desktop
             glClear(GL_DEPTH_BUFFER_BIT);
 
-            // 2. 3D Engine im sicheren Main-Thread aufrufen!
+            // 2. Call 3D engine safely on main thread
             run_smash_cats_engine(os_app_x, os_app_y, os_app_w, os_app_h, false);
 
-            // 3. Scissor-Test wieder ausmachen, damit der nächste Frame nicht kaputt geht
+            // 3. Disable scissor test to avoid corrupting next frame
             glDisable(GL_SCISSOR_TEST);
         }
 
         // DRAW AION 3D AVATAR
         draw_a3d();
 
-        // DEIN ALTER CODE:
+        // Frame swap:
         SDL_GL_SwapWindow(window);
         
         uint32_t frame_time = SDL_GetTicks() - frame_start;
-        // FPS Cap bei ca. 950 FPS (1ms), um einen GPU/System-Absturz (Overkill > 1000 FPS) zu verhindern!
+        // Frame rate cap at ~950 FPS (1ms) to prevent excessive GPU workload
         if (frame_time < 1) {
             SDL_Delay(1);
         }
         
-        // Failsafe: Wenn Audio nicht geladen werden konnte, simuliere den Ablauf der Ton-Dauer!
+        // Failsafe: If audio failed to load, simulate tone duration decay
         if (global_audio_dev == 0 && linux_current_freq > 0) {
             if (linux_sound_duration != 0xFFFFFFFF) {
                 if (linux_sound_duration > (44100 / 60)) linux_sound_duration -= (44100 / 60);

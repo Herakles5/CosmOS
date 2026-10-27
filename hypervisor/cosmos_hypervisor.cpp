@@ -6,9 +6,8 @@
  *  Phase 1.1: VMX Detection & VMXON
  *  Phase 1.3: Stealth VM-Exit Handlers (CPUID, RDTSC, MSR)
  *
- *  Dieses Modul implementiert den Kern des CosmOS Type-1 Hypervisors.
- *  Es kann sowohl bare-metal (CosmOS) als auch unter Linux (zum Testen)
- *  kompiliert werden.
+ *  This module implements the core of the CosmOS Type-1 Hypervisor.
+ *  It can be compiled both bare-metal (CosmOS) and under Linux (for testing).
  * ============================================================================
  */
 
@@ -18,8 +17,8 @@
 /* ============================================================================
  *  MEMORY ALLOCATION ABSTRACTION
  *
- *  Unter Linux: mmap() für page-aligned Speicher
- *  Bare Metal:  Eigener Page Allocator aus CosmOS
+ *  Under Linux: mmap() for page-aligned memory
+ *  Bare Metal:  Custom Page Allocator from CosmOS
  * ============================================================================ */
 
 #ifdef __linux__
@@ -28,8 +27,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-// Unter Linux können wir physische Adressen nicht direkt verwenden.
-// Für Tests benutzen wir virtuelle = physische Annahme (funktioniert nur als Root mit KVM).
+// Under Linux we cannot directly use physical addresses.
+// For testing we assume virtual == physical (works only as root with KVM).
 static void* hv_alloc_page(uint64_t* out_phys) {
     void* p = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
@@ -55,7 +54,7 @@ static void hv_free_page(void* ptr) {
 #define HV_LOG(fmt, ...) printf("[COSMOS-HV] " fmt "\n", ##__VA_ARGS__)
 
 #else
-// Bare Metal CosmOS - eigener Allocator
+// Bare Metal CosmOS - custom allocator
 extern void* cosmos_alloc_page_aligned(uint64_t* out_phys);
 extern void* cosmos_alloc_pages_aligned(uint64_t size, uint64_t* out_phys);
 extern void  cosmos_free_page(void* ptr);
@@ -73,7 +72,7 @@ static void hv_free_page(void* ptr) {
     cosmos_free_page(ptr);
 }
 
-// Bare metal printf und memset (bereits in CosmOS kernel vorhanden)
+// Bare metal printf and memset (already present in CosmOS kernel)
 extern "C" int printf(const char* fmt, ...);
 extern "C" void* memset(void*, int, unsigned long);
 extern "C" void* memcpy(void*, const void*, unsigned long);
@@ -84,19 +83,18 @@ extern "C" void* memcpy(void*, const void*, unsigned long);
 /* ============================================================================
  *  HELPER: Adjust VMX control value
  *
- *  Intel VMX erfordert, dass bestimmte Bits in den Control-Feldern
- *  gesetzt oder gelöscht sein MÜSSEN. Die MSRs IA32_VMX_*_CTLS geben
- *  an, welche Bits mandatory 0 und mandatory 1 sind.
+ *  Intel VMX requires certain bits in control fields to be mandatory 0 or 1.
+ *  The IA32_VMX_*_CTLS MSRs specify which bits are mandatory 0 and mandatory 1.
  *
- *  allowed0 (Low 32 bits):  Bit=1 → MUSS gesetzt sein
- *  allowed1 (High 32 bits): Bit=0 → MUSS gelöscht sein
+ *  allowed0 (Low 32 bits):  Bit=1 → MUST be set
+ *  allowed1 (High 32 bits): Bit=0 → MUST be cleared
  * ============================================================================ */
 static uint32_t adjust_vmx_control(uint32_t desired, uint64_t msr_value) {
     uint32_t allowed0 = (uint32_t)(msr_value & 0xFFFFFFFF);       // Must-be-1
     uint32_t allowed1 = (uint32_t)((msr_value >> 32) & 0xFFFFFFFF); // Can-be-1
     
-    desired |= allowed0;    // Setze alle mandatory-1 Bits
-    desired &= allowed1;    // Lösche alle mandatory-0 Bits
+    desired |= allowed0;    // Set all mandatory-1 bits
+    desired &= allowed1;    // Clear all mandatory-0 bits
     
     return desired;
 }
@@ -104,13 +102,13 @@ static uint32_t adjust_vmx_control(uint32_t desired, uint64_t msr_value) {
 /* ============================================================================
  *  Phase 1.1: VMX DETECTION
  *
- *  Prüft ob die CPU VMX unterstützt und liest alle Capability-MSRs aus.
+ *  Checks if CPU supports VMX and reads all capability MSRs.
  * ============================================================================ */
 int cosmos_hv_detect_vmx(cosmos_hypervisor* hv) {
     if (!hv) return -1;
     
-    // WICHTIG: Nur die Capabilities und VCPUs nullen, NICHT stealth_mode/initialized
-    // (die wurden bereits von cosmos_hv_init gesetzt)
+    // IMPORTANT: Only clear capabilities and VCPUs, NOT stealth_mode/initialized
+    // (these were already set by cosmos_hv_init)
     uint8_t saved_stealth = hv->stealth_mode;
     uint8_t saved_init = hv->initialized;
     memset(hv, 0, sizeof(cosmos_hypervisor));
@@ -122,247 +120,237 @@ int cosmos_hv_detect_vmx(cosmos_hypervisor* hv) {
     HV_LOG("  Phase 1.1: VMX Detection");
     HV_LOG("========================================");
     
-    // --- Schritt 1: CPUID Leaf 1 prüfen ---
+    // --- Step 1: Check CPUID Leaf 1 ---
     uint32_t eax, ebx, ecx, edx;
     cosmos_cpuid(1, 0, &eax, &ebx, &ecx, &edx);
     
     if (!(ecx & CPUID_1_ECX_VMX)) {
-        HV_LOG("FEHLER: CPU unterstützt KEIN VMX (VT-x)!");
-        HV_LOG("Bitte VT-x im BIOS aktivieren.");
+        HV_LOG("ERROR: CPU does NOT support VMX (VT-x)!");
+        HV_LOG("Please enable VT-x in BIOS.");
         return -1;
     }
     
     hv->has_vmx = 1;
-    HV_LOG("[OK] VMX (VT-x) wird unterstützt");
+    HV_LOG("[OK] VMX (VT-x) supported");
     
-    // Warnung falls wir bereits in einem Hypervisor laufen
+    // Warning if already running in a hypervisor
     if (ecx & CPUID_1_ECX_HYPERVISOR) {
-        HV_LOG("[WARN] Ein Hypervisor ist bereits aktiv!");
-        HV_LOG("[WARN] Nested Virtualization erforderlich.");
+        HV_LOG("[WARN] A hypervisor is already active!");
+        HV_LOG("[WARN] Nested virtualization required.");
     }
     
-    // --- Schritt 2: IA32_FEATURE_CONTROL MSR prüfen ---
+    // --- Step 2: Check IA32_FEATURE_CONTROL MSR ---
     uint64_t feature_control = cosmos_rdmsr(IA32_FEATURE_CONTROL);
     HV_LOG("IA32_FEATURE_CONTROL = 0x%llX", (unsigned long long)feature_control);
     
     if (feature_control & FEATURE_CONTROL_LOCKED) {
         if (!(feature_control & FEATURE_CONTROL_VMXON_OUTSIDE)) {
-            HV_LOG("FEHLER: VMXON ist im BIOS gesperrt!");
-            HV_LOG("Bitte 'Intel Virtualization Technology' im BIOS aktivieren.");
+            HV_LOG("ERROR: VMXON is locked in BIOS!");
+            HV_LOG("Please enable 'Intel Virtualization Technology' in BIOS.");
             return -2;
         }
-        HV_LOG("[OK] VMXON ist erlaubt (MSR locked, VMXON enabled)");
+        HV_LOG("[OK] VMXON enabled outside SMX");
     } else {
-        // MSR ist nicht gesperrt - wir können es selbst konfigurieren
-        HV_LOG("[INFO] IA32_FEATURE_CONTROL ist unlocked, konfiguriere...");
+        // MSR is not locked - we can configure it ourselves
         feature_control |= FEATURE_CONTROL_VMXON_OUTSIDE | FEATURE_CONTROL_LOCKED;
         cosmos_wrmsr(IA32_FEATURE_CONTROL, feature_control);
-        HV_LOG("[OK] VMXON aktiviert und MSR gesperrt");
+        HV_LOG("[OK] VMXON enabled and MSR locked");
     }
     
-    // --- Schritt 3: VMX Capability MSRs auslesen ---
+    // --- Step 3: Read VMX Capability MSRs ---
     uint64_t vmx_basic = cosmos_rdmsr(IA32_VMX_BASIC);
-    
     hv->vmcs_revision_id = (uint32_t)(vmx_basic & 0x7FFFFFFF);
     hv->vmcs_region_size = (uint32_t)((vmx_basic >> 32) & 0x1FFF);
-    hv->has_true_msrs    = (vmx_basic >> 55) & 1;
+    hv->has_true_msrs     = (vmx_basic & (1ULL << 55)) ? 1 : 0;
     
-    if (hv->vmcs_region_size == 0) hv->vmcs_region_size = 4096;
+    HV_LOG("VMCS Revision ID: 0x%08X", hv->vmcs_revision_id);
+    HV_LOG("VMCS Region Size: %u bytes", hv->vmcs_region_size);
+    HV_LOG("True VMX MSRs:    %s", hv->has_true_msrs ? "JA" : "NEIN");
     
-    HV_LOG("VMCS Revision ID:  0x%X", hv->vmcs_revision_id);
-    HV_LOG("VMCS Region Size:  %u bytes", hv->vmcs_region_size);
-    HV_LOG("True MSR Controls: %s", hv->has_true_msrs ? "JA" : "NEIN");
+    // Memory type check: Write-Back must be supported
+    uint8_t mem_type = (uint8_t)((vmx_basic >> 50) & 0xF);
+    HV_LOG("VMCS Memory Type: %u (%s)", mem_type, mem_type == 6 ? "Write-Back [OK]" : "Other");
     
-    // --- Schritt 4: Control-Capability MSRs lesen ---
-    // Benutze "True" MSRs wenn verfügbar (genauere Kontrolle)
-    if (hv->has_true_msrs) {
-        hv->vmx_pin_based_allowed0  = cosmos_rdmsr(IA32_VMX_TRUE_PINBASED_CTLS);
-        hv->vmx_proc_based_allowed0 = cosmos_rdmsr(IA32_VMX_TRUE_PROCBASED_CTLS);
-        hv->vmx_exit_allowed0       = cosmos_rdmsr(IA32_VMX_TRUE_EXIT_CTLS);
-        hv->vmx_entry_allowed0      = cosmos_rdmsr(IA32_VMX_TRUE_ENTRY_CTLS);
-    } else {
-        hv->vmx_pin_based_allowed0  = cosmos_rdmsr(IA32_VMX_PINBASED_CTLS);
-        hv->vmx_proc_based_allowed0 = cosmos_rdmsr(IA32_VMX_PROCBASED_CTLS);
-        hv->vmx_exit_allowed0       = cosmos_rdmsr(IA32_VMX_EXIT_CTLS);
-        hv->vmx_entry_allowed0      = cosmos_rdmsr(IA32_VMX_ENTRY_CTLS);
+    // --- Step 4: Read Control-Capability MSRs ---
+    // Use "True" MSRs if available (finer control)
+    uint32_t pin_msr   = hv->has_true_msrs ? IA32_VMX_TRUE_PINBASED_CTLS : IA32_VMX_PINBASED_CTLS;
+    uint32_t proc_msr  = hv->has_true_msrs ? IA32_VMX_TRUE_PROCBASED_CTLS : IA32_VMX_PROCBASED_CTLS;
+    uint32_t exit_msr  = hv->has_true_msrs ? IA32_VMX_TRUE_EXIT_CTLS : IA32_VMX_EXIT_CTLS;
+    uint32_t entry_msr = hv->has_true_msrs ? IA32_VMX_TRUE_ENTRY_CTLS : IA32_VMX_ENTRY_CTLS;
+    
+    hv->vmx_pin_based_allowed0   = cosmos_rdmsr(pin_msr);
+    hv->vmx_proc_based_allowed0  = cosmos_rdmsr(proc_msr);
+    hv->vmx_exit_allowed0        = cosmos_rdmsr(exit_msr);
+    hv->vmx_entry_allowed0       = cosmos_rdmsr(entry_msr);
+    
+    // Secondary Proc-Based Controls (check if available)
+    if (hv->vmx_proc_based_allowed0 & ((uint64_t)PROCBASED_ACTIVATE_SECONDARY << 32)) {
+        hv->vmx_proc_based2_allowed0 = cosmos_rdmsr(IA32_VMX_PROCBASED_CTLS2);
+        HV_LOG("[OK] Secondary Proc-Based Controls available");
     }
     
-    // Secondary Proc-Based Controls (immer aus dem gleichen MSR)
-    hv->vmx_proc_based2_allowed0 = cosmos_rdmsr(IA32_VMX_PROCBASED_CTLS2);
-    
-    // --- Schritt 5: EPT/VPID Capabilities ---
-    hv->ept_vpid_cap = cosmos_rdmsr(IA32_VMX_EPT_VPID_CAP);
-    
-    uint64_t sec2 = hv->vmx_proc_based2_allowed0;
-    uint32_t sec2_allowed1 = (uint32_t)((sec2 >> 32) & 0xFFFFFFFF);
-    
-    hv->has_ept                = (sec2_allowed1 >> 1) & 1;
-    hv->has_vpid               = (sec2_allowed1 >> 5) & 1;
-    hv->has_unrestricted_guest = (sec2_allowed1 >> 7) & 1;
-    
-    // Preemption Timer (für TSC-Stealth)
-    uint64_t pin_cap = hv->vmx_pin_based_allowed0;
-    uint32_t pin_allowed1 = (uint32_t)((pin_cap >> 32) & 0xFFFFFFFF);
-    hv->has_preempt_timer = (pin_allowed1 >> 6) & 1;
-    
-    HV_LOG("--- VMX Feature Report ---");
-    HV_LOG("  EPT:                %s", hv->has_ept ? "JA ✓" : "NEIN ✗");
-    HV_LOG("  VPID:               %s", hv->has_vpid ? "JA ✓" : "NEIN ✗");
-    HV_LOG("  Unrestricted Guest: %s", hv->has_unrestricted_guest ? "JA ✓" : "NEIN ✗");
-    HV_LOG("  Preemption Timer:   %s", hv->has_preempt_timer ? "JA ✓" : "NEIN ✗");
-    
-    if (!hv->has_ept) {
-        HV_LOG("WARNUNG: Ohne EPT ist Stealth-Virtualisierung nicht möglich!");
+    // --- Step 5: EPT/VPID Capabilities ---
+    if (hv->vmx_proc_based2_allowed0 & ((uint64_t)PROCBASED2_ENABLE_EPT << 32)) {
+        hv->has_ept = 1;
+        hv->ept_vpid_cap = cosmos_rdmsr(IA32_VMX_EPT_VPID_CAP);
+        HV_LOG("[OK] EPT (Extended Page Tables) supported!");
+        
+        // Check 2MB Large Pages support
+        if (hv->ept_vpid_cap & (1ULL << 16)) {
+            HV_LOG("[OK] EPT 2MB Large Pages supported (optimal for Identity Map)");
+        }
+        // Check 1GB Huge Pages support
+        if (hv->ept_vpid_cap & (1ULL << 17)) {
+            HV_LOG("[OK] EPT 1GB Huge Pages supported");
+        }
+        // Check EPT INVEPT support
+        if (hv->ept_vpid_cap & (1ULL << 20)) {
+            HV_LOG("[OK] EPT INVEPT supported");
+        }
+    } else {
+        HV_LOG("WARNING: Without EPT, stealth virtualization is not possible!");
     }
     
     HV_LOG("========================================");
-    HV_LOG("  VMX Detection: ERFOLGREICH");
+    HV_LOG("  VMX Detection: SUCCESSFUL");
     HV_LOG("========================================");
     
     return 0;
 }
 
 /* ============================================================================
- *  Phase 1.1: VMXON - VMX Root Operation aktivieren
+ *  Phase 1.1: VMXON - Enable VMX Root Operation
  *
- *  Aktiviert VMX auf einer bestimmten CPU.
- *  Muss auf JEDER CPU einzeln aufgerufen werden (per IPI oder SMP init).
+ *  Enables VMX on a specific CPU.
+ *  Must be called on EACH CPU individually (via IPI or SMP init).
  * ============================================================================ */
-uint32_t g_active_cpu_id = 0;
+#define HOST_STACK_SIZE 16384 // 16KB Host Stack per Core
 
 int cosmos_hv_enable_vmx(cosmos_hypervisor* hv, uint32_t cpu_id) {
-    if (!hv || !hv->has_vmx || cpu_id >= 256) return -1;
+    if (!hv || cpu_id >= 256) return -1;
     
-    g_active_cpu_id = cpu_id;
     cosmos_vcpu* vcpu = &hv->vcpus[cpu_id];
     vcpu->cpu_id = cpu_id;
     
-    HV_LOG("CPU %u: VMX aktivieren...", cpu_id);
+    HV_LOG("CPU %u: Enabling VMX...", cpu_id);
     
-    // --- Schritt 1: CR4.VMXE setzen ---
+    // --- Step 1: Set CR4.VMXE ---
     uint64_t cr4 = cosmos_read_cr4();
-    if (!(cr4 & CR4_VMXE)) {
-        cr4 |= CR4_VMXE;
-        cosmos_write_cr4(cr4);
-        HV_LOG("CPU %u: CR4.VMXE gesetzt", cpu_id);
+    cr4 |= CR4_VMXE;
+    cosmos_write_cr4(cr4);
+    
+    // Verify CR4.VMXE was set
+    if (!(cosmos_read_cr4() & CR4_VMXE)) {
+        HV_LOG("CPU %u: FEHLER: CR4.VMXE konnte nicht gesetzt werden!", cpu_id);
+        return -1;
     }
     
-    // --- Schritt 2: CR0 an VMX-Anforderungen anpassen ---
-    // Bestimmte CR0-Bits MÜSSEN gesetzt/gelöscht sein für VMX
+    // --- Step 2: Adjust CR0 to VMX requirements ---
     uint64_t cr0 = cosmos_read_cr0();
     uint64_t cr0_fixed0 = cosmos_rdmsr(IA32_VMX_CR0_FIXED0);
     uint64_t cr0_fixed1 = cosmos_rdmsr(IA32_VMX_CR0_FIXED1);
-    cr0 |= cr0_fixed0;   // Must-be-1 Bits setzen
-    cr0 &= cr0_fixed1;   // Must-be-0 Bits löschen
+    cr0 |= cr0_fixed0;   // Bits that must be 1
+    cr0 &= cr0_fixed1;   // Bits that must be 0
     cosmos_write_cr0(cr0);
     
-    // CR4 ebenfalls an VMX-Anforderungen anpassen
-    cr4 = cosmos_read_cr4();
+    // Adjust CR4 to VMX requirements as well
     uint64_t cr4_fixed0 = cosmos_rdmsr(IA32_VMX_CR4_FIXED0);
     uint64_t cr4_fixed1 = cosmos_rdmsr(IA32_VMX_CR4_FIXED1);
     cr4 |= cr4_fixed0;
     cr4 &= cr4_fixed1;
     cosmos_write_cr4(cr4);
     
-    // --- Schritt 3: VMXON Region allozieren ---
+    // --- Step 3: Allocate VMXON Region ---
     vcpu->vmxon_region = (vmx_region*)hv_alloc_page(&vcpu->vmxon_phys);
     if (!vcpu->vmxon_region) {
-        HV_LOG("CPU %u: FEHLER: Konnte VMXON Region nicht allozieren!", cpu_id);
+        HV_LOG("CPU %u: ERROR: Could not allocate VMXON region!", cpu_id);
         return -2;
     }
     
-    // Revision ID in die VMXON Region schreiben (PFLICHT!)
+    // Write Revision ID into VMXON region (MANDATORY!)
     vcpu->vmxon_region->revision_id = hv->vmcs_revision_id;
     
-    HV_LOG("CPU %u: VMXON Region @ virt=0x%llX phys=0x%llX",
-           cpu_id,
-           (unsigned long long)vcpu->vmxon_region,
-           (unsigned long long)vcpu->vmxon_phys);
+    HV_LOG("CPU %u: VMXON Region @ phys=0x%llX (rev=0x%X)", 
+           cpu_id, 
+           (unsigned long long)vcpu->vmxon_phys, 
+           vcpu->vmxon_region->revision_id);
     
-    // --- Schritt 4: VMXON ausführen! ---
+    // --- Step 4: Execute VMXON! ---
     uint8_t result = cosmos_vmxon(&vcpu->vmxon_phys);
     if (result != 0) {
-        HV_LOG("CPU %u: FEHLER: VMXON fehlgeschlagen! (result=%u)", cpu_id, result);
+        HV_LOG("CPU %u: ERROR: VMXON failed! (result=%u)", cpu_id, result);
         hv_free_page(vcpu->vmxon_region);
         vcpu->vmxon_region = nullptr;
         return -3;
     }
     
     vcpu->vmx_enabled = 1;
-    HV_LOG("CPU %u: ★ VMXON ERFOLGREICH! VMX Root Operation aktiv! ★", cpu_id);
+    HV_LOG("CPU %u: ★ VMXON SUCCESSFUL! VMX Root Operation active! ★", cpu_id);
     
-    // --- Schritt 5: VMCS Region allozieren und initialisieren ---
+    // --- Step 5: Allocate and initialize VMCS Region ---
     vcpu->vmcs_region = (vmx_region*)hv_alloc_page(&vcpu->vmcs_phys);
     if (!vcpu->vmcs_region) {
-        HV_LOG("CPU %u: FEHLER: Konnte VMCS Region nicht allozieren!", cpu_id);
-        cosmos_vmxoff();
-        hv_free_page(vcpu->vmxon_region);
+        HV_LOG("CPU %u: ERROR: Could not allocate VMCS region!", cpu_id);
+        cosmos_hv_disable_vmx(hv, cpu_id);
         return -4;
     }
     
     vcpu->vmcs_region->revision_id = hv->vmcs_revision_id;
     
-    HV_LOG("CPU %u: VMCS Region @ virt=0x%llX phys=0x%llX",
+    HV_LOG("CPU %u: VMCS Region  @ phys=0x%llX (rev=0x%X)",
            cpu_id,
-           (unsigned long long)vcpu->vmcs_region,
-           (unsigned long long)vcpu->vmcs_phys);
+           (unsigned long long)vcpu->vmcs_phys,
+           vcpu->vmcs_region->revision_id);
     
-    // VMCLEAR: VMCS in den "clear" Zustand versetzen
-    if (cosmos_vmclear(&vcpu->vmcs_phys) != 0) {
-        HV_LOG("CPU %u: FEHLER: VMCLEAR fehlgeschlagen!", cpu_id);
+    // VMCLEAR: Clears VMCS and sets state to Clear
+    result = cosmos_vmclear(&vcpu->vmcs_phys);
+    if (result != 0) {
+        HV_LOG("CPU %u: ERROR: VMCLEAR failed!", cpu_id);
         return -5;
     }
     
-    // VMPTRLD: VMCS als aktives VMCS laden
-    if (cosmos_vmptrld(&vcpu->vmcs_phys) != 0) {
-        HV_LOG("CPU %u: FEHLER: VMPTRLD fehlgeschlagen!", cpu_id);
+    // VMPTRLD: Load VMCS as active VMCS
+    result = cosmos_vmptrld(&vcpu->vmcs_phys);
+    if (result != 0) {
+        HV_LOG("CPU %u: ERROR: VMPTRLD failed!", cpu_id);
         return -6;
     }
     
     vcpu->vmcs_active = 1;
-    HV_LOG("CPU %u: VMCS geladen und aktiv", cpu_id);
+    HV_LOG("CPU %u: VMCS loaded and active", cpu_id);
     
-    // --- Schritt 6: MSR Bitmap allozieren ---
+    // --- Step 6: Allocate MSR Bitmap ---
     vcpu->msr_bitmap = (uint8_t*)hv_alloc_page(&vcpu->msr_bitmap_phys);
     if (!vcpu->msr_bitmap) {
-        HV_LOG("CPU %u: WARNUNG: MSR Bitmap konnte nicht alloziert werden", cpu_id);
+        HV_LOG("CPU %u: WARNING: Could not allocate MSR bitmap", cpu_id);
     } else {
-        // Alle MSRs durchlassen (Bitmap = 0 → kein VM-Exit)
-        // Wir setzen gezielt nur die MSRs, die wir abfangen wollen
         memset(vcpu->msr_bitmap, 0, 4096);
-        // Setze VMX MSRs (0x480 - 0x48F) auf intercept (Read & Write)
-        for (uint32_t msr = 0x480; msr <= 0x48F; msr++) {
-            vcpu->msr_bitmap[msr / 8] |= (1 << (msr % 8));              // Read intercept
-            vcpu->msr_bitmap[2048 + (msr / 8)] |= (1 << (msr % 8));     // Write intercept
-        }
-        HV_LOG("CPU %u: MSR Bitmap initialisiert (VMX-Intercepts aktiv)", cpu_id);
+        // Specifically target only the MSRs we want to intercept
+        // Set intercept bits for VMX MSRs
+        extern void cosmos_ac_init_msr_bitmap(uint8_t* msr_bitmap);
+        cosmos_ac_init_msr_bitmap(vcpu->msr_bitmap);
+        HV_LOG("CPU %u: MSR bitmap initialized (VMX intercepts active)", cpu_id);
     }
     
-    // --- Schritt 7: Host Stack allozieren (16KB für sichere VM-Exit Verarbeitung) ---
-    // 4KB reicht NICHT — printk/vprintk brauchen tiefe Callchains die >4KB Stack nutzen
-    #define HOST_STACK_SIZE (16 * 1024)  // 16KB = 4 Pages
-    uint64_t host_stack_phys;
-    vcpu->host_stack = (uint8_t*)hv_alloc_pages(HOST_STACK_SIZE, &host_stack_phys);
-    vcpu->host_stack_phys = host_stack_phys;
-    
+    // --- Step 7: Allocate Host Stack (16KB for safe VM-Exit processing) ---
+    // 4KB is NOT enough — printk/vprintk use deep callchains requiring >4KB stack
+    vcpu->host_stack = (uint8_t*)hv_alloc_pages(HOST_STACK_SIZE, &vcpu->host_stack_phys);
     if (!vcpu->host_stack) {
-        HV_LOG("CPU %u: FEHLER: Host Stack konnte nicht alloziert werden!", cpu_id);
+        HV_LOG("CPU %u: ERROR: Could not allocate host stack!", cpu_id);
+        cosmos_hv_disable_vmx(hv, cpu_id);
         return -7;
     }
+    memset(vcpu->host_stack, 0, HOST_STACK_SIZE);
     
-    // TSC-Offset für Stealth initialisieren
-    vcpu->tsc_offset = 0;
-    vcpu->last_exit_tsc = 0;
+    HV_LOG("CPU %u: Host Stack @ phys=0x%llX (size: %d bytes)",
+           cpu_id, (unsigned long long)vcpu->host_stack_phys, HOST_STACK_SIZE);
     
-    HV_LOG("CPU %u: ═══════════════════════════════════", cpu_id);
-    HV_LOG("CPU %u: ★ VMX VOLLSTÄNDIG INITIALISIERT ★", cpu_id);
-    HV_LOG("CPU %u: ═══════════════════════════════════", cpu_id);
-    
+    HV_LOG("CPU %u: ★ VMX FULLY INITIALIZED ★", cpu_id);
     return 0;
 }
 
 /* ============================================================================
- *  Phase 1.1: VMXOFF - VMX deaktivieren
+ *  Phase 1.1: VMXOFF - Disable VMX
  * ============================================================================ */
 void cosmos_hv_disable_vmx(cosmos_hypervisor* hv, uint32_t cpu_id) {
     if (!hv || cpu_id >= 256) return;
@@ -370,42 +358,53 @@ void cosmos_hv_disable_vmx(cosmos_hypervisor* hv, uint32_t cpu_id) {
     cosmos_vcpu* vcpu = &hv->vcpus[cpu_id];
     
     if (!vcpu->vmx_enabled) {
-        HV_LOG("CPU %u: VMX war nicht aktiv", cpu_id);
+        HV_LOG("CPU %u: VMX was not active", cpu_id);
         return;
     }
     
-    HV_LOG("CPU %u: VMX deaktivieren...", cpu_id);
+    HV_LOG("CPU %u: Disabling VMX...", cpu_id);
     
-    // VMCS freigeben
+    // Clear active VMCS
     if (vcpu->vmcs_active) {
         cosmos_vmclear(&vcpu->vmcs_phys);
         vcpu->vmcs_active = 0;
     }
     
-    // VMXOFF
+    // Execute VMXOFF
     cosmos_vmxoff();
     vcpu->vmx_enabled = 0;
     
-    // CR4.VMXE löschen
+    // Clear CR4.VMXE
     uint64_t cr4 = cosmos_read_cr4();
     cr4 &= ~CR4_VMXE;
     cosmos_write_cr4(cr4);
     
-    // Speicher freigeben
-    if (vcpu->vmxon_region) { hv_free_page(vcpu->vmxon_region); vcpu->vmxon_region = nullptr; }
-    if (vcpu->vmcs_region)  { hv_free_page(vcpu->vmcs_region);  vcpu->vmcs_region = nullptr;  }
-    if (vcpu->msr_bitmap)   { hv_free_page(vcpu->msr_bitmap);   vcpu->msr_bitmap = nullptr;   }
-    if (vcpu->host_stack)   { hv_free_page(vcpu->host_stack);   vcpu->host_stack = nullptr;   }
-    if (vcpu->host_cr3_region) { hv_free_page(vcpu->host_cr3_region); vcpu->host_cr3_region = nullptr; }
+    // Free resources
+    if (vcpu->vmcs_region) {
+        hv_free_page(vcpu->vmcs_region);
+        vcpu->vmcs_region = nullptr;
+    }
+    if (vcpu->vmxon_region) {
+        hv_free_page(vcpu->vmxon_region);
+        vcpu->vmxon_region = nullptr;
+    }
+    if (vcpu->msr_bitmap) {
+        hv_free_page(vcpu->msr_bitmap);
+        vcpu->msr_bitmap = nullptr;
+    }
+    if (vcpu->host_stack) {
+        // Free host stack
+        vcpu->host_stack = nullptr;
+    }
     
-    HV_LOG("CPU %u: VMX deaktiviert und Ressourcen freigegeben", cpu_id);
+    HV_LOG("CPU %u: VMX disabled and resources freed", cpu_id);
 }
 
 /* ============================================================================
  *  Phase 1.2: VMCS SETUP
  *
- *  Konfiguriert alle VMCS-Felder für den Gast.
- *  Dies setzt die VM-Execution Controls, Guest State und Host State.
+ *  Configures all VMCS fields for the guest.
+ *  Sets VM-Execution Controls, Guest State, and Host State.
  * ============================================================================ */
 static uint64_t cosmos_get_segment_base(uint16_t selector, uint64_t gdt_base) {
     if (selector == 0) return 0;
@@ -457,11 +456,11 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     
     cosmos_vcpu* vcpu = &hv->vcpus[cpu_id];
     if (!vcpu->vmcs_active) {
-        HV_LOG("CPU %u: VMCS ist nicht aktiv!", cpu_id);
+        HV_LOG("CPU %u: VMCS is not active!", cpu_id);
         return -1;
     }
     
-    HV_LOG("CPU %u: VMCS konfigurieren...", cpu_id);
+    HV_LOG("CPU %u: Configuring VMCS...", cpu_id);
     
     // ===== VM-EXECUTION CONTROLS =====
     
@@ -472,11 +471,11 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     
     // Primary Proc-Based Controls
     uint32_t proc_based = 0;
-    proc_based |= PROCBASED_USE_MSR_BITMAPS;       // MSR Bitmap benutzen
-    proc_based |= PROCBASED_ACTIVATE_SECONDARY;     // Secondary Controls aktivieren
-    proc_based |= PROCBASED_USE_TSC_OFFSET;         // TSC-Offset für Stealth
-    // KEIN PROCBASED_RDTSC_EXIT → TSC-Offset reicht für Stealth
-    // CPUID löst IMMER einen VM-Exit aus (kein Control-Bit nötig)
+    proc_based |= PROCBASED_USE_MSR_BITMAPS;       // Use MSR bitmap
+    proc_based |= PROCBASED_ACTIVATE_SECONDARY;     // Activate secondary controls
+    proc_based |= PROCBASED_USE_TSC_OFFSET;         // TSC offset for stealth
+    // NO PROCBASED_RDTSC_EXIT → TSC offset is sufficient for stealth
+    // CPUID ALWAYS causes VM-Exit (no control bit required)
     proc_based = adjust_vmx_control(proc_based, hv->vmx_proc_based_allowed0);
     cosmos_vmwrite(VMCS_PROC_BASED_EXEC_CTRL, proc_based);
     
@@ -485,15 +484,15 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     if (hv->has_ept)                proc_based2 |= PROCBASED2_ENABLE_EPT;
     if (hv->has_vpid)               proc_based2 |= PROCBASED2_ENABLE_VPID;
     if (hv->has_unrestricted_guest) proc_based2 |= PROCBASED2_UNRESTRICTED_GUEST;
-    proc_based2 |= PROCBASED2_ENABLE_RDTSCP;       // RDTSCP erlauben
-    proc_based2 |= PROCBASED2_ENABLE_INVPCID;      // INVPCID erlauben
-    proc_based2 |= PROCBASED2_ENABLE_XSAVES;       // XSAVES/XRSTORS erlauben
+    proc_based2 |= PROCBASED2_ENABLE_RDTSCP;       // Allow RDTSCP
+    proc_based2 |= PROCBASED2_ENABLE_INVPCID;      // Allow INVPCID
+    proc_based2 |= PROCBASED2_ENABLE_XSAVES;       // Allow XSAVES/XRSTORS
     proc_based2 = adjust_vmx_control(proc_based2, hv->vmx_proc_based2_allowed0);
     cosmos_vmwrite(VMCS_PROC_BASED_EXEC_CTRL2, proc_based2);
     
     // VM-Exit Controls
     uint32_t exit_controls = 0;
-    exit_controls |= VMEXIT_CTRL_HOST_ADDR_SPACE;   // Host ist 64-bit!
+    exit_controls |= VMEXIT_CTRL_HOST_ADDR_SPACE;   // Host is 64-bit!
     exit_controls |= VMEXIT_CTRL_SAVE_EFER;
     exit_controls |= VMEXIT_CTRL_LOAD_EFER;
     exit_controls |= VMEXIT_CTRL_ACK_INT_ON_EXIT;
@@ -502,31 +501,31 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     
     // VM-Entry Controls
     uint32_t entry_controls = 0;
-    entry_controls |= VMENTRY_CTRL_GUEST_IA32E;     // Gast ist 64-bit!
+    entry_controls |= VMENTRY_CTRL_GUEST_IA32E;     // Guest is 64-bit!
     entry_controls |= VMENTRY_CTRL_LOAD_EFER;
     entry_controls = adjust_vmx_control(entry_controls, hv->vmx_entry_allowed0);
     cosmos_vmwrite(VMCS_ENTRY_CONTROLS, entry_controls);
     
-    // Exception Bitmap: Keine Exceptions abfangen (alles durchlassen)
+    // Exception Bitmap: Do not intercept exceptions (pass all through)
     cosmos_vmwrite(VMCS_EXCEPTION_BITMAP, 0);
     
-    // MSR Bitmap setzen
+    // Set MSR Bitmap
     if (vcpu->msr_bitmap) {
         cosmos_vmwrite(VMCS_MSR_BITMAP, vcpu->msr_bitmap_phys);
     }
     
-    // TSC Offset (Stealth: kompensiert VM-Exit Overhead)
+    // TSC Offset (Stealth: compensates for VM-Exit overhead)
     cosmos_vmwrite(VMCS_TSC_OFFSET, (uint64_t)vcpu->tsc_offset);
     
-    // VPID (wenn verfügbar)
+    // VPID (if available)
     if (hv->has_vpid) {
-        cosmos_vmwrite(VMCS_VPID, cpu_id + 1);  // VPID 0 ist reserviert
+        cosmos_vmwrite(VMCS_VPID, cpu_id + 1);  // VPID 0 is reserved
     }
     
-    // VMCS Link Pointer (muss 0xFFFFFFFF_FFFFFFFF sein wenn kein Shadow VMCS)
+    // VMCS Link Pointer (must be 0xFFFFFFFF_FFFFFFFF if not shadow VMCS)
     cosmos_vmwrite(VMCS_GUEST_VMCS_LINK_PTR, 0xFFFFFFFFFFFFFFFFULL);
     
-    // EPT Pointer (EPTP) setzen
+    // Set EPT Pointer (EPTP)
     if (hv->has_ept) {
         // EPTP = PML4 | (Walk Length 4 - 1)<<3 | Write-Back (6)
         uint64_t eptp = hv->ept_pml4_phys | (3ULL << 3) | 6ULL;
@@ -534,7 +533,7 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     }
     
     // ===== HOST STATE =====
-    // Der Host-State definiert, wohin die CPU bei einem VM-Exit springt.
+    // Host state defines where the CPU jumps upon a VM-Exit.
     
     // Host Segment Selectors
     cosmos_vmwrite(VMCS_HOST_CS_SEL, cosmos_read_cs());
@@ -545,24 +544,24 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     cosmos_vmwrite(VMCS_HOST_GS_SEL, cosmos_read_gs());
     cosmos_vmwrite(VMCS_HOST_TR_SEL, cosmos_read_tr());
     
-    // --- Robustes Host CR3 ---
-    // Wenn wir `cosmos_read_cr3()` verwenden, nehmen wir das CR3 des Prozesses, der 
-    // zufällig gerade auf der CPU läuft (z.B. insmod). Wenn der Prozess sich beendet,
-    // wird sein CR3 gelöscht, und der nächste VM-Exit löst einen Triple-Fault aus!
-    // Lösung: Wir kopieren die oberen 256 Einträge (Kernel-Space) des aktuellen CR3 in
-    // ein NEUES Page-Dir, das für immer im Speicher bleibt.
+    // --- Robust Host CR3 ---
+    // If we use `cosmos_read_cr3()`, we take the CR3 of the process currently
+    // running on the CPU (e.g. insmod). When that process terminates,
+    // its CR3 is freed, and the next VM-Exit triggers a Triple Fault!
+    // Solution: We copy the upper 256 entries (kernel space) of the current CR3 into
+    // a NEW page directory that stays permanently in memory.
     vcpu->host_cr3_region = cosmos_alloc_page_aligned(&vcpu->host_cr3_phys);
     memset(vcpu->host_cr3_region, 0, 4096);
-    // Kernel-Space (obere Hälfte der PML4, also 2048 Bytes ab Offset 2048) kopieren
+    // Copy kernel space (upper half of PML4, 2048 bytes from offset 2048)
     memcpy((uint8_t*)vcpu->host_cr3_region + 2048, (uint8_t*)cosmos_get_current_pml4() + 2048, 2048);
     
     // Host Control Registers
     cosmos_vmwrite(VMCS_HOST_CR0, cosmos_read_cr0());
-    cosmos_vmwrite(VMCS_HOST_CR3, vcpu->host_cr3_phys); // Nutze unser sicheres CR3
+    cosmos_vmwrite(VMCS_HOST_CR3, vcpu->host_cr3_phys); // Use our safe CR3
     cosmos_vmwrite(VMCS_HOST_CR4, cosmos_read_cr4());
     
-    // Stealth: Verstecke VMXE vor dem Gast
-    // Der Gast liest CR4.VMXE als 0. Schreibversuche auf VMXE verursachen einen VM-Exit.
+    // Stealth: Hide VMXE from guest
+    // Guest reads CR4.VMXE as 0. Writes to VMXE trigger a VM-Exit.
     cosmos_vmwrite(VMCS_CR4_GUEST_HOST_MASK, CR4_VMXE);
     cosmos_vmwrite(VMCS_CR4_READ_SHADOW, cosmos_read_cr4() & ~CR4_VMXE);
     
@@ -573,7 +572,7 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     cosmos_vmwrite(VMCS_HOST_GDTR_BASE, gdtr.base);
     cosmos_vmwrite(VMCS_HOST_IDTR_BASE, idtr.base);
     
-    // Host TR Base aus der GDT berechnen
+    // Compute Host TR Base from GDT
     uint64_t host_tr_base = cosmos_get_segment_base(cosmos_read_tr(), gdtr.base);
     cosmos_vmwrite(VMCS_HOST_TR_BASE, host_tr_base);
     
@@ -584,16 +583,16 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     cosmos_vmwrite(VMCS_HOST_FS_BASE, cosmos_rdmsr(IA32_FS_BASE));
     cosmos_vmwrite(VMCS_HOST_GS_BASE, cosmos_rdmsr(IA32_GS_BASE));
     
-    // Host SYSENTER (für Kompatibilität)
+    // Host SYSENTER (for compatibility)
     cosmos_vmwrite(VMCS_HOST_SYSENTER_ESP, cosmos_rdmsr(IA32_SYSENTER_ESP));
     cosmos_vmwrite(VMCS_HOST_SYSENTER_EIP, cosmos_rdmsr(IA32_SYSENTER_EIP));
     
-    // Host RSP und RIP (VM-Exit Entry Point!)
-    // RSP: Top of host stack (Stack wächst nach unten!)
-    // 16-byte alignment ist wichtig für System V ABI
+    // Host RSP and RIP (VM-Exit Entry Point!)
+    // RSP: Top of host stack (stack grows downwards!)
+    // 16-byte alignment is important for System V ABI
     cosmos_vmwrite(VMCS_HOST_RSP, (uint64_t)(vcpu->host_stack + HOST_STACK_SIZE));
     
-    // RIP: cosmos_vmexit_stub (definiert in cosmos_vmx.S)
+    // RIP: cosmos_vmexit_stub (defined in cosmos_vmx.S)
     cosmos_vmwrite(VMCS_HOST_RIP, (uint64_t)&cosmos_vmexit_stub);
     
     HV_LOG("CPU %u: Host RIP = 0x%llX (vmexit_stub)", cpu_id,
@@ -602,7 +601,7 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
            (unsigned long long)(vcpu->host_stack + HOST_STACK_SIZE), HOST_STACK_SIZE);
     
     // ===== GUEST STATE =====
-    // Initialer Gast-Zustand (wird später für Windows angepasst)
+    // Initial guest state (adapted later for Windows)
     
     uint16_t cs_sel = cosmos_read_cs();
     uint16_t ss_sel = cosmos_read_ss();
@@ -655,7 +654,7 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     cosmos_vmwrite(VMCS_GUEST_GDTR_BASE, gdtr.base);
     cosmos_vmwrite(VMCS_GUEST_IDTR_BASE, idtr.base);
     
-    // Guest TR und LDTR Base (Host Werte übernehmen)
+    // Guest TR and LDTR Base (adopt host values)
     cosmos_vmwrite(VMCS_GUEST_TR_BASE, host_tr_base);
     cosmos_vmwrite(VMCS_GUEST_LDTR_BASE, 0);
     
@@ -668,7 +667,7 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     cosmos_vmwrite(VMCS_GUEST_DR7, 0x400);  // Default value
     
     // Guest RFLAGS
-    cosmos_vmwrite(VMCS_GUEST_RFLAGS, cosmos_read_rflags() | 0x2);  // Bit 1 muss immer 1 sein
+    cosmos_vmwrite(VMCS_GUEST_RFLAGS, cosmos_read_rflags() | 0x2);  // Bit 1 must always be 1
     
     // Guest MSRs
     cosmos_vmwrite(VMCS_GUEST_EFER, cosmos_rdmsr(IA32_EFER));
@@ -683,17 +682,17 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     // Guest Interruptibility State (no blocking)
     cosmos_vmwrite(VMCS_GUEST_INT_STATE, 0);
     
-    // Guest RIP und RSP werden SPÄTER gesetzt, wenn der Gast gestartet wird
+    // Guest RIP and RSP are set LATER when guest is launched
     // cosmos_vmwrite(VMCS_GUEST_RIP, guest_entry_point);
     // cosmos_vmwrite(VMCS_GUEST_RSP, guest_stack_pointer);
     
-    // Anti-Cheat Hardening (Stealth Mode) konfigurieren
+    // Configure Anti-Cheat Hardening (Stealth Mode)
     if (hv->stealth_mode) {
         cosmos_ac_configure_vmcs_stealth(hv, vcpu);
     }
     
     HV_LOG("CPU %u: ═══════════════════════════════════", cpu_id);
-    HV_LOG("CPU %u: ★ VMCS VOLLSTÄNDIG KONFIGURIERT ★", cpu_id);
+    HV_LOG("CPU %u: ★ VMCS FULLY CONFIGURED ★", cpu_id);
     HV_LOG("CPU %u: ═══════════════════════════════════", cpu_id);
     
     return 0;
@@ -702,17 +701,17 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
 /* ============================================================================
  *  Phase 1.3: STEALTH VM-EXIT HANDLERS
  *
- *  Diese Handler machen den Hypervisor unsichtbar für Anti-Cheat-Software.
+ *  These handlers make the hypervisor invisible to anti-cheat software.
  * ============================================================================ */
 
 /* --- CPUID Stealth Handler ---
  * 
- * Anti-Cheat prüft:
+ * Anti-Cheat checks:
  *   CPUID.1:ECX[31] = Hypervisor Present Bit
  *   CPUID.0x40000000 = Hypervisor Vendor String
  *   CPUID.0x40000001+ = Hypervisor Features
  *
- * Wir fälschen ALLE diese Antworten!
+ * We spoof ALL of these responses!
  */
 void cosmos_hv_handle_cpuid(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
     uint32_t leaf    = (uint32_t)vcpu->guest_regs.rax;
@@ -720,26 +719,25 @@ void cosmos_hv_handle_cpuid(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
     
     uint32_t eax, ebx, ecx, edx;
     
-    // Echtes CPUID ausführen (wir sind im Host/Root Mode)
+    // Execute real CPUID (we are in host/root mode)
     cosmos_cpuid(leaf, subleaf, &eax, &ebx, &ecx, &edx);
     
     switch (leaf) {
         case 0x01:
-            // ★ STEALTH: Hypervisor Present Bit löschen! ★
+            // ★ STEALTH: Clear Hypervisor Present Bit! ★
             ecx &= ~CPUID_1_ECX_HYPERVISOR;
             
-            // Optional: VMX-Bit auch löschen (damit der Gast nicht merkt,
-            // dass VMX verfügbar ist und versucht, nested zu virtualisieren)
+            // Optional: Also clear VMX bit (so guest doesn't attempt nested virtualization)
             if (hv->stealth_mode) {
                 ecx &= ~CPUID_1_ECX_VMX;
             }
             break;
             
         case 0x40000000:
-            // ★ STEALTH: Keine Hypervisor-Signatur zurückgeben! ★
-            // Normalerweise gibt ein Hypervisor hier seinen Namen zurück
-            // (z.B. "KVMKVMKVM\0\0\0" oder "Microsoft Hv").
-            // Wir geben 0 zurück = "kein Hypervisor vorhanden".
+            // ★ STEALTH: Return no hypervisor signature! ★
+            // Normally a hypervisor returns its name here
+            // (e.g. "KVMKVMKVM\0\0\0" or "Microsoft Hv").
+            // We return 0 = "no hypervisor present".
             eax = 0;
             ebx = 0;
             ecx = 0;
@@ -752,7 +750,7 @@ void cosmos_hv_handle_cpuid(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
         case 0x40000004:
         case 0x40000005:
         case 0x40000006:
-            // ★ STEALTH: Alle Hypervisor-Info-Leaves auf 0 setzen ★
+            // ★ STEALTH: Set all hypervisor info leaves to 0 ★
             eax = 0;
             ebx = 0;
             ecx = 0;
@@ -760,11 +758,11 @@ void cosmos_hv_handle_cpuid(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
             break;
             
         default:
-            // Alle anderen CPUID-Leaves: echte Werte durchreichen
+            // All other CPUID leaves: pass through real values
             break;
     }
     
-    // Ergebnisse in die Gast-Register schreiben
+    // Write results to guest registers
     vcpu->guest_regs.rax = eax;
     vcpu->guest_regs.rbx = ebx;
     vcpu->guest_regs.rcx = ecx;
@@ -773,19 +771,18 @@ void cosmos_hv_handle_cpuid(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
 
 /* --- RDTSC Stealth Handler ---
  *
- * Anti-Cheat misst die Zeit, die bestimmte Instruktionen brauchen.
- * Ein VM-Exit kostet ~1000-3000 Taktzyklen extra.
- * Wenn wir den TSC nicht kompensieren, erkennt das Anti-Cheat
- * die "Zeitlücke" und weiß, dass ein Hypervisor läuft.
+ * Anti-Cheat measures the execution duration of certain instructions.
+ * A VM-Exit costs ~1000-3000 extra clock cycles.
+ * If we do not compensate TSC, anti-cheat detects the time gap
+ * and discovers the hypervisor.
  *
- * Lösung: TSC-Offset anpassen, um die VM-Exit-Kosten zu verstecken.
+ * Solution: Adjust TSC offset to hide VM-Exit overhead.
  */
 void cosmos_hv_handle_rdtsc(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
     uint64_t real_tsc = cosmos_rdtsc();
     
-    // Kompensiere den TSC um den VM-Exit-Overhead
-    // Der Offset wird dynamisch angepasst basierend auf der gemessenen
-    // VM-Exit-Latenz
+    // Compensate TSC by VM-Exit overhead
+    // The offset is dynamically adjusted based on measured VM-Exit latency
     real_tsc += vcpu->tsc_offset;
     
     vcpu->guest_regs.rax = (uint32_t)(real_tsc & 0xFFFFFFFF);
@@ -794,17 +791,17 @@ void cosmos_hv_handle_rdtsc(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
 
 /* --- RDMSR Stealth Handler ---
  *
- * Anti-Cheat liest bestimmte MSRs, um nach Hypervisorn zu suchen:
- * - IA32_VMX_BASIC: Existiert nur wenn VMX aktiv ist
- * - IA32_DEBUGCTL: Kann Breakpoints verraten
- * - IA32_TSC_AUX: Prozessor-ID
+ * Anti-Cheat reads certain MSRs to search for hypervisors:
+ * - IA32_VMX_BASIC: Exists only when VMX is active
+ * - IA32_DEBUGCTL: Can reveal breakpoints
+ * - IA32_TSC_AUX: Processor ID
  */
 void cosmos_hv_handle_rdmsr(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
     uint32_t msr = (uint32_t)vcpu->guest_regs.rcx;
     uint64_t value = 0;
     
     switch (msr) {
-        // ★ STEALTH: VMX-bezogene MSRs verstecken ★
+        // ★ STEALTH: Hide VMX-related MSRs ★
         case IA32_VMX_BASIC:
         case IA32_VMX_PINBASED_CTLS:
         case IA32_VMX_PROCBASED_CTLS:
@@ -823,7 +820,7 @@ void cosmos_hv_handle_rdmsr(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
         case IA32_VMX_TRUE_EXIT_CTLS:
         case IA32_VMX_TRUE_ENTRY_CTLS:
             if (hv->stealth_mode) {
-                // General Protection Fault (#GP) injizieren
+                // Inject General Protection Fault (#GP)
                 cosmos_vmwrite(VMCS_ENTRY_INT_INFO, (1U << 31) | (1U << 11) | (3U << 8) | 13U);
                 cosmos_vmwrite(VMCS_ENTRY_EXCEPTION_ERRCODE, 0);
                 value = 0;
@@ -835,10 +832,10 @@ void cosmos_hv_handle_rdmsr(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
         default:
             // Anti-Cheat Hardening MSR Filter
             if (hv->stealth_mode && cosmos_ac_handle_rdmsr(hv, vcpu, msr, &value)) {
-                // Wurde vom Anti-Cheat Modul behandelt
+                // Handled by anti-cheat module
                 break;
             }
-            // Alle anderen MSRs: echten Wert durchreichen
+            // All other MSRs: pass through real value
             value = cosmos_rdmsr(msr);
             break;
     }
@@ -854,12 +851,12 @@ void cosmos_hv_handle_wrmsr(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
                      (uint32_t)vcpu->guest_regs.rax;
     
     switch (msr) {
-        // VMX MSRs: im Stealth-Modus ignorieren
+        // VMX MSRs: ignore in stealth mode
         case IA32_VMX_BASIC:
         case IA32_VMX_PINBASED_CTLS:
         case IA32_VMX_PROCBASED_CTLS:
             if (hv->stealth_mode) {
-                // General Protection Fault (#GP) injizieren
+                // Inject General Protection Fault (#GP)
                 cosmos_vmwrite(VMCS_ENTRY_INT_INFO, (1U << 31) | (1U << 11) | (3U << 8) | 13U);
                 cosmos_vmwrite(VMCS_ENTRY_EXCEPTION_ERRCODE, 0);
                 return;
@@ -867,23 +864,23 @@ void cosmos_hv_handle_wrmsr(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
             break;
             
         default:
-            // Durchreichen
+            // Pass through
             cosmos_wrmsr(msr, value);
             break;
     }
 }
 
 /* ============================================================================
- *  VM-EXIT HANDLER (Hauptdispatcher)
+ *  VM-EXIT HANDLER (Main Dispatcher)
  *
- *  Diese Funktion wird von cosmos_vmexit_stub (Assembly) aufgerufen.
- *  Sie liest den Exit-Grund und dispatcht zum richtigen Handler.
+ *  Called by cosmos_vmexit_stub (Assembly).
+ *  Reads exit reason and dispatches to appropriate handler.
  * ============================================================================ */
 
-// Globaler Hypervisor State (Singleton)
+// Global Hypervisor State (Singleton)
 static cosmos_hypervisor g_hypervisor;
 
-// Accessor für den globalen Hypervisor
+// Accessor for global hypervisor
 cosmos_hypervisor* cosmos_hv_get_global(void) {
     return &g_hypervisor;
 }
@@ -891,29 +888,29 @@ cosmos_hypervisor* cosmos_hv_get_global(void) {
 extern "C" int cosmos_vmexit_handler(vmx_guest_regs* guest_regs) {
     cosmos_hypervisor* hv = &g_hypervisor;
     
-    // Wir holen die korrekte CPU ID, da wir Multicore-fähig sind!
-    // Der Linux GS-Base Pointer ist im Gast aktiv und vmexit_stub
-    // läuft auf dem regulären Linux-Stack, daher ist smp_processor_id() sicher!
+    // Retrieve correct CPU ID as we are multicore capable!
+    // Linux GS-Base pointer is active in guest and vmexit_stub
+    // runs on regular Linux stack, so smp_processor_id() is safe!
     extern unsigned int cosmos_get_cpu_id(void);
     uint32_t cpu_id = cosmos_get_cpu_id();
     cosmos_vcpu* vcpu = &hv->vcpus[cpu_id];
     
-    // Gast-Register kopieren
+    // Copy guest registers
     vcpu->guest_regs = *guest_regs;
     
-    // TSC bei VM-Exit erfassen (für Stealth-Kompensation)
+    // Capture TSC at VM-Exit (for stealth compensation)
     uint64_t exit_tsc = cosmos_rdtsc();
     
-    // Exit-Grund aus VMCS lesen
+    // Read exit reason from VMCS
     uint64_t exit_reason_raw = 0;
     cosmos_vmread(VMCS_EXIT_REASON, &exit_reason_raw);
     uint32_t exit_reason = (uint32_t)(exit_reason_raw & 0xFFFF);
     
-    // Exit Qualification (zusätzliche Infos)
+    // Exit Qualification (additional info)
     uint64_t exit_qualification = 0;
     cosmos_vmread(VMCS_EXIT_QUALIFICATION, &exit_qualification);
     
-    // Gast-RIP für Instruktionslänge
+    // Guest RIP for instruction length
     uint64_t guest_rip = 0;
     uint64_t instr_len = 0;
     cosmos_vmread(VMCS_GUEST_RIP, &guest_rip);
@@ -923,7 +920,7 @@ extern "C" int cosmos_vmexit_handler(vmx_guest_regs* guest_regs) {
     switch (exit_reason) {
         case VMEXIT_CPUID:
             cosmos_hv_handle_cpuid(hv, vcpu);
-            // RIP vorrücken (CPUID ist 2 Bytes: 0F A2)
+            // Advance RIP (CPUID is 2 bytes: 0F A2)
             cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
             break;
             
@@ -935,7 +932,7 @@ extern "C" int cosmos_vmexit_handler(vmx_guest_regs* guest_regs) {
             
         case VMEXIT_RDTSCP:
             cosmos_hv_handle_rdtsc(hv, vcpu);
-            // RDTSCP setzt auch ECX = IA32_TSC_AUX
+            // RDTSCP also sets ECX = IA32_TSC_AUX
             vcpu->guest_regs.rcx = cosmos_rdmsr(IA32_TSC_AUX);
             cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
             break;
@@ -960,12 +957,12 @@ extern "C" int cosmos_vmexit_handler(vmx_guest_regs* guest_regs) {
             break;
             
         case VMEXIT_HLT:
-            // HLT: Gast will anhalten → weiterlaufen lassen
+            // HLT: Guest wants to halt → allow continuation
             cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
             break;
             
         case VMEXIT_VMCALL:
-            // Hypercall von CosmOS (für interne Kommunikation)
+            // Hypercall from CosmOS (for internal communication)
             if (vcpu->guest_regs.rax == 0x1337) {
                 // EPT TLB Flush (Hypercall)
                 extern void _Z13cosmos_inveptmm(unsigned long type, unsigned long desc);
@@ -1068,19 +1065,19 @@ extern "C" int cosmos_vmexit_handler(vmx_guest_regs* guest_regs) {
         case VMEXIT_VMXON:
         case VMEXIT_VMLAUNCH:
         case VMEXIT_VMRESUME:
-            // Wenn der Gast VMX-Befehle ausführt, injiziere #UD (Invalid Opcode)
+            // If guest executes VMX instructions, inject #UD (Invalid Opcode)
             cosmos_vmwrite(VMCS_ENTRY_INT_INFO, (1U << 31) | (3U << 8) | 6U); 
-            // RIP wird NICHT vorgerückt bei Exceptions!
+            // RIP is NOT advanced on exceptions!
             break;
             
         case VMEXIT_TRIPLE_FAULT:
-            HV_LOG("!!! TRIPLE FAULT im Gast! RIP=0x%llX !!!", 
+            HV_LOG("!!! TRIPLE FAULT in guest! RIP=0x%llX !!!", 
                    (unsigned long long)guest_rip);
             action = exit_reason | 0x10000;
             break;
             
         default:
-            HV_LOG("Unbehandelter VM-Exit: reason=%u, qual=0x%llX, RIP=0x%llX. ABORT!",
+            HV_LOG("Unhandled VM-Exit: reason=%u, qual=0x%llX, RIP=0x%llX. ABORT!",
                    exit_reason,
                    (unsigned long long)exit_qualification,
                    (unsigned long long)guest_rip);
@@ -1088,22 +1085,22 @@ extern "C" int cosmos_vmexit_handler(vmx_guest_regs* guest_regs) {
             break;
     }
     
-    // TSC-Stealth: Zeit für VM-Exit verstecken
+    // TSC Stealth: Hide time spent in VM-Exit
     if (action == 0) {
         uint64_t new_exit_tsc = cosmos_rdtsc();
         if (hv->stealth_mode) {
-            // Standard-Kosten für VM-Exits
+            // Standard cost for VM-Exits
             uint64_t simulated_cost = (exit_reason == VMEXIT_CPUID) ? VMEXIT_COST_CYCLES_CPUID : VMEXIT_COST_CYCLES_RDMSR;
             cosmos_ac_hide_vmexit_time(vcpu, exit_tsc, new_exit_tsc, simulated_cost);
         } else {
-            // Altes TSC-Stealth (naiv)
+            // Old TSC stealth (naive)
             uint64_t exit_cost = new_exit_tsc - exit_tsc;
             vcpu->tsc_offset -= (int64_t)exit_cost;
             cosmos_vmwrite(VMCS_TSC_OFFSET, (uint64_t)vcpu->tsc_offset);
         }
     }
     
-    // Register zurückschreiben (der Assembly-Stub stellt sie wieder her)
+    // Write back registers (restored by assembly stub)
     *guest_regs = vcpu->guest_regs;
     
     return action;

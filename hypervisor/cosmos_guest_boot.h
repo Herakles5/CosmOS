@@ -3,17 +3,17 @@
  *  COSMOS GUEST BOOT - Windows NT / OVMF Bootloader
  * ============================================================================
  *
- *  Phase 2.2: Vorbereitung der VM für Windows (UEFI Boot)
+ *  Phase 2.2: VM Preparation for Windows (UEFI Boot)
  *
- *  Um Windows vernünftig mit GPU-Passthrough und hohen FPS zu booten,
- *  benutzen wir OVMF (Open Virtual Machine Firmware). OVMF initialisiert
- *  den PCIe-Bus, lädt den UEFI-GOP Treiber der Grafikkarte und startet
- *  danach den normalen Windows Bootloader (winload.efi).
+ *  To boot Windows cleanly with GPU passthrough and high FPS,
+ *  we utilize OVMF (Open Virtual Machine Firmware). OVMF initializes
+ *  the PCIe bus, loads the UEFI GOP graphics driver, and launches
+ *  the standard Windows bootloader (winload.efi).
  *
- *  Ablauf:
- *  1. OVMF.fd (Firmware) in den Gast-Speicher laden (ganz oben unter 4GB)
- *  2. VMCS für 16-Bit Real Mode (Unrestricted Guest) konfigurieren
- *  3. Guest CS:RIP auf den x86 Reset Vector (0xFFFFFFF0) setzen
+ *  Execution Flow:
+ *  1. Load OVMF.fd firmware into guest physical memory (high address below 4GB).
+ *  2. Configure VMCS for 16-bit Real Mode (Unrestricted Guest execution).
+ *  3. Set Guest CS:RIP to standard x86 Reset Vector (0xFFFFFFF0).
  * ============================================================================
  */
 
@@ -24,11 +24,11 @@
 #include "cosmos_hypervisor.h"
 #include "cosmos_ept.h"
 
-// Reset Vector für x86 (Hier startet die CPU nach einem Reset)
+// Reset Vector for x86 architecture (CPU entry point upon hardware reset)
 #define X86_RESET_VECTOR        0xFFFFFFF0ULL
 
-// Firmware Base (Wo die Firmware im physischen Speicher eingeblendet wird)
-// Bei einem 2MB OVMF Image ist das 0xFFE00000
+// Firmware Base (where firmware image is mapped in physical memory space)
+// For a 2MB OVMF image, this maps to 0xFFE00000
 #define OVMF_FIRMWARE_BASE      0xFFE00000ULL
 #define OVMF_FIRMWARE_SIZE      (2 * 1024 * 1024)
 

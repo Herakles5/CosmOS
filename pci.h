@@ -4,19 +4,19 @@
 #include <stdint.h>
 #include "schneider_lang.h"
 
-// Struktur aus kernel.cpp hierher verschoben
+// Structure relocated from kernel.cpp
 _202 NICInfo { _30 name[32]; _89 address; _43 type; _182 device_id; };
 
-// Globale Funktionen
+// Global functions
 _172 _89 pci_read(_184 bus, _184 slot, _184 func, _184 offset);
 _172 _50 pci_scan_all();
-/// 1. Den Bauplan (Struct) hier definieren, damit ihn jeder kennt
+/// 1. Define hardware registry structure layout
 _202 HardwareRegistry {
     _44 is_ahci_found;
-    uint64_t ahci_bar5; /// 64-Bit Fix
+    uint64_t ahci_bar5; /// 64-bit fix
 
     _44 is_usb_found;
-    uint64_t usb_bar0;  /// 64-Bit Fix
+    uint64_t usb_bar0;  /// 64-bit fix
 
     _44 is_ehci_found;
     uint64_t ehci_bar0;
@@ -26,14 +26,14 @@ _202 HardwareRegistry {
     _89 net_io_port;
 }; 
 
-/// 2. Danach erst die extern-Ankündigung
+/// 2. External hardware registry instance declaration
 extern HardwareRegistry sys_hw;
 /// ==========================================
-/// AUTO-GENERATED PCI HEADER FUER OS2
+/// AUTO-GENERATED PCI HEADER FOR OS2
 /// ==========================================
 #define PCI_VEN_INTEL 0x8086
 
-/// Die ganzen extrahierten Devices:
+/// Extracted PCI Device IDs:
 #define PCI_DEV_153A 0x153A
 #define PCI_DEV_153B 0x153B
 #define PCI_DEV_155A 0x155A
@@ -71,7 +71,7 @@ extern HardwareRegistry sys_hw;
 #define PCI_DEV_15FC 0x15FC
 #define PCI_DEV_15F4 0x15F4
 #define PCI_DEV_100E 0x100E /// QEMU
-#define PCI_DEV_1502 0x1502 /// Deine erste Testkarte
-#define PCI_DEV_1503 0x1503 /// Deine zweite Testkarte
+#define PCI_DEV_1502 0x1502 /// Primary test network card
+#define PCI_DEV_1503 0x1503 /// Secondary test network card
 
 #endif

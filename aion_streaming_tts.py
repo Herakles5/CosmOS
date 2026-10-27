@@ -8,9 +8,9 @@ import time
 
 class AionStreamingTTS:
     """
-    Ultra-Low Latency Streaming Text-to-Speech Engine fuer AION NEXUS.
-    Piped Text direkt ueber stdin an Piper und Audio-WAV an aplay/pw-play.
-    Keine Festplatten-Schreibzugriffe (zero disk I/O).
+    Ultra-Low Latency Streaming Text-to-Speech Engine for AION NEXUS.
+    Pipes text directly via stdin to Piper and audio WAV to aplay/pw-play.
+    Zero disk I/O.
     """
 
     def __init__(self, model_path="/root/coding/AI_Desktop/de_DE-ramona-low.onnx"):
@@ -22,7 +22,7 @@ class AionStreamingTTS:
         self.worker_thread.start()
 
     def _get_player_cmd(self):
-        """Findet den besten installierten Audioplayer (aplay oder pw-play)."""
+        """Finds the optimal installed audio player (aplay or pw-play)."""
         if os.path.exists("/usr/bin/aplay"):
             return ["aplay", "-q"]
         elif os.path.exists("/usr/bin/pw-play"):
@@ -30,7 +30,7 @@ class AionStreamingTTS:
         return ["paplay"]
 
     def _process_queue(self):
-        """Hintergrund-Worker fuer lueckenlose sequentielle Sprachausgabe."""
+        """Background worker for seamless sequential speech synthesis."""
         while self.is_running:
             try:
                 sentence = self.speech_queue.get(timeout=0.5)
@@ -45,21 +45,21 @@ class AionStreamingTTS:
             self.speech_queue.task_done()
 
     def _play_sentence_stream(self, sentence: str):
-        """Streamt einen Einzelsatz direkt durch Piper in den Audioausgang."""
+        """Streams a single sentence directly through Piper to audio output."""
         sentence = re.sub(r'```.*?```', '', sentence, flags=re.DOTALL)
         sentence = re.sub(r'[*_#`\[\]]', '', sentence).strip()
         if not sentence:
             return
 
         try:
-            # Markiere Aion Speaking Status fuer UI-Animation
+            # Mark Aion speaking state for UI animation
             with open("/tmp/aion_speaking", "w") as f:
                 f.write("1")
 
             piper_cmd = [
                 self.piper_bin,
                 "--model", self.model_path,
-                "-f", "-",  # WAV nach stdout streamen
+                "-f", "-",  # Stream WAV to stdout
                 "--quiet"
             ]
             player_cmd = self._get_player_cmd()
@@ -77,11 +77,11 @@ class AionStreamingTTS:
                 stderr=subprocess.DEVNULL
             )
 
-            # Sende Text an Piper stdin
+            # Send text to Piper stdin
             p_piper.stdin.write(sentence.encode("utf-8"))
             p_piper.stdin.close()
 
-            # Warte auf Beendigung der Audio-Wiedergabe
+            # Wait for audio playback completion
             p_player.wait()
             p_piper.wait()
 
@@ -96,10 +96,10 @@ class AionStreamingTTS:
 
     def speak(self, text: str, priority: bool = False):
         """
-        Teilt laengeren Text in Saetze auf und reiht sie sofort in die Pipeline ein.
-        Erstes Audio startet bereits nach wenigen Millisekunden!
+        Splits longer text into sentences and enqueues them immediately.
+        Audio playback initiates within milliseconds!
         """
-        # Zerlege in Saetze anhand von Satzzeichen (. ! ? \n)
+        # Split into sentences using punctuation (. ! ? \n)
         sentences = re.split(r'(?<=[.!?\n])\s+', text)
         for s in sentences:
             s = s.strip()
@@ -107,12 +107,12 @@ class AionStreamingTTS:
                 self.speech_queue.put(s)
 
     def speak_sync(self, text: str):
-        """Blockiert, bis der gesprochene Satz vollstaendig ausgegeben wurde."""
+        """Blocks until speech output completes."""
         self.speak(text)
         self.speech_queue.join()
 
 if __name__ == "__main__":
     tts = AionStreamingTTS()
     print("Testing Ultra-Low Latency Streaming TTS...")
-    tts.speak_sync("Aion Nexus Streaming Sprachausgabe aktiv. Latenz unter zweihundert Millisekunden.")
-    print("Test erfolgreich!")
+    tts.speak_sync("Aion Nexus streaming text to speech active. Latency under two hundred milliseconds.")
+    print("Test successful!")

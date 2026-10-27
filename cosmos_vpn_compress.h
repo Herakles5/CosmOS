@@ -1,33 +1,33 @@
 #pragma once
 // ==========================================
-// COSMOS VPN KOMPRESSION – ArShiva LZ77 Hybrid
-// Extrahiert aus ArShiva_fixed.cpp (BastionEngine)
-// Komprimiert VOR Verschlüsselung, dekomprimiert NACH Entschlüsselung
+// COSMOS VPN COMPRESSION – ArShiva LZ77 Hybrid
+// Extracted from ArShiva_fixed.cpp (BastionEngine)
+// Compresses BEFORE encryption, decompresses AFTER decryption
 // ==========================================
 #include <string.h>
 #include <stdint.h>
 
-// Maximale Batch-Größe (für Batching: mehrere TUN-Pakete gesammelt)
-// 16KB = ~10 TUN-Pakete bei MTU 1400 → weniger Encrypt/Header-Overhead
+// Maximum batch size (for batching: multiple TUN packets collected)
+// 16KB = ~10 TUN packets at MTU 1400 → less encryption/header overhead
 #define VPN_BATCH_MAX          16384
-// Maximale Wartezeit zum Sammeln von Paketen (Millisekunden)
-// Aggressiveres Flushing: Bei hoher Mobilfunk-Latenz bringt langes Sammeln nichts
+// Maximum wait time to collect packets (milliseconds)
+// Aggressive flushing: high cellular latency makes prolonged collection useless
 #define VPN_BATCH_TIMEOUT_MS   2
-// Maximale Anzahl Sub-Pakete pro Batch
+// Maximum number of sub-packets per batch
 #define VPN_BATCH_MAX_PACKETS  64
 
-// ArShiva VPN-Effort: Minimale Kompression für maximalen Durchsatz
-// HTTPS-Traffic ist nicht komprimierbar – CPU sparen statt sinnlos komprimieren!
+// ArShiva VPN effort: Minimal compression for maximum throughput
+// HTTPS traffic is incompressible – save CPU rather than pointless compression!
 #define VPN_COMPRESS_EFFORT    1
-// Maximaler Match-Chain pro Effort
+// Maximum match chain per effort
 #define VPN_MAX_CHAIN          (VPN_COMPRESS_EFFORT * 1000)
 #define VPN_MAX_CHAIN_TOTAL    (VPN_COMPRESS_EFFORT * 500)
 
-// Worst-Case: Unkomprimierbar → 1 Bit Flag + 8 Bit pro Byte = 9/8 Ratio + Padding
+// Worst-Case: Incompressible → 1 bit flag + 8 bits per byte = 9/8 ratio + padding
 #define VPN_COMPRESS_BOUND(size) ((size) + ((size) / 8) + 2)
 
 // ==========================================
-// ArShiva Bit-Level I/O (aus BastionEngine)
+// ArShiva Bit-Level I/O (from BastionEngine)
 // ==========================================
 
 static inline void arshiva_write_bits(uint8_t* buf, int* buf_len, 
@@ -56,16 +56,16 @@ static inline uint32_t arshiva_read_bits(uint32_t* bitPtr, const uint8_t* data,
 }
 
 // ==========================================
-// ArShiva LZ77 Kompression (VPN-optimiert)
-// Effort auf Speed getrimmt für Echtzeit
+// ArShiva LZ77 Compression (VPN optimized)
+// Tuned for speed in real-time operation
 // ==========================================
 
-// Komprimiert src → dst. Gibt komprimierte Größe zurück, oder 0 bei Fehler/kein Gewinn.
+// Compresses src → dst. Returns compressed size, or 0 on error / no gain.
 static inline int vpn_compress(const uint8_t* src, int src_len, 
                                 uint8_t* dst, int dst_capacity) {
     if (src_len <= 0 || dst_capacity <= 0) return 0;
     if (src_len < 4) {
-        // Zu kurz zum Komprimieren – direkt kopieren
+        // Too short to compress – copy directly
         if (dst_capacity < src_len) return 0;
         memcpy(dst, src, src_len);
         return src_len;
@@ -75,17 +75,17 @@ static inline int vpn_compress(const uint8_t* src, int src_len,
     int nB = 0;
     int dst_len = 0;
     
-    // Hash-Chain Tabelle (16-Bit Hash → letzte Position)
-    // Stack-allokiert für VPN-Paketgrößen (max ~4KB)
+    // Hash chain table (16-bit hash → last position)
+    // Stack allocated for VPN packet sizes (max ~4KB)
     int head[65536];
     memset(head, -1, sizeof(head));
     
-    // Prev-Chain (für jede Position die vorherige mit gleichem Hash)
-    // Max VPN_BATCH_MAX Einträge
+    // Prev chain (for each position, the previous one with same hash)
+    // Max VPN_BATCH_MAX entries
     int prev[VPN_BATCH_MAX];
     memset(prev, -1, src_len < (int)sizeof(prev) ? src_len * sizeof(int) : sizeof(prev));
     
-    // Hash-Chain aufbauen
+    // Build hash chain
     for (int k = 0; k + 2 < src_len; k++) {
         uint32_t h = ((uint32_t)src[k] << 8 | src[k+1]) ^ ((uint32_t)src[k+2] << 4);
         prev[k] = head[h & 0xFFFF];
@@ -96,8 +96,8 @@ static inline int vpn_compress(const uint8_t* src, int src_len,
     int chainsUsed = 0;
     
     while (i < src_len) {
-        // Sicherheitscheck: Ist Output bereits größer als Input?
-        if (dst_len >= src_len - 4) return 0; // Kein Gewinn
+        // Safety check: is output already larger than input?
+        if (dst_len >= src_len - 4) return 0; // No gain
         
         int best_len = 0, best_dist = 0;
         
@@ -113,7 +113,7 @@ static inline int vpn_compress(const uint8_t* src, int src_len,
                 if (l > best_len && l >= 3) {
                     best_len = l;
                     best_dist = d;
-                    if (best_len >= 128) break; // Gut genug
+                    if (best_len >= 128) break; // Good enough
                 }
                 cur = prev[cur];
             }
@@ -121,34 +121,34 @@ static inline int vpn_compress(const uint8_t* src, int src_len,
         }
         
         if (best_len >= 3) {
-            // Match: 1-Bit Flag(1) + 8-Bit Länge + 15-Bit Distanz = 24 Bit
+            // Match: 1-bit flag(1) + 8-bit length + 15-bit distance = 24 bits
             arshiva_write_bits(dst, &dst_len, 1, 1, &acc, &nB);
             arshiva_write_bits(dst, &dst_len, best_len, 8, &acc, &nB);
             arshiva_write_bits(dst, &dst_len, best_dist, 15, &acc, &nB);
             i += best_len;
         } else {
-            // Literal: 1-Bit Flag(0) + 8-Bit Byte = 9 Bit
+            // Literal: 1-bit flag(0) + 8-bit byte = 9 bits
             arshiva_write_bits(dst, &dst_len, 0, 1, &acc, &nB);
             arshiva_write_bits(dst, &dst_len, src[i], 8, &acc, &nB);
             i++;
         }
     }
     
-    // Restbits flushen
+    // Flush remaining bits
     if (nB > 0) {
         dst[dst_len++] = (uint8_t)(acc & 0xFF);
     }
     
-    // Nur zurückgeben wenn tatsächlich kleiner
+    // Only return if strictly smaller
     if (dst_len < src_len) return dst_len;
-    return 0; // Kein Gewinn
+    return 0; // No gain
 }
 
 // ==========================================
-// ArShiva LZ77 Dekompression
+// ArShiva LZ77 Decompression
 // ==========================================
 
-// Dekomprimiert src → dst. Gibt originale Größe zurück, oder -1 bei Fehler.
+// Decompresses src → dst. Returns original size, or -1 on error.
 static inline int vpn_decompress(const uint8_t* src, int src_len, 
                                   uint8_t* dst, int dst_capacity) {
     if (src_len <= 0 || dst_capacity <= 0) return -1;
@@ -161,21 +161,21 @@ static inline int vpn_decompress(const uint8_t* src, int src_len,
         uint32_t flag = arshiva_read_bits(&bitPtr, src, src_len, 1);
         
         if (flag == 1) {
-            // Match: 8-Bit Länge + 15-Bit Distanz
+            // Match: 8-bit length + 15-bit distance
             uint32_t len  = arshiva_read_bits(&bitPtr, src, src_len, 8);
             uint32_t dist = arshiva_read_bits(&bitPtr, src, src_len, 15);
             
-            if (len == 0 || dist == 0) break; // Ungültig
+            if (len == 0 || dist == 0) break; // Invalid
             
             int srcIdx = dst_len - (int)dist;
-            if (srcIdx < 0) break; // Ungültig
+            if (srcIdx < 0) break; // Invalid
             
             for (uint32_t k = 0; k < len && dst_len < dst_capacity; k++) {
                 dst[dst_len] = dst[srcIdx + k];
                 dst_len++;
             }
         } else {
-            // Literal: 8-Bit Byte
+            // Literal: 8-bit byte
             uint32_t b = arshiva_read_bits(&bitPtr, src, src_len, 8);
             dst[dst_len++] = (uint8_t)b;
         }
@@ -185,30 +185,30 @@ static inline int vpn_decompress(const uint8_t* src, int src_len,
 }
 
 // ==========================================
-// BATCH-BUFFER: Sammelt mehrere TUN-Pakete
+// BATCH BUFFER: Collects multiple TUN packets
 // Format: [len1:2B][data1:len1B][len2:2B][data2:len2B]...
 // ==========================================
 struct VpnBatchBuffer {
     uint8_t  data[VPN_BATCH_MAX];
-    int      used;        // Belegte Bytes
-    int      pkt_count;   // Anzahl gesammelter Pakete
+    int      used;        // Occupied bytes
+    int      pkt_count;   // Number of collected packets
     
     void reset() {
         used = 0;
         pkt_count = 0;
     }
     
-    // Fügt ein TUN-Paket zum Batch hinzu.
-    // Gibt true zurück wenn das Paket aufgenommen wurde.
-    // Gibt false zurück wenn der Batch voll ist (erst flush() aufrufen).
+    // Adds a TUN packet to batch.
+    // Returns true if packet was accepted.
+    // Returns false if batch is full (call flush() first).
     bool add_packet(const uint8_t* pkt, int pkt_len) {
         if (pkt_len <= 0 || pkt_len > 1500) return false;
-        // 2 Byte Längen-Präfix + Payload
+        // 2-byte length prefix + payload
         int needed = 2 + pkt_len;
         if (used + needed > VPN_BATCH_MAX) return false;
         if (pkt_count >= VPN_BATCH_MAX_PACKETS) return false;
         
-        // Länge als Big-Endian 16-Bit
+        // Length as Big-Endian 16-bit
         data[used]     = (pkt_len >> 8) & 0xFF;
         data[used + 1] = pkt_len & 0xFF;
         memcpy(data + used + 2, pkt, pkt_len);
@@ -217,17 +217,17 @@ struct VpnBatchBuffer {
         return true;
     }
     
-    // Ist der Batch leer?
+    // Is batch empty?
     bool is_empty() const { return used == 0; }
     
-    // Ist der Batch voll genug zum Senden?
+    // Is batch full enough to send?
     bool is_full() const {
         return used >= 1200 || pkt_count >= VPN_BATCH_MAX_PACKETS;
     }
 };
 
-// Extrahiert Sub-Pakete aus einem dekomprimierten Batch.
-// Callback wird für jedes Sub-Paket aufgerufen.
+// Extracts sub-packets from a decompressed batch.
+// Callback is invoked for each sub-packet.
 typedef void (*vpn_batch_callback)(const uint8_t* pkt, int pkt_len, void* ctx);
 
 static inline int vpn_batch_extract(const uint8_t* batch_data, int batch_len,

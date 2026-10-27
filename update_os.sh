@@ -1,24 +1,24 @@
 #!/bin/bash
-# Skript zum Aktualisieren des Betriebssystems auf dem Laufenden System
+# Script to update the operating system binary on the running host system
 
 SOURCE_FILE="./meinos_v2.elf"
 DEST_FILE="/opt/meinos/meinos.elf"
 
 if [ "$EUID" -ne 0 ]; then
-  echo "Bitte als root ausführen (sudo ./update_os.sh)"
+  echo "Please run as root (sudo ./update_os.sh)"
   exit 1
 fi
 
 if [ ! -f "$SOURCE_FILE" ]; then
-    echo "Fehler: $SOURCE_FILE wurde nicht gefunden."
-    echo "Hast du den Code mit 'make' kompiliert?"
+    echo "Error: $SOURCE_FILE not found."
+    echo "Did you compile the binary with 'make -f Makefile.linux'?"
     exit 1
 fi
 
-echo "Kopiere $SOURCE_FILE nach $DEST_FILE..."
+echo "Copying $SOURCE_FILE to $DEST_FILE..."
 rm -f "$DEST_FILE"
 cp "$SOURCE_FILE" "$DEST_FILE"
 chmod +x "$DEST_FILE"
 cp face.png /opt/meinos/face.png || true
 
-echo "Update erfolgreich abgeschlossen! Bitte rebooten."
+echo "Update completed successfully! Please reboot."

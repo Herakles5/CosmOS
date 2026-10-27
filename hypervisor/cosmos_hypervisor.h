@@ -3,11 +3,11 @@
  *  COSMOS HYPERVISOR - Type-1 Stealth Hypervisor for CosmOS
  * ============================================================================
  *  
- *  Ein unsichtbarer Hypervisor, der direkt auf der CPU läuft (Ring -1).
- *  Ziel: Windows-Gast mit GPU-Passthrough ausführen, wobei Anti-Cheat-
- *  Systeme den Hypervisor NICHT erkennen können.
+ *  An invisible hypervisor running directly on CPU (Ring -1).
+ *  Goal: Run Windows guest with GPU passthrough, completely undetectable
+ *  by anti-cheat systems.
  *
- *  Target CPU: Intel i7-7700 (Kaby Lake) mit VT-x, EPT, VPID
+ *  Target CPU: Intel i7-7700 (Kaby Lake) with VT-x, EPT, VPID
  *  
  *  Phase 1.1: VMX Detection & VMXON
  * ============================================================================
@@ -25,7 +25,7 @@
 // CPUID Leaf 1, ECX Bit-Flags
 #define CPUID_1_ECX_VMX             (1 << 5)    // Virtual Machine Extensions
 #define CPUID_1_ECX_SMX             (1 << 6)    // Safer Mode Extensions
-#define CPUID_1_ECX_HYPERVISOR      (1 << 31)   // Hypervisor Present (MUSS im Stealth-Modus gelöscht werden!)
+#define CPUID_1_ECX_HYPERVISOR      (1 << 31)   // Hypervisor Present (MUST be cleared in stealth mode!)
 
 /* ============================================================================
  *  MODEL SPECIFIC REGISTERS (MSRs)
@@ -89,7 +89,7 @@
 
 #define CR4_VME         (1UL << 0)
 #define CR4_PVI         (1UL << 1)
-#define CR4_TSD         (1UL << 2)   // Time Stamp Disable (WICHTIG für Stealth!)
+#define CR4_TSD         (1UL << 2)   // Time Stamp Disable (IMPORTANT for stealth!)
 #define CR4_DE          (1UL << 3)
 #define CR4_PSE         (1UL << 4)
 #define CR4_PAE         (1UL << 5)
@@ -98,7 +98,7 @@
 #define CR4_PCE         (1UL << 8)
 #define CR4_OSFXSR      (1UL << 9)
 #define CR4_OSXMMEXCPT  (1UL << 10)
-#define CR4_VMXE        (1UL << 13)  // VMX Enable (DAS ist der Schlüssel!)
+#define CR4_VMXE        (1UL << 13)  // VMX Enable (THIS is the key!)
 #define CR4_SMXE        (1UL << 14)
 #define CR4_FSGSBASE    (1UL << 16)
 #define CR4_PCIDE       (1UL << 17)
@@ -147,7 +147,7 @@
 #define VMCS_EXIT_MSR_LOAD_ADDR         0x2008
 #define VMCS_ENTRY_MSR_LOAD_ADDR        0x200A
 #define VMCS_EXECUTIVE_VMCS_PTR         0x200C
-#define VMCS_TSC_OFFSET                 0x2010  // KRITISCH für RDTSC-Stealth!
+#define VMCS_TSC_OFFSET                 0x2010  // CRITICAL for RDTSC stealth!
 #define VMCS_VIRTUAL_APIC_PAGE          0x2012
 #define VMCS_APIC_ACCESS_ADDR           0x2014
 #define VMCS_EPTP                       0x201A  // Extended Page Table Pointer
@@ -275,13 +275,13 @@
 #define VMEXIT_INT_WINDOW               7
 #define VMEXIT_NMI_WINDOW               8
 #define VMEXIT_TASK_SWITCH              9
-#define VMEXIT_CPUID                    10  // ← DAS ist der wichtigste für Stealth!
+#define VMEXIT_CPUID                    10  // ← Primary exit for stealth!
 #define VMEXIT_GETSEC                   11
 #define VMEXIT_HLT                      12
 #define VMEXIT_INVD                     13
 #define VMEXIT_INVLPG                   14
 #define VMEXIT_RDPMC                    15
-#define VMEXIT_RDTSC                    16  // ← Timing-Stealth!
+#define VMEXIT_RDTSC                    16  // ← Timing stealth!
 #define VMEXIT_RSM                      17
 #define VMEXIT_VMCALL                   18
 #define VMEXIT_VMCLEAR                  19
@@ -296,7 +296,7 @@
 #define VMEXIT_CR_ACCESS                28
 #define VMEXIT_DR_ACCESS                29
 #define VMEXIT_IO                       30
-#define VMEXIT_RDMSR                    31  // ← MSR-Stealth!
+#define VMEXIT_RDMSR                    31  // ← MSR stealth!
 #define VMEXIT_WRMSR                    32
 #define VMEXIT_ENTRY_FAIL_GUEST         33
 #define VMEXIT_ENTRY_FAIL_MSR           34
@@ -310,10 +310,10 @@
 #define VMEXIT_VIRTUALIZED_EOI          45
 #define VMEXIT_GDTR_IDTR                46
 #define VMEXIT_LDTR_TR                  47
-#define VMEXIT_EPT_VIOLATION            48  // ← Speicher-Stealth!
+#define VMEXIT_EPT_VIOLATION            48  // ← Memory stealth!
 #define VMEXIT_EPT_MISCONFIG            49
 #define VMEXIT_INVEPT                   50
-#define VMEXIT_RDTSCP                   51  // ← Timing-Stealth!
+#define VMEXIT_RDTSCP                   51  // ← Timing stealth!
 #define VMEXIT_PREEMPT_TIMER            52
 #define VMEXIT_INVVPID                  53
 #define VMEXIT_WBINVD                   54
@@ -331,12 +331,12 @@
  * ============================================================================ */
 
 #define PROCBASED_INT_WINDOW_EXIT       (1UL << 2)
-#define PROCBASED_USE_TSC_OFFSET        (1UL << 3)   // Für RDTSC-Stealth
+#define PROCBASED_USE_TSC_OFFSET        (1UL << 3)   // For RDTSC stealth
 #define PROCBASED_HLT_EXIT              (1UL << 7)
 #define PROCBASED_INVLPG_EXIT           (1UL << 9)
 #define PROCBASED_MWAIT_EXIT            (1UL << 10)
 #define PROCBASED_RDPMC_EXIT            (1UL << 11)
-#define PROCBASED_RDTSC_EXIT            (1UL << 12)  // RDTSC abfangen
+#define PROCBASED_RDTSC_EXIT            (1UL << 12)  // Intercept RDTSC
 #define PROCBASED_CR3_LOAD_EXIT         (1UL << 15)
 #define PROCBASED_CR3_STORE_EXIT        (1UL << 16)
 #define PROCBASED_CR8_LOAD_EXIT         (1UL << 19)
@@ -347,23 +347,23 @@
 #define PROCBASED_UNCOND_IO_EXIT        (1UL << 24)
 #define PROCBASED_USE_IO_BITMAPS        (1UL << 25)
 #define PROCBASED_MONITOR_TRAP          (1UL << 27)
-#define PROCBASED_USE_MSR_BITMAPS       (1UL << 28)  // Für MSR-Stealth
+#define PROCBASED_USE_MSR_BITMAPS       (1UL << 28)  // For MSR stealth
 #define PROCBASED_MONITOR_EXIT          (1UL << 29)
 #define PROCBASED_PAUSE_EXIT            (1UL << 30)
-#define PROCBASED_ACTIVATE_SECONDARY    (1UL << 31)  // Secondary Controls aktivieren!
+#define PROCBASED_ACTIVATE_SECONDARY    (1UL << 31)  // Activate secondary controls!
 
 /* ============================================================================
  *  SECONDARY PROC-BASED VM-EXECUTION CONTROLS
  * ============================================================================ */
 
 #define PROCBASED2_VIRT_APIC_ACCESS     (1UL << 0)
-#define PROCBASED2_ENABLE_EPT           (1UL << 1)   // EPT aktivieren!
+#define PROCBASED2_ENABLE_EPT           (1UL << 1)   // Enable EPT!
 #define PROCBASED2_DESC_TABLE_EXIT      (1UL << 2)
 #define PROCBASED2_ENABLE_RDTSCP        (1UL << 3)
 #define PROCBASED2_VIRT_X2APIC          (1UL << 4)
-#define PROCBASED2_ENABLE_VPID          (1UL << 5)   // VPID für Performance
+#define PROCBASED2_ENABLE_VPID          (1UL << 5)   // VPID for performance
 #define PROCBASED2_WBINVD_EXIT          (1UL << 6)
-#define PROCBASED2_UNRESTRICTED_GUEST   (1UL << 7)   // Real-Mode Gast!
+#define PROCBASED2_UNRESTRICTED_GUEST   (1UL << 7)   // Real-Mode guest!
 #define PROCBASED2_APIC_REGISTER_VIRT   (1UL << 8)
 #define PROCBASED2_VIRTUAL_INT_DELIVERY (1UL << 9)
 #define PROCBASED2_PAUSE_LOOP_EXIT      (1UL << 10)
@@ -375,7 +375,7 @@
 #define PROCBASED2_RDSEED_EXIT          (1UL << 16)
 #define PROCBASED2_ENABLE_PML           (1UL << 17)
 #define PROCBASED2_EPT_VIOLATION_VE     (1UL << 18)
-#define PROCBASED2_CONCEAL_VMX          (1UL << 19)  // Intel sagt: bitte nicht benutzen :)
+#define PROCBASED2_CONCEAL_VMX          (1UL << 19)  // Intel states: please do not use :)
 #define PROCBASED2_ENABLE_XSAVES        (1UL << 20)
 #define PROCBASED2_TSC_SCALING          (1UL << 25)
 
@@ -384,7 +384,7 @@
  * ============================================================================ */
 
 #define VMEXIT_CTRL_SAVE_DBG            (1UL << 2)
-#define VMEXIT_CTRL_HOST_ADDR_SPACE     (1UL << 9)   // Host ist 64-bit
+#define VMEXIT_CTRL_HOST_ADDR_SPACE     (1UL << 9)   // Host is 64-bit
 #define VMEXIT_CTRL_LOAD_PERF           (1UL << 12)
 #define VMEXIT_CTRL_ACK_INT_ON_EXIT     (1UL << 15)
 #define VMEXIT_CTRL_SAVE_PAT            (1UL << 18)
@@ -398,7 +398,7 @@
  * ============================================================================ */
 
 #define VMENTRY_CTRL_LOAD_DBG           (1UL << 2)
-#define VMENTRY_CTRL_GUEST_IA32E        (1UL << 9)   // Gast ist 64-bit
+#define VMENTRY_CTRL_GUEST_IA32E        (1UL << 9)   // Guest is 64-bit
 #define VMENTRY_CTRL_ENTRY_TO_SMM       (1UL << 10)
 #define VMENTRY_CTRL_DEACT_DUAL_MON     (1UL << 11)
 #define VMENTRY_CTRL_LOAD_PERF          (1UL << 13)
@@ -406,10 +406,10 @@
 #define VMENTRY_CTRL_LOAD_EFER          (1UL << 15)
 
 /* ============================================================================
- *  DATENSTRUKTUREN
+ *  DATA STRUCTURES
  * ============================================================================ */
 
-// Guest-Register-Kontext (wird bei jedem VM-Exit gesichert/wiederhergestellt)
+// Guest register context (saved/restored on every VM-Exit)
 struct __attribute__((packed)) vmx_guest_regs {
     uint64_t rax;
     uint64_t rbx;
@@ -427,57 +427,57 @@ struct __attribute__((packed)) vmx_guest_regs {
     uint64_t r14;
     uint64_t r15;
 
-    // XMM wird separat via XSAVE/XRSTOR gehandhabt
+    // XMM handled separately via XSAVE/XRSTOR
 };
 
-// VMXON/VMCS Region Header (muss 4KB-aligned sein!)
+// VMXON/VMCS Region Header (must be 4KB aligned!)
 struct __attribute__((packed, aligned(4096))) vmx_region {
-    uint32_t revision_id;   // Muss mit IA32_VMX_BASIC[30:0] übereinstimmen
+    uint32_t revision_id;   // Must match IA32_VMX_BASIC[30:0]
     uint32_t abort_indicator;
     uint8_t  data[4096 - 8];
 };
 
-// Per-CPU Hypervisor-Zustand
+// Per-CPU Hypervisor State
 struct cosmos_vcpu {
-    // VMX Regions (müssen physisch 4KB-aligned sein)
+    // VMX Regions (must be physically 4KB aligned)
     vmx_region*     vmxon_region;       // VMXON Region (Host)
-    vmx_region*     vmcs_region;        // VMCS Region (Gast-Zustand)
+    vmx_region*     vmcs_region;        // VMCS Region (Guest state)
 
-    // Physische Adressen der Regions
+    // Physical addresses of regions
     uint64_t        vmxon_phys;
     uint64_t        vmcs_phys;
 
-    // Guest Register State (nicht in VMCS gespeichert)
+    // Guest Register State (not stored in VMCS)
     vmx_guest_regs  guest_regs;
 
-    // Host Stack für VM-Exit Handler
+    // Host Stack for VM-Exit Handler
     uint8_t*        host_stack;
     uint64_t        host_stack_phys;
 
-    // MSR Bitmap (4KB, jedes Bit = ein MSR)
+    // MSR Bitmap (4KB, each bit = one MSR)
     uint8_t*        msr_bitmap;
     uint64_t        msr_bitmap_phys;
 
-    // CPU-Nummer
+    // CPU ID
     uint32_t        cpu_id;
 
     // Status Flags
-    uint8_t         vmx_enabled;        // VMXON erfolgreich?
-    uint8_t         vmcs_active;        // VMCS geladen?
-    uint8_t         guest_running;      // Gast läuft?
+    uint8_t         vmx_enabled;        // VMXON successful?
+    uint8_t         vmcs_active;        // VMCS loaded?
+    uint8_t         guest_running;      // Guest running?
 
-    // Stealth: TSC-Offset für Timing-Kompensation
+    // Stealth: TSC offset for timing compensation
     int64_t         tsc_offset;
-    uint64_t        last_exit_tsc;      // TSC beim letzten VM-Exit
+    uint64_t        last_exit_tsc;      // TSC at last VM-Exit
     
-    // Robustes Host-CR3 (verhindert Absturz wenn aufrufender Prozess terminiert)
+    // Robust Host CR3 (prevents crash if invoking process terminates)
     void*           host_cr3_region;
     uint64_t        host_cr3_phys;
 };
 
-// Globaler Hypervisor-Zustand
+// Global Hypervisor State
 struct cosmos_hypervisor {
-    // VMX Capabilities (aus MSRs gelesen)
+    // VMX Capabilities (read from MSRs)
     uint32_t        vmcs_revision_id;
     uint32_t        vmcs_region_size;
     uint64_t        vmx_pin_based_allowed0;
@@ -500,7 +500,7 @@ struct cosmos_hypervisor {
     uint8_t         has_true_msrs;
     uint8_t         has_preempt_timer;
 
-    // EPT Root (PML4 physische Adresse)
+    // EPT Root (PML4 physical address)
     uint64_t        ept_pml4_phys;
     void*           ept_pml4_virt;
 
@@ -508,9 +508,9 @@ struct cosmos_hypervisor {
     cosmos_vcpu     vcpus[256];
     uint32_t        num_cpus;
 
-    // Globale Status-Flags
+    // Global Status Flags
     uint8_t         initialized;
-    uint8_t         stealth_mode;       // Anti-Detection aktiv?
+    uint8_t         stealth_mode;       // Anti-detection active?
 };
 
 /* ============================================================================

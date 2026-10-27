@@ -42,23 +42,23 @@ int cosmos_io_init(cosmos_io_manager* io) {
     if (!io) return -1;
     memset(io, 0, sizeof(cosmos_io_manager));
     
-    // I/O Bitmaps allozieren (jeweils 4KB)
+    // Allocate I/O Bitmaps (4KB each)
     io->io_bitmap_a = (uint8_t*)io_alloc_page(&io->io_bitmap_a_phys);
     io->io_bitmap_b = (uint8_t*)io_alloc_page(&io->io_bitmap_b_phys);
     
     if (!io->io_bitmap_a || !io->io_bitmap_b) {
-        IO_LOG("FEHLER: Konnte I/O Bitmaps nicht allozieren!");
+        IO_LOG("ERROR: Could not allocate I/O bitmaps!");
         return -2;
     }
     
-    // Standard: Alle I/O Ports erlauben (Bit = 0)
-    // Wir setzen Bits nur für Ports, die wir aktiv abfangen wollen.
-    // (Ausgenommen ein paar gefährliche Ports wie z.B. Host-Reboot, die man
-    // später evtl. global sperren sollte).
+    // Default: Allow all I/O ports (Bit = 0)
+    // We set bits only for ports we actively want to intercept.
+    // (Except for potentially dangerous ports like host reboot, which may
+    // later be blocked globally).
     memset(io->io_bitmap_a, 0, 4096);
     memset(io->io_bitmap_b, 0, 4096);
     
-    IO_LOG("I/O Manager initialisiert.");
+    IO_LOG("I/O Manager initialized.");
     return 0;
 }
 
@@ -73,7 +73,7 @@ int cosmos_io_register_port_trap(cosmos_io_manager* io, uint16_t start, uint16_t
     t->port_end = end;
     t->handler = handler;
     
-    // Bits in der I/O Bitmap setzen, damit wir VM-Exits für diese Ports bekommen
+    // Set bits in I/O bitmap to receive VM-Exits for these ports
     for (uint32_t port = start; port <= end; port++) {
         uint8_t* bitmap = (port < 0x8000) ? io->io_bitmap_a : io->io_bitmap_b;
         uint32_t offset = (port < 0x8000) ? port : (port - 0x8000);
@@ -81,7 +81,7 @@ int cosmos_io_register_port_trap(cosmos_io_manager* io, uint16_t start, uint16_t
         bitmap[offset / 8] |= (1 << (offset % 8));
     }
     
-    IO_LOG("Port-Trap registriert: 0x%04X - 0x%04X", start, end);
+    IO_LOG("Port-Trap registered: 0x%04X - 0x%04X", start, end);
     return 0;
 }
 
@@ -93,11 +93,11 @@ int cosmos_io_register_mmio_trap(cosmos_io_manager* io, uint64_t start, uint64_t
     t->addr_end = end;
     t->handler = handler;
     
-    // Hinweis: Die eigentliche "Falle" wird durch das Löschen des Present-Bits
-    // oder Read/Write-Bits in der EPT für diese Adressen gestellt.
-    // Das muss der Aufrufer (z.B. EPT Manager) separat tun!
+    // Note: The actual "trap" is set by clearing the Present bit
+    // or Read/Write bit in the EPT for these addresses.
+    // The caller (e.g. EPT Manager) must do this separately!
     
-    IO_LOG("MMIO-Trap registriert: 0x%llX - 0x%llX", 
+    IO_LOG("MMIO-Trap registered: 0x%llX - 0x%llX", 
            (unsigned long long)start, (unsigned long long)end);
     return 0;
 }
@@ -106,9 +106,9 @@ int cosmos_io_register_mmio_trap(cosmos_io_manager* io, uint64_t start, uint64_t
  *  EXIT HANDLERS
  * ============================================================================ */
 
-// Wird aufgerufen bei EXIT_REASON_IO_INSTRUCTION (Exit 30)
+// Called on EXIT_REASON_IO_INSTRUCTION (Exit 30)
 void cosmos_io_handle_port_access(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
-    // Exit Qualification dekodieren (Intel Vol. 3, 27.2.1)
+    // Decode Exit Qualification (Intel Vol. 3, 27.2.1)
     uint64_t qual = 0;
     cosmos_vmread(VMCS_EXIT_QUALIFICATION, &qual);
     
@@ -124,12 +124,12 @@ void cosmos_io_handle_port_access(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
     io_access_type type = direction ? IO_READ : IO_WRITE;
     
     if (is_string || rep) {
-        IO_LOG("WARNUNG: String I/O (INS/OUTS) wird noch nicht unterstützt! Port=0x%04X", port);
-        // Wir müssen hier eigentlich RAX/RSI/RDI/RCX updaten...
+        IO_LOG("WARNING: String I/O (INS/OUTS) not supported yet! Port=0x%04X", port);
+        // We would need to update RAX/RSI/RDI/RCX here...
         return;
     }
     
-    // Wert für OUT liegt in RAX
+    // Value for OUT is in RAX
     uint32_t value = 0;
     if (type == IO_WRITE) {
         if (size == 1) value = vcpu->guest_regs.rax & 0xFF;
@@ -137,17 +137,17 @@ void cosmos_io_handle_port_access(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
         else if (size == 4) value = vcpu->guest_regs.rax & 0xFFFFFFFF;
     }
     
-    // Handler suchen
-    // TODO: Globaler IO Manager Pointer im hv struct!
-    // Für dieses Beispiel gehen wir davon aus, dass wir ihn im hv haben.
-    // Wir ignorieren Handler erstmal und loggen nur:
+    // Find handler
+    // TODO: Global IO Manager pointer in hv struct!
+    // For this example we assume it is in hv.
+    // We ignore handlers for now and only log:
     
     // IO_LOG("I/O %s Port=0x%04X Size=%u Val=0x%X", 
     //        type == IO_READ ? "IN " : "OUT", port, size, value);
     
-    // Wert für IN nach RAX schreiben
+    // Write value for IN to RAX
     if (type == IO_READ) {
-        // Standardmäßig lesen wir "Hardware fehlt" (0xFF)
+        // By default return "hardware absent" (0xFF)
         value = 0xFFFFFFFF;
         
         if (size == 1) {
@@ -160,14 +160,14 @@ void cosmos_io_handle_port_access(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
     }
 }
 
-// Wird aufgerufen bei EXIT_REASON_EPT_VIOLATION (Exit 48)
+// Called on EXIT_REASON_EPT_VIOLATION (Exit 48)
 void cosmos_io_handle_mmio_access(cosmos_hypervisor* hv, cosmos_vcpu* vcpu, uint64_t guest_phys) {
-    // EPT Violation für MMIO Emulation
-    // Wir müssen die Instruktion dekodieren, um herauszufinden ob es ein READ oder WRITE ist
-    // und wie groß der Zugriff ist. Das erfordert einen x86 Instruction Decoder.
+    // EPT Violation for MMIO Emulation
+    // We need to decode the instruction to determine if it is READ or WRITE
+    // and access size. This requires an x86 instruction decoder.
     
-    IO_LOG("MMIO Trap an GPA: 0x%llX (Instruktion muss dekodiert werden!)", 
+    IO_LOG("MMIO Trap at GPA: 0x%llX (Instruction must be decoded!)", 
            (unsigned long long)guest_phys);
            
-    // Im Moment haben wir keinen Decoder. Wir loggen nur.
+    // Currently no decoder available. Only logging.
 }

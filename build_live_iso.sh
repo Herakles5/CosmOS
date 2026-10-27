@@ -3,46 +3,46 @@ set -e
 
 
 echo "=========================================="
-echo "    CosmOS Build-System"
+echo "    CosmOS Live Build System              "
 echo "=========================================="
-echo "Welche ISO-Version möchtest du bauen?"
-echo " [1] FAST MODE    (Gzip: Baut in Sekunden, ca. 1.2 GB, für schnelle Tests)"
-echo " [2] RELEASE MODE (XZ Max: Dauert sehr lange, kleinste Datei für Hardware)"
-read -t 5 -p "Wähle 1 oder 2 (Standard ist 1 nach 5 Sekunden): " BUILD_MODE || BUILD_MODE="1"
+echo "Which ISO version would you like to build?"
+echo " [1] FAST MODE    (Zstd: Builds in seconds, ~1.2 GB, ideal for quick testing)"
+echo " [2] RELEASE MODE (XZ Max: Maximum compression, smallest footprint for hardware)"
+read -t 5 -p "Select 1 or 2 (Default is 1 after 5 seconds): " BUILD_MODE || BUILD_MODE="1"
 if [ -z "$BUILD_MODE" ]; then BUILD_MODE="1"; fi
 
 if [ "$BUILD_MODE" == "2" ]; then
-    # Extrem starke Komprimierung mit 1MB Blockgröße (Maximales Limit). Speicher limitiert, um Abstürze zu vermeiden!
+    # Ultra-high compression with 1MB block size. Memory limited to 2GB to prevent crashes!
     COMP_ARGS="-comp xz -b 1M -Xbcj x86 -mem 2G"
-    echo "-> RELEASE MODE aktiviert. Hol dir einen Kaffee, das dauert jetzt..."
+    echo "-> RELEASE MODE activated. Grabbing a coffee, this will take some time..."
     sleep 2
 else
-    # Rasend schnelle Komprimierung
+    # High-speed compression
     COMP_ARGS="-comp zstd -Xcompression-level 3"
-    echo "-> FAST MODE aktiviert. Turbogang eingelegt!"
+    echo "-> FAST MODE activated. Turbo speed engaged!"
     sleep 1
 fi
 
 echo "------------------------------------------"
-echo "-> Erstelle automatisches Backup..."
+echo "-> Creating automated backup..."
 BACKUP_DIR="backups/cosmos_$(date +%Y-%m-%d_%H-%M-%S)"
 mkdir -p "$BACKUP_DIR"
 cp *.cpp *.h *.s *.ld "$BACKUP_DIR/" 2>/dev/null || true
-echo "-> Quellcodes sicher kopiert nach: $BACKUP_DIR"
+echo "-> Source codes safely backed up to: $BACKUP_DIR"
 
 echo "------------------------------------------"
-echo "0. Alten Müll aufräumen..."
+echo "0. Cleaning up old build artifacts..."
 
 echo "1. Cleaning up old build files..."
 rm -f CosmOS.iso
 
-# FIX: /tmp mit dev+exec remounten, damit debootstrap Device-Nodes erstellen kann!
+# FIX: Remount /tmp with dev+exec permissions so debootstrap can create device nodes!
 mount -o remount,dev,exec /tmp 2>/dev/null || true
 
 BUILD_DIR="$PWD/build_tmp"
 mkdir -p "$BUILD_DIR"
 
-# Alte Build-Daten im Image löschen - SICHERSTELLEN DASS NICHTS GEMOUNTET IST!
+# Clean up previous build files - ENSURE NOTHING REMAINS MOUNTED!
 umount "$BUILD_DIR/live_rootfs/dev/pts" 2>/dev/null || true
 umount "$BUILD_DIR/live_rootfs/dev" 2>/dev/null || true
 umount "$BUILD_DIR/live_rootfs/sys" 2>/dev/null || true
@@ -78,7 +78,7 @@ chroot $ROOTFS /bin/bash << 'EOF'
 set -e
 export DEBIAN_FRONTEND=noninteractive
 
-# Vollständige Paketquellen eintragen (verhindert "Unable to locate package")
+# Populate complete package sources (prevents "Unable to locate package")
 rm -f /etc/apt/sources.list.d/ubuntu.sources
 cat << 'SOURCES' > /etc/apt/sources.list
 deb [trusted=yes] http://archive.ubuntu.com/ubuntu/ noble main restricted universe multiverse
@@ -86,11 +86,11 @@ deb [trusted=yes] http://archive.ubuntu.com/ubuntu/ noble-updates main restricte
 deb [trusted=yes] http://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse
 SOURCES
 
-# TURBO-BOOST: Deaktiviere fsync in dpkg. Verhindert extreme I/O-Lags auf dem USB/exFAT-Laufwerk!
+# TURBO-BOOST: Disable fsync in dpkg. Prevents heavy I/O lags on USB/exFAT storage!
 echo "force-unsafe-io" > /etc/dpkg/dpkg.cfg.d/force-unsafe-io
 
-# FIX FÜR exFAT/USB-LAUFWERKE: Verhindere, dass apt die Rechte abgibt. 
-# Der eingeschränkte _apt User darf sonst wegen den exFAT-Ordnerrechten nicht auf gpgv oder /dev/null zugreifen!
+# FIX FOR exFAT/USB DRIVES: Prevent apt from dropping root privileges.
+# Unprivileged _apt user cannot access gpgv or /dev/null due to exFAT folder permission masks!
 echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99sandbox
 
 apt-get update
@@ -102,7 +102,7 @@ echo "de_DE.UTF-8 UTF-8" >> /etc/locale.gen
 locale-gen
 update-locale LANG=en_US.UTF-8
 
-# === COSMOS BASIS & INSTALLER PAKETE ===
+# === COSMOS BASE & INSTALLER PACKAGES ===
 apt-get install -y --no-install-recommends \
     linux-image-generic live-boot systemd systemd-sysv alsa-utils pipewire pipewire-pulse \
     xserver-xorg xserver-xorg-video-all xserver-xorg-input-all xinit \
@@ -120,7 +120,7 @@ apt-get install -y --no-install-recommends \
     debootstrap squashfs-tools xorriso mtools \
     udisks2 gvfs gvfs-backends polkitd
 
-# === FIREFOX (OHNE SNAP VIA MOZILLA PPA) ===
+# === FIREFOX (WITHOUT SNAP VIA MOZILLA PPA) ===
 rm -f /etc/resolv.conf
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 install -d -m 0755 /etc/apt/keyrings
@@ -132,33 +132,24 @@ Pin-Priority: 1000' > /etc/apt/preferences.d/mozilla
 apt-get update
 apt-get install -y firefox
 
-# === ZEROTIER NETWORK (P2P VPN) ===
-echo "-> Installiere ZeroTier (CosmOS Network)..."
-# Um Fehler beim Curl/GPG zu vermeiden, installieren wir es über das offizielle Script
+# === ZEROTIER NETWORK (P2P MESH VPN) ===
+echo "-> Installing ZeroTier (CosmOS Network)..."
 apt-get install -y curl gpg
 curl -s https://install.zerotier.com | bash
 
-# === GOOGLE ANTIGRAVITY (KI ASSISTANT) DIREKT IN DIE ISO BACKEN ===
-echo "-> Lade KI-Agenten herunter..."
-# URL existiert nicht, daher vorerst deaktiviert, um Fehler zu vermeiden.
-# wget -qO /tmp/antigravity.deb https://dl.google.com/linux/direct/google-antigravity-stable_current_amd64.deb
-# echo "-> Installiere KI-Agenten..."
-# dpkg -i /tmp/antigravity.deb || apt-get install -f -y
-# rm -f /tmp/antigravity.deb
-
 # === STEAM (Gaming Platform) ===
-echo "-> Installiere Steam..."
+echo "-> Installing Steam..."
 dpkg --add-architecture i386
 apt-get update
 apt-get install -y --no-install-recommends steam-installer || echo "WARN: Steam install failed, continuing..."
 
 # === WINE (Windows Compatibility Layer for EA/Windows Games) ===
-echo "-> Installiere Wine..."
+echo "-> Installing Wine..."
 apt-get install -y --no-install-recommends \
     wine64 wine32 winetricks || echo "WARN: Wine install failed, continuing..."
 
 # === LUTRIS (Game Manager for EA App + GOG + Epic) ===
-echo "-> Installiere Lutris..."
+echo "-> Installing Lutris..."
 apt-get install -y --no-install-recommends \
     lutris pciutils || echo "WARN: Lutris install failed, continuing..."
 
@@ -168,27 +159,27 @@ ln -sf /usr/games/lutris /usr/bin/lutris || true
 ln -sf /usr/games/steam /usr/bin/steam || true
 
 # === GPU DRIVERS (Vulkan support for Proton/Wine) ===
-echo "-> Installiere GPU/Vulkan Treiber..."
+echo "-> Installing GPU/Vulkan Drivers..."
 apt-get install -y --no-install-recommends \
     mesa-vulkan-drivers vulkan-tools libvulkan1 \
     mesa-utils || echo "WARN: Vulkan install failed, continuing..."
 
 apt-get clean
-# PROFI-TRICK: Löscht den ungenutzten Paket-Cache. Spart riesige Mengen an Platz in der finalen ISO!
+# Clean unneeded package cache to save space in final ISO
 rm -rf /var/lib/apt/lists/*
 rm -rf /tmp/*
 EOF
 
-# === NETZWERK-KONFIGURATION (LAN + WiFi + Bluetooth) ===
+# === NETWORK CONFIGURATION (LAN + WiFi + Bluetooth) ===
 echo "4.5 Configuring Networking (LAN + WiFi + BT)..."
 
-# Nur loopback in interfaces, alles andere managt NetworkManager!
+# Only loopback in interfaces, everything else is managed by NetworkManager
 mkdir -p $ROOTFS/etc/network
 echo "auto lo" > $ROOTFS/etc/network/interfaces
 echo "iface lo inet loopback" >> $ROOTFS/etc/network/interfaces
 
-# NetworkManager fuer ALLES (LAN, WiFi, BT) aktivieren!
-# Alle anderen Netzwerk-Dienste ABSCHALTEN damit nichts kollidiert!
+# Enable NetworkManager for all devices (LAN, WiFi, BT)
+# Disable other networking daemons to prevent conflicts
 chroot $ROOTFS /usr/bin/systemctl enable NetworkManager || true
 chroot $ROOTFS /usr/bin/systemctl disable systemd-networkd || true
 chroot $ROOTFS /usr/bin/systemctl disable systemd-resolved || true
@@ -196,10 +187,10 @@ chroot $ROOTFS /usr/bin/systemctl mask systemd-networkd || true
 chroot $ROOTFS /usr/bin/systemctl mask systemd-resolved || true
 chroot $ROOTFS /usr/bin/systemctl mask systemd-networkd-wait-online.service || true
 
-# Loesche alte systemd-networkd Reste
+# Remove leftover systemd-networkd configurations
 rm -rf $ROOTFS/etc/systemd/network/*
 
-# NetworkManager: ALLE Interfaces verwalten (nicht nur WiFi)!
+# NetworkManager: Manage all interfaces (not just WiFi)
 mkdir -p $ROOTFS/etc/NetworkManager/conf.d
 cat > $ROOTFS/etc/NetworkManager/conf.d/10-manage-all.conf << 'NMEOF'
 [keyfile]
@@ -213,7 +204,7 @@ wifi.cloned-mac-address=permanent
 wifi.scan-rand-mac-address=no
 NMEOF
 
-# DHCP: FritzBox-kompatibel! Immer die echte MAC-Adresse senden!
+# DHCP: Use permanent MAC address for router compatibility
 mkdir -p $ROOTFS/etc/NetworkManager/conf.d
 cat > $ROOTFS/etc/NetworkManager/conf.d/20-dhcp-mac.conf << 'DHCPEOF'
 [main]
@@ -224,7 +215,7 @@ dhcp-client-id=mac
 method=auto
 DHCPEOF
 
-# DNS: Hardcoded Google DNS als Fallback, falls der Router keinen DNS liefert!
+# DNS: Fallback DNS resolvers
 rm -f $ROOTFS/etc/resolv.conf
 echo "nameserver 8.8.8.8" > $ROOTFS/etc/resolv.conf
 echo "nameserver 1.1.1.1" >> $ROOTFS/etc/resolv.conf
@@ -239,7 +230,7 @@ rm -f $ROOTFS/lib/systemd/system/apt-daily-upgrade.service
 echo "5. Setting up Auto-Boot into MeinOS..."
 mkdir -p $ROOTFS/opt/meinos
 cp meinos_v2.elf $ROOTFS/opt/meinos/meinos.elf
-# APP.BIN als Trigger-Datei anlegen (Inhalt egal - die Engine ist in meinos.elf einkompiliert)
+# Create APP.BIN trigger file
 echo "MEINOS_APP_TRIGGER" > $ROOTFS/opt/meinos/APP.BIN
 cp ROMS.tba $ROOTFS/opt/meinos/ || true
 cp -r sounds $ROOTFS/opt/meinos/ || true
@@ -256,17 +247,17 @@ echo "-> Copying AI_Desktop (Whisper, Piper, Models) to ISO..."
 mkdir -p $ROOTFS/root/coding/AI_Desktop
 cp -r /root/coding/AI_Desktop/* $ROOTFS/root/coding/AI_Desktop/ || true
 
-echo "-> Copying Ollama KI Backend to ISO..."
+echo "-> Copying Ollama AI Backend to ISO..."
 mkdir -p $ROOTFS/usr/local/bin
 cp /usr/local/bin/ollama $ROOTFS/usr/local/bin/ollama || true
 chmod +x $ROOTFS/usr/local/bin/ollama || true
 mkdir -p $ROOTFS/usr/share/ollama
 cp -r /usr/share/ollama/* $ROOTFS/usr/share/ollama/ || true
 
-echo "-> Copying VM ISOs and XMLs to Live ISO..."
+echo "-> Copying VM ISOs, OpenCore EFI, and XMLs to Live ISO..."
 mkdir -p $ROOTFS/var/lib/libvirt/images
-# Copy everything from /var/lib/libvirt/images EXCEPT .qcow2 virtual disks (as they are created dynamically)
-rsync -av --exclude="*.qcow2" /var/lib/libvirt/images/ $ROOTFS/var/lib/libvirt/images/ || true
+# Copy VM assets: include OpenCore.qcow2 bootloader, exclude large disk images (macOS.qcow2, Win10_Gaming.qcow2)
+rsync -av --include="*/" --include="OpenCore.qcow2" --exclude="*.qcow2" /var/lib/libvirt/images/ $ROOTFS/var/lib/libvirt/images/ || true
 
 cat > $ROOTFS/root/.xinitrc << 'EOF'
 #!/bin/sh
@@ -274,17 +265,16 @@ xset -dpms
 xset s off
 xset s noblank
 
-# Openbox Keybinding: DRUCK-Taste = Screenshot (systemweit!)
+# Openbox Keybinding: PrintScreen = Screenshot
 mkdir -p $ROOTFS/root/.config/openbox
 cp $ROOTFS/etc/xdg/openbox/rc.xml $ROOTFS/root/.config/openbox/rc.xml
-# Ersetze die Standard "scrot" Befehle durch "xfce4-screenshooter"
 sed -i 's/<command>scrot -s<\/command>/<command>xfce4-screenshooter -w<\/command>/g' $ROOTFS/root/.config/openbox/rc.xml
 sed -i 's/<command>scrot<\/command>/<command>xfce4-screenshooter -f<\/command>/g' $ROOTFS/root/.config/openbox/rc.xml
 
-# Startet den winzigen Window Manager im Hintergrund, damit Tastaturen in Apps funktionieren!
+# Start lightweight window manager in background for application keyboard focus
 openbox &
 
-# Soundkarte entmuten und Lautstaerke auf 100% setzen! (ALSA Mute-Bug fix)
+# Unmute soundcard and set master volume to 100%
 amixer sset Master unmute || true
 amixer sset Master 100% || true
 amixer sset PCM unmute || true
@@ -295,7 +285,7 @@ if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
     eval $(dbus-launch --sh-syntax)
 fi
 
-# XDG_RUNTIME_DIR muss gesetzt sein damit Firefox den PulseAudio-Socket findet!
+# Set XDG_RUNTIME_DIR so audio and desktop sockets are reachable
 export XDG_RUNTIME_DIR=/run/user/0
 mkdir -p $XDG_RUNTIME_DIR
 chmod 700 $XDG_RUNTIME_DIR
@@ -338,7 +328,7 @@ chroot $ROOTFS /usr/bin/systemctl set-default graphical.target || true
 
 chroot $ROOTFS passwd -d root
 
-# Auto-login directly as root on all TTYs (No password / login prompt ever)
+# Auto-login directly as root on all TTYs (passwordless)
 mkdir -p $ROOTFS/etc/systemd/system/getty@.service.d $ROOTFS/etc/systemd/system/getty@tty1.service.d
 cat << 'GETTYEOF' > $ROOTFS/etc/systemd/system/getty@.service.d/override.conf
 [Service]
@@ -364,8 +354,8 @@ cp $ROOTFS/boot/initrd.img-* $ISO_DIR/boot/initrd.img
 
 echo "Compressing filesystem (This will also take a while)..."
 
-# HIER GREIFT JETZT DIE VARIABLE $COMP_ARGS AUS DEM MENÜ
-# Wir lassen einen CPU-Kern frei (-processors 3), damit dein Desktop nicht mehr einfriert!
+# Apply compression settings selected in menu
+# Leave one CPU core free (-processors 3) to keep desktop responsive
 mksquashfs $ROOTFS $ISO_DIR/live/filesystem.squashfs $COMP_ARGS -noappend -processors 3 -e "proc/*" "sys/*" "dev/*" "tmp/*" "run/*"
 
 cat > $ISO_DIR/boot/grub/grub.cfg << 'EOF'
@@ -384,10 +374,10 @@ menuentry "MeinOS Live" {
 EOF
 
 grub-mkrescue -o "$BUILD_DIR/CosmOS_tmp.iso" $ISO_DIR -iso-level 3 -iso-level 3
-echo "-> Kopiere ISO auf SSD in sicheren, synchronen Blöcken (verhindert exFAT-Freeze!)..."
+echo "-> Writing ISO to disk in synchronous blocks..."
 dd if="$BUILD_DIR/CosmOS_tmp.iso" of=CosmOS.iso bs=4M oflag=sync status=progress
 rm -f "$BUILD_DIR/CosmOS_tmp.iso"
 
 echo "=========================================="
-echo "          ISO ERFOLGREICH GEBAUT          "
+echo "          ISO BUILT SUCCESSFULLY          "
 echo "=========================================="

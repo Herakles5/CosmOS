@@ -3,15 +3,15 @@
  *  COSMOS PCIe PASSTHROUGH - Implementation
  * ============================================================================
  *
- *  Phase 2.1: GPU Passthrough für NVIDIA GeForce GTX 1060 6GB
+ *  Phase 2.1: GPU Passthrough for NVIDIA GeForce GTX 1060 6GB
  *
- *  Ablauf:
- *  1. PCI Config Space scannen und BARs dekodieren
- *  2. GPU von Linux-Treiber trennen (sysfs unbind)
- *  3. GPU BARs in EPT mappen (UC für MMIO, WC für VRAM)
- *  4. VT-d Root/Context Tables für DMA-Remapping aufbauen
- *  5. MSI-Interrupts konfigurieren
- *  6. Gerät dem Gast zuweisen
+ *  Workflow:
+ *  1. Scan PCI Config Space and decode BARs
+ *  2. Unbind GPU from Linux driver (sysfs unbind)
+ *  3. Map GPU BARs into EPT (UC for MMIO, WC for VRAM)
+ *  4. Construct VT-d Root/Context Tables for DMA remapping
+ *  5. Configure MSI interrupts
+ *  6. Assign device to guest
  * ============================================================================
  */
 
@@ -30,7 +30,7 @@
 
 #define PT_LOG(fmt, ...) printf("[PASSTHROUGH] " fmt "\n", ##__VA_ARGS__)
 
-// Linux: PCI Config Space via sysfs lesen
+// Linux: Read PCI Config Space via sysfs
 static uint32_t pci_read_config32(uint8_t bus, uint8_t dev, uint8_t func, uint16_t offset) {
     char path[256];
     snprintf(path, sizeof(path), "/sys/bus/pci/devices/0000:%02x:%02x.%x/config",
@@ -67,7 +67,7 @@ static uint8_t pci_read_config8(uint8_t bus, uint8_t dev, uint8_t func, uint16_t
     return val;
 }
 
-// Linux: BAR-Adressen und Größen aus sysfs/resource lesen
+// Linux: Read BAR addresses and sizes from sysfs/resource
 static int pci_read_bars_sysfs(uint8_t bus, uint8_t dev, uint8_t func, pci_bar_info* bars) {
     char path[256];
     snprintf(path, sizeof(path), "/sys/bus/pci/devices/0000:%02x:%02x.%x/resource",
@@ -97,14 +97,14 @@ static int pci_read_bars_sysfs(uint8_t bus, uint8_t dev, uint8_t func, pci_bar_i
     return count;
 }
 
-// Linux: Treiber vom Gerät trennen
+// Linux: Unbind driver from device
 static int pci_unbind_driver(uint8_t bus, uint8_t dev, uint8_t func) {
     char path[256];
     snprintf(path, sizeof(path), "/sys/bus/pci/devices/0000:%02x:%02x.%x/driver/unbind",
              bus, dev, func);
     int fd = open(path, O_WRONLY);
     if (fd < 0) {
-        PT_LOG("Kein aktiver Treiber für %02x:%02x.%x (oder bereits ungebunden)", bus, dev, func);
+        PT_LOG("No active driver for %02x:%02x.%x (or already unbound)", bus, dev, func);
         return 0;
     }
     char addr[16];
@@ -114,10 +114,10 @@ static int pci_unbind_driver(uint8_t bus, uint8_t dev, uint8_t func) {
     return written > 0 ? 0 : -1;
 }
 
-// Linux: VFIO oder vfio-pci Treiber binden
+// Linux: Bind VFIO or vfio-pci driver
 static int pci_bind_vfio(uint8_t bus, uint8_t dev, uint8_t func,
                          uint16_t vendor, uint16_t device) {
-    // Schritt 1: vfio-pci Driver Override
+    // Step 1: vfio-pci Driver Override
     char path[256];
     snprintf(path, sizeof(path), 
              "/sys/bus/pci/devices/0000:%02x:%02x.%x/driver_override",
@@ -128,16 +128,16 @@ static int pci_bind_vfio(uint8_t bus, uint8_t dev, uint8_t func,
         close(fd);
     }
     
-    // Schritt 2: New ID für vfio-pci
+    // Step 2: New ID for vfio-pci
     fd = open("/sys/bus/pci/drivers/vfio-pci/new_id", O_WRONLY);
     if (fd >= 0) {
         char id_str[32];
         snprintf(id_str, sizeof(id_str), "%04x %04x", vendor, device);
-        if (write(fd, id_str, strlen(id_str)) < 0) {}
+        if (write(id_str, strlen(id_str)) < 0) {}
         close(fd);
     }
     
-    // Schritt 3: Probe
+    // Step 3: Probe
     fd = open("/sys/bus/pci/drivers_probe", O_WRONLY);
     if (fd >= 0) {
         char addr[16];
@@ -149,7 +149,7 @@ static int pci_bind_vfio(uint8_t bus, uint8_t dev, uint8_t func,
     return 0;
 }
 
-// Page-Allokation Wrapper
+// Page Allocation Wrapper
 static void* pt_alloc_page(uint64_t* out_phys) {
     void* p = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
@@ -160,7 +160,7 @@ static void* pt_alloc_page(uint64_t* out_phys) {
 }
 
 #else
-// Bare Metal: PCI Config über I/O Ports oder MMCONFIG
+// Bare Metal: PCI Config via I/O Ports or MMCONFIG
 extern "C" int printf(const char* fmt, ...);
 extern "C" int snprintf(char* str, unsigned long size, const char* format, ...);
 extern "C" void* memset(void*, int, unsigned long);
@@ -199,7 +199,7 @@ static void* pt_alloc_page(uint64_t* out_phys) {
     return cosmos_alloc_page_aligned(out_phys);
 }
 
-// Bare Metal: BAR-Größe durch Config-Space-Probe bestimmen
+// Bare Metal: Determine BAR size via Config Space probe
 static uint64_t pci_probe_bar_size(uint8_t bus, uint8_t dev, uint8_t func, uint8_t bar_idx) {
     uint16_t offset = PCI_BAR0 + bar_idx * 4;
     uint32_t original = pci_read_config32(bus, dev, func, offset);
@@ -227,16 +227,16 @@ static int pci_bind_vfio(uint8_t, uint8_t, uint8_t, uint16_t, uint16_t) { return
 /* ============================================================================
  *  CAPABILITY CHAIN WALKER
  *
- *  PCI Capabilities sind eine verlinkte Liste im Config Space.
- *  Jede Capability hat: [ID:8][Next:8][Data:variable]
+ *  PCI Capabilities are a linked list in Config Space.
+ *  Each Capability has: [ID:8][Next:8][Data:variable]
  * ============================================================================ */
 static uint16_t pci_find_capability(uint8_t bus, uint8_t dev, uint8_t func, uint8_t cap_id) {
     uint16_t status = pci_read_config16(bus, dev, func, PCI_STATUS);
-    if (!(status & 0x10)) return 0;  // Keine Capabilities
+    if (!(status & 0x10)) return 0;  // No capabilities
     
     uint8_t ptr = pci_read_config8(bus, dev, func, PCI_CAP_PTR) & 0xFC;
     
-    int max_walk = 48;  // Schutz gegen Endlosschleifen
+    int max_walk = 48;  // Protection against infinite loops
     while (ptr && max_walk--) {
         uint8_t id = pci_read_config8(bus, dev, func, ptr);
         if (id == cap_id) return ptr;
@@ -265,7 +265,7 @@ int cosmos_pt_init(cosmos_passthrough_mgr* mgr) {
 /* ============================================================================
  *  PCI DEVICE SCANNER
  *
- *  Liest Config Space, dekodiert BARs, findet MSI Capabilities.
+ *  Reads Config Space, decodes BARs, finds MSI Capabilities.
  * ============================================================================ */
 int cosmos_pt_scan_device(cosmos_passthrough_mgr* mgr,
                           uint8_t bus, uint8_t dev, uint8_t func) {
@@ -275,7 +275,7 @@ int cosmos_pt_scan_device(cosmos_passthrough_mgr* mgr,
     uint16_t device = pci_read_config16(bus, dev, func, PCI_DEVICE_ID);
     
     if (vendor == 0xFFFF || vendor == 0x0000) {
-        PT_LOG("Kein Gerät bei %02x:%02x.%x", bus, dev, func);
+        PT_LOG("No device at %02x:%02x.%x", bus, dev, func);
         return -1;
     }
     
@@ -290,14 +290,14 @@ int cosmos_pt_scan_device(cosmos_passthrough_mgr* mgr,
     pdev->subsystem_vendor = pci_read_config16(bus, dev, func, PCI_SUBSYSTEM_VENDOR);
     pdev->subsystem_id = pci_read_config16(bus, dev, func, PCI_SUBSYSTEM_ID);
     
-    // Name zusammenbauen
+    // Assemble name
     snprintf(pdev->name, sizeof(pdev->name), "PCI %02x:%02x.%x [%04x:%04x]",
              bus, dev, func, vendor, device);
     
     PT_LOG("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    PT_LOG("Scanne: %s", pdev->name);
+    PT_LOG("Scanning: %s", pdev->name);
     
-    // Spezielle Namen für bekannte Geräte
+    // Special names for known devices
     if (vendor == 0x10de && device == 0x1c03) {
         snprintf(pdev->name, sizeof(pdev->name), "NVIDIA GeForce GTX 1060 6GB");
     } else if (vendor == 0x10de && device == 0x10f1) {
@@ -309,11 +309,11 @@ int cosmos_pt_scan_device(cosmos_passthrough_mgr* mgr,
     PT_LOG("  Device:   0x%04X", device);
     PT_LOG("  SubSys:   0x%04X:0x%04X", pdev->subsystem_vendor, pdev->subsystem_id);
     
-    // === BARs lesen ===
+    // === Read BARs ===
 #ifdef __linux__
     pdev->num_bars = pci_read_bars_sysfs(bus, dev, func, pdev->bars);
 #else
-    // Bare Metal: BARs manuell aus Config Space lesen
+    // Bare Metal: Read BARs manually from Config Space
     pdev->num_bars = 0;
     for (int i = 0; i < 6; i++) {
         uint32_t bar_val = pci_read_config32(bus, dev, func, PCI_BAR0 + i * 4);
@@ -372,18 +372,18 @@ int cosmos_pt_scan_device(cosmos_passthrough_mgr* mgr,
         }
     }
     
-    // === MSI Capability suchen ===
+    // === Search MSI Capability ===
     pdev->msi_cap_offset = pci_find_capability(bus, dev, func, PCI_CAP_ID_MSI);
     pdev->has_msi = (pdev->msi_cap_offset != 0) ? 1 : 0;
     
     pdev->msix_cap_offset = pci_find_capability(bus, dev, func, PCI_CAP_ID_MSIX);
     pdev->has_msix = (pdev->msix_cap_offset != 0) ? 1 : 0;
     
-    PT_LOG("  MSI:    %s (offset=0x%X)", pdev->has_msi ? "JA ✓" : "NEIN", pdev->msi_cap_offset);
-    PT_LOG("  MSI-X:  %s (offset=0x%X)", pdev->has_msix ? "JA ✓" : "NEIN", pdev->msix_cap_offset);
+    PT_LOG("  MSI:    %s (offset=0x%X)", pdev->has_msi ? "YES ✓" : "NO", pdev->msi_cap_offset);
+    PT_LOG("  MSI-X:  %s (offset=0x%X)", pdev->has_msix ? "YES ✓" : "NO", pdev->msix_cap_offset);
     
     mgr->num_devices++;
-    PT_LOG("  → Gerät #%u registriert", mgr->num_devices - 1);
+    PT_LOG("  → Device #%u registered", mgr->num_devices - 1);
     
     return mgr->num_devices - 1;
 }
@@ -391,10 +391,10 @@ int cosmos_pt_scan_device(cosmos_passthrough_mgr* mgr,
 /* ============================================================================
  *  ATTACH DEVICE TO GUEST
  *
- *  Das Herzstück: Weist ein PCI-Gerät dem Gast zu.
- *  1. Treiber trennen
- *  2. BARs in EPT mappen
- *  3. MSI konfigurieren
+ *  Core: Assigns a PCI device to the guest.
+ *  1. Unbind driver
+ *  2. Map BARs into EPT
+ *  3. Configure MSI
  * ============================================================================ */
 int cosmos_pt_attach_device(cosmos_passthrough_mgr* mgr,
                             cosmos_hypervisor* hv,
@@ -407,23 +407,23 @@ int cosmos_pt_attach_device(cosmos_passthrough_mgr* mgr,
     PT_LOG("ATTACH: %s", pdev->name);
     PT_LOG("═══════════════════════════════════════════");
     
-    // --- Schritt 1: Linux-Treiber trennen ---
-    PT_LOG("Schritt 1: Treiber trennen...");
+    // --- Step 1: Unbind Linux driver ---
+    PT_LOG("Step 1: Unbinding driver...");
     int result = pci_unbind_driver(pdev->bus, pdev->device, pdev->function);
     if (result == 0) {
-        PT_LOG("  Treiber erfolgreich getrennt (oder war nicht gebunden)");
+        PT_LOG("  Driver successfully unbound (or was not bound)");
     } else {
-        PT_LOG("  WARNUNG: Treiber konnte nicht getrennt werden!");
+        PT_LOG("  WARNING: Driver could not be unbound!");
     }
     
-    // --- Schritt 2: BARs in EPT mappen ---
-    PT_LOG("Schritt 2: BARs in EPT mappen...");
+    // --- Step 2: Map BARs into EPT ---
+    PT_LOG("Step 2: Mapping BARs into EPT...");
     
     for (int i = 0; i < pdev->num_bars; i++) {
         pci_bar_info* bar = &pdev->bars[i];
         
         if (bar->type == 1) {
-            // I/O BAR: Wird über I/O-Bitmap im VMCS kontrolliert
+            // I/O BAR: Controlled via I/O Bitmap in VMCS
             PT_LOG("  BAR%d: I/O Port 0x%X (%llu bytes) → I/O Bitmap",
                    bar->bar_index,
                    (uint32_t)bar->base_addr,
@@ -431,33 +431,33 @@ int cosmos_pt_attach_device(cosmos_passthrough_mgr* mgr,
             continue;
         }
         
-        // Memory BAR: In EPT mappen
-        // GPU VRAM (prefetchable) → Write-Combining für Performance
-        // GPU MMIO (non-prefetch) → Uncacheable für Korrektheit
+        // Memory BAR: Map into EPT
+        // GPU VRAM (prefetchable) → Write-Combining for performance
+        // GPU MMIO (non-prefetch) → Uncacheable for correctness
         uint64_t ept_flags;
         const char* cache_str;
         
         if (bar->prefetchable) {
-            // VRAM: Write-Combining (beste GPU-Performance!)
+            // VRAM: Write-Combining (best GPU performance!)
             ept_flags = EPT_RWX | (EPT_MT_WC << EPT_MEMORY_TYPE_SHIFT) | EPT_IGNORE_PAT;
             cache_str = "Write-Combining";
         } else {
-            // MMIO Register: Uncacheable (MUSS sein!)
+            // MMIO Register: Uncacheable (MUST be!)
             ept_flags = EPT_RWX | (EPT_MT_UC << EPT_MEMORY_TYPE_SHIFT) | EPT_IGNORE_PAT;
             cache_str = "Uncacheable";
         }
         
-        // Mappe jede 2MB-Seite der BAR in die EPT
-        // GPA == HPA (Identity Map → Guest sieht die echte Hardware)
+        // Map each 2MB page of the BAR into EPT
+        // GPA == HPA (Identity Map → Guest sees real hardware)
         uint64_t bar_start = bar->base_addr & ~(EPT_PAGE_SIZE_2M - 1); // 2MB align
         uint64_t bar_end = (bar->base_addr + bar->size + EPT_PAGE_SIZE_2M - 1) 
                            & ~(EPT_PAGE_SIZE_2M - 1);
         
         uint32_t pages_mapped = 0;
         for (uint64_t addr = bar_start; addr < bar_end; addr += EPT_PAGE_SIZE_2M) {
-            // EPT Page-Flags für diese Adresse setzen
-            // In der Identity Map sind die Pages schon da, wir müssen nur
-            // die Cache-Flags anpassen
+            // Set EPT page flags for this address
+            // In identity map, pages already exist; we only need
+            // to adjust cache flags
             cosmos_ept_set_page_flags(hv, addr, ept_flags);
             pages_mapped++;
         }
@@ -477,21 +477,21 @@ int cosmos_pt_attach_device(cosmos_passthrough_mgr* mgr,
         }
     }
     
-    // --- Schritt 3: MSI Interrupt konfigurieren ---
+    // --- Step 3: Configure MSI interrupt ---
     if (pdev->has_msi) {
-        PT_LOG("Schritt 3: MSI Interrupts konfigurieren...");
+        PT_LOG("Step 3: Configuring MSI interrupts...");
         cosmos_pt_setup_msi(mgr, pdev, 0x30, 0);  // Vector 0x30, CPU 0
     }
     
-    // --- Schritt 4: PCI Command Register konfigurieren ---
-    PT_LOG("Schritt 4: PCI Command Register...");
-    // Bus Master + Memory Space + I/O Space aktivieren
-    // Das muss der Gast eigentlich selbst tun, aber wir bereiten es vor
+    // --- Step 4: Configure PCI Command Register ---
+    PT_LOG("Step 4: PCI Command Register...");
+    // Enable Bus Master + Memory Space + I/O Space
+    // The guest must do this itself, but we prepare it
     
     pdev->attached = 1;
     
     PT_LOG("═══════════════════════════════════════════");
-    PT_LOG("★ %s ERFOLGREICH AN GAST ZUGEWIESEN ★", pdev->name);
+    PT_LOG("★ %s SUCCESSFULLY ASSIGNED TO GUEST ★", pdev->name);
     PT_LOG("═══════════════════════════════════════════");
     
     return 0;
@@ -505,22 +505,22 @@ int cosmos_pt_detach_device(cosmos_passthrough_mgr* mgr, uint32_t device_index) 
     
     passthrough_device* pdev = &mgr->devices[device_index];
     
-    PT_LOG("Trenne %s vom Gast...", pdev->name);
+    PT_LOG("Detaching %s from guest...", pdev->name);
     
-    // BARs aus EPT entfernen (Flags auf 0 setzen → nicht zugänglich)
-    // TODO: EPT entries für die BARs invalidieren
+    // Remove BARs from EPT (set flags to 0 → inaccessible)
+    // TODO: Invalidate EPT entries for BARs
     
     pdev->attached = 0;
     
-    // Original-Treiber wieder binden
+    // Rebind original driver
 #ifdef __linux__
-    // driver_probe um den originalen Treiber wieder zu laden
+    // driver_probe to reload original driver
     char path[256];
     snprintf(path, sizeof(path), "/sys/bus/pci/devices/0000:%02x:%02x.%x/driver_override",
              pdev->bus, pdev->device, pdev->function);
     int fd = open(path, O_WRONLY);
     if (fd >= 0) {
-        if (write(fd, "\n", 1) < 0) {}  // Override löschen
+        if (write(fd, "\n", 1) < 0) {}  // Clear override
         close(fd);
     }
     
@@ -534,18 +534,18 @@ int cosmos_pt_detach_device(cosmos_passthrough_mgr* mgr, uint32_t device_index) 
     }
 #endif
     
-    PT_LOG("%s vom Gast getrennt", pdev->name);
+    PT_LOG("%s detached from guest", pdev->name);
     return 0;
 }
 
 /* ============================================================================
  *  MSI INTERRUPT SETUP
  *
- *  MSI (Message Signaled Interrupts) sendet Interrupts als Speicherschreib-
- *  zugriffe an die Local APIC. Für Passthrough müssen wir die MSI-Adresse
- *  und -Daten so konfigurieren, dass der Interrupt direkt im Gast ankommt.
+ *  MSI (Message Signaled Interrupts) sends interrupts as memory write
+ *  cycles to the Local APIC. For passthrough, we configure the MSI address
+ *  and data so the interrupt arrives directly in the guest.
  *
- *  MSI Address Format (für x2APIC):
+ *  MSI Address Format (for x2APIC):
  *    Bits [31:20] = 0xFEE (MSI Address Prefix)
  *    Bits [19:12] = Destination APIC ID
  *    Bit  [3]     = Redirect Hint (0=direct, 1=lowest priority)
@@ -564,15 +564,15 @@ int cosmos_pt_setup_msi(cosmos_passthrough_mgr* mgr,
     
     uint16_t msi_off = pdev->msi_cap_offset;
     
-    // MSI Control Register lesen
+    // Read MSI Control Register
     uint16_t msi_ctrl = pci_read_config16(pdev->bus, pdev->device, pdev->function,
                                           msi_off + MSI_CONTROL);
     
     bool is_64bit = (msi_ctrl & MSI_CTRL_64BIT) != 0;
     
-    PT_LOG("MSI Setup für %s:", pdev->name);
+    PT_LOG("MSI Setup for %s:", pdev->name);
     PT_LOG("  MSI Offset: 0x%X", msi_off);
-    PT_LOG("  64-bit:     %s", is_64bit ? "JA" : "NEIN");
+    PT_LOG("  64-bit:     %s", is_64bit ? "YES" : "NO");
     PT_LOG("  Vector:     0x%02X", vector);
     PT_LOG("  Dest CPU:   %u", dest_cpu);
     
@@ -586,16 +586,16 @@ int cosmos_pt_setup_msi(cosmos_passthrough_mgr* mgr,
     PT_LOG("  MSI Addr:   0x%08X_%08X", msi_addr_hi, msi_addr_lo);
     PT_LOG("  MSI Data:   0x%04X", msi_data);
     
-    // Die eigentliche Programmierung erfolgt durch den Gast-Treiber.
-    // Wir stellen nur sicher, dass der Hypervisor MSI-Schreibzugriffe
-    // (an 0xFEExxxxx) korrekt an den Gast-APIC weiterleitet.
+    // The actual programming is done by the guest driver.
+    // We only ensure that hypervisor MSI write accesses
+    // (to 0xFEExxxxx) are forwarded correctly to guest APIC.
     
-    // Für den Hypervisor: Die EPT muss den APIC-Bereich (0xFEE00000)
-    // korrekt behandeln. Bei einem Schreibzugriff auf 0xFEE00000+offset
-    // muss ein Interrupt im Gast injiziert werden.
+    // For the hypervisor: EPT must handle APIC range (0xFEE00000)
+    // correctly. On write to 0xFEE00000+offset, an interrupt must
+    // be injected into the guest.
     
-    PT_LOG("  → MSI wird vom Gast-Treiber programmiert");
-    PT_LOG("  → Hypervisor leitet MSI-Writes an Gast-APIC weiter");
+    PT_LOG("  → MSI is programmed by guest driver");
+    PT_LOG("  → Hypervisor forwards MSI writes to guest APIC");
     
     return 0;
 }
@@ -603,36 +603,36 @@ int cosmos_pt_setup_msi(cosmos_passthrough_mgr* mgr,
 /* ============================================================================
  *  VT-d INITIALIZATION
  *
- *  Initialisiert die DMA-Remapping-Hardware:
- *  1. DMAR Base aus ACPI lesen (bereits bekannt: 0xFED90000)
- *  2. Root Table allozieren und ins DMAR-Register schreiben
- *  3. Translation aktivieren
+ *  Initializes DMA remapping hardware:
+ *  1. Read DMAR Base from ACPI (already known: 0xFED90000)
+ *  2. Allocate Root Table and write to DMAR register
+ *  3. Enable translation
  * ============================================================================ */
 int cosmos_pt_init_vtd(cosmos_passthrough_mgr* mgr) {
     if (!mgr) return -1;
     
     PT_LOG("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    PT_LOG("VT-d / DMA Remapping Initialisierung");
+    PT_LOG("VT-d / DMA Remapping Initialization");
     PT_LOG("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     PT_LOG("DMAR Base: 0x%llX", (unsigned long long)mgr->dmar_base);
     
 #ifdef __linux__
-    // Unter Linux: VT-d wird vom Kernel verwaltet (IOMMU Driver)
-    // Wir lesen nur die Capabilities aus
+    // Under Linux: VT-d is managed by kernel (IOMMU Driver)
+    // We only query capabilities
     
-    // Prüfe ob IOMMU aktiv ist
+    // Check if IOMMU is active
     int fd = open("/sys/kernel/iommu_groups/1/devices/0000:01:00.0", O_RDONLY | O_DIRECTORY);
     if (fd >= 0) {
         close(fd);
         mgr->has_vtd = 1;
-        PT_LOG("VT-d: AKTIV (IOMMU Groups vorhanden)");
+        PT_LOG("VT-d: ACTIVE (IOMMU Groups present)");
     } else {
-        PT_LOG("VT-d: NICHT AKTIV oder keine IOMMU-Gruppen");
-        PT_LOG("→ Stelle sicher dass intel_iommu=on in der Kernel-Commandline steht");
+        PT_LOG("VT-d: NOT ACTIVE or no IOMMU groups");
+        PT_LOG("→ Ensure intel_iommu=on is in kernel command line");
         mgr->has_vtd = 0;
     }
     
-    // DMAR Capabilities aus sysfs lesen
+    // Read DMAR Capabilities from sysfs
     fd = open("/sys/class/iommu/dmar0/intel-iommu/cap", O_RDONLY);
     if (fd >= 0) {
         char buf[64] = {0};
@@ -650,7 +650,7 @@ int cosmos_pt_init_vtd(cosmos_passthrough_mgr* mgr) {
     }
     
 #else
-    // Bare Metal: DMAR Register direkt lesen
+    // Bare Metal: Read DMAR registers directly
     volatile uint32_t* dmar = (volatile uint32_t*)mgr->dmar_base;
     
     uint32_t ver = dmar[VTD_VER / 4];
@@ -661,7 +661,7 @@ int cosmos_pt_init_vtd(cosmos_passthrough_mgr* mgr) {
     PT_LOG("VT-d CAP:     0x%llX", (unsigned long long)cap);
     PT_LOG("VT-d ECAP:    0x%llX", (unsigned long long)ecap);
     
-    // Capabilities dekodieren
+    // Decode capabilities
     mgr->vtd_sagaw = (cap >> 8) & 0x1F;
     mgr->vtd_num_domains = 1 << (((cap >> 0) & 0x7) * 2 + 4);
     
@@ -671,17 +671,17 @@ int cosmos_pt_init_vtd(cosmos_passthrough_mgr* mgr) {
            (mgr->vtd_sagaw & 0x10) ? "57-bit " : "");
     PT_LOG("  Max Domains: %u", mgr->vtd_num_domains);
     
-    // Root Table allozieren
+    // Allocate Root Table
     mgr->root_table = (vtd_root_entry*)pt_alloc_page(&mgr->root_table_phys);
     if (!mgr->root_table) {
-        PT_LOG("FEHLER: Root Table konnte nicht alloziert werden!");
+        PT_LOG("ERROR: Could not allocate Root Table!");
         return -1;
     }
     memset(mgr->root_table, 0, VTD_ROOT_TABLE_SIZE);
     
     PT_LOG("Root Table @ phys=0x%llX", (unsigned long long)mgr->root_table_phys);
     
-    // Root Table Address ins DMAR Register schreiben
+    // Write Root Table Address to DMAR Register
     *(volatile uint64_t*)((uint8_t*)dmar + VTD_RTADDR) = mgr->root_table_phys;
     
     // Set Root Table Pointer Command
@@ -689,7 +689,7 @@ int cosmos_pt_init_vtd(cosmos_passthrough_mgr* mgr) {
     gcmd |= VTD_GCMD_SRTP;
     *(volatile uint32_t*)((uint8_t*)dmar + VTD_GCMD) = gcmd;
     
-    // Warten bis Root Table Pointer gesetzt ist
+    // Wait until Root Table Pointer is set
     int timeout = 1000000;
     while (timeout--) {
         uint32_t gsts = *(volatile uint32_t*)((uint8_t*)dmar + VTD_GSTS);
@@ -697,16 +697,16 @@ int cosmos_pt_init_vtd(cosmos_passthrough_mgr* mgr) {
     }
     
     if (timeout <= 0) {
-        PT_LOG("FEHLER: VT-d Root Table Pointer Timeout!");
+        PT_LOG("ERROR: VT-d Root Table Pointer Timeout!");
         return -2;
     }
     
     mgr->has_vtd = 1;
-    PT_LOG("VT-d Root Table gesetzt");
+    PT_LOG("VT-d Root Table set");
 #endif
     
     PT_LOG("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    PT_LOG("★ VT-d Initialisierung abgeschlossen ★");
+    PT_LOG("★ VT-d initialization completed ★");
     PT_LOG("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     
     return 0;
@@ -715,9 +715,9 @@ int cosmos_pt_init_vtd(cosmos_passthrough_mgr* mgr) {
 /* ============================================================================
  *  DMA DEVICE ASSIGNMENT
  *
- *  Weist einem PCI-Gerät einen DMA-Adressraum zu.
- *  Das Gerät kann dann nur auf den Speicher zugreifen, den die
- *  Second-Level Page Table erlaubt.
+ *  Assigns a DMA address space to a PCI device.
+ *  The device can only access memory permitted by the
+ *  Second-Level Page Table.
  * ============================================================================ */
 int cosmos_pt_assign_device_dma(cosmos_passthrough_mgr* mgr,
                                 uint8_t bus, uint8_t dev, uint8_t func,
@@ -728,10 +728,10 @@ int cosmos_pt_assign_device_dma(cosmos_passthrough_mgr* mgr,
     PT_LOG("DMA Assignment: %02x:%02x.%x → PML4=0x%llX",
            bus, dev, func, (unsigned long long)second_level_pml4_phys);
     
-    // Root Entry für diesen Bus
+    // Root Entry for this bus
     vtd_root_entry* re = &mgr->root_table[bus];
     
-    // Context Table allozieren wenn nötig
+    // Allocate Context Table if needed
     if (!(re->lo & 1)) {
         uint64_t ctx_phys;
         vtd_context_entry* ctx = (vtd_context_entry*)pt_alloc_page(&ctx_phys);
@@ -741,34 +741,34 @@ int cosmos_pt_assign_device_dma(cosmos_passthrough_mgr* mgr,
         re->lo = (ctx_phys & ~0xFFFULL) | 1;  // Present
         re->hi = 0;
         
-        PT_LOG("  Context Table für Bus %u @ phys=0x%llX", bus, (unsigned long long)ctx_phys);
+        PT_LOG("  Context Table for Bus %u @ phys=0x%llX", bus, (unsigned long long)ctx_phys);
     }
     
-    // Context Entry für dieses Device:Function
+    // Context Entry for this Device:Function
     vtd_context_entry* ctx_table = (vtd_context_entry*)(re->lo & ~0xFFFULL);
     uint8_t ctx_idx = (dev << 3) | func;
     vtd_context_entry* ce = &ctx_table[ctx_idx];
     
-    // Context Entry konfigurieren:
+    // Configure Context Entry:
     // - Present
     // - Translation Type = 0 (Second-Level only)
     // - Second-Level Page Table Pointer
     ce->lo = (second_level_pml4_phys & ~0xFFFULL) | 1;  // Present
     
     // Address Width = 2 (48-bit, 4-level page table)
-    // Domain ID = bus * 32 + dev * 8 + func (eindeutig pro Gerät)
+    // Domain ID = bus * 32 + dev * 8 + func (unique per device)
     uint16_t domain_id = (uint16_t)(bus * 32 + dev * 8 + func);
     ce->hi = (2ULL << 0) | ((uint64_t)domain_id << 8);
     
     PT_LOG("  Context[%u]: Domain=%u, AW=48bit, SL-PML4=0x%llX",
            ctx_idx, domain_id, (unsigned long long)second_level_pml4_phys);
     
-    // IOTLB Invalidieren
+    // Invalidate IOTLB
     // TODO: Proper IOTLB invalidation sequence
     
-    PT_LOG("  ★ DMA Assignment komplett für %02x:%02x.%x", bus, dev, func);
+    PT_LOG("  ★ DMA Assignment complete for %02x:%02x.%x", bus, dev, func);
 #else
-    PT_LOG("DMA Assignment: Unter Linux via IOMMU/VFIO verwaltet");
+    PT_LOG("DMA Assignment: Managed under Linux via IOMMU/VFIO");
 #endif
     
     return 0;
@@ -777,8 +777,8 @@ int cosmos_pt_assign_device_dma(cosmos_passthrough_mgr* mgr,
 /* ============================================================================
  *  CONVENIENCE: GPU PASSTHROUGH SETUP
  *
- *  Scannt die GTX 1060 + HDMI Audio, trennt Treiber, mappt EPT.
- *  One-Call-Setup für den häufigsten Anwendungsfall.
+ *  Scans GTX 1060 + HDMI Audio, unbinds driver, maps EPT.
+ *  One-call setup for the most common use case.
  * ============================================================================ */
 int cosmos_pt_setup_gpu(cosmos_passthrough_mgr* mgr, cosmos_hypervisor* hv) {
     if (!mgr || !hv) return -1;
@@ -788,42 +788,42 @@ int cosmos_pt_setup_gpu(cosmos_passthrough_mgr* mgr, cosmos_hypervisor* hv) {
     PT_LOG("║   NVIDIA GeForce GTX 1060 6GB            ║");
     PT_LOG("╚══════════════════════════════════════════╝");
     
-    // Schritt 1: VT-d initialisieren
+    // Step 1: Initialize VT-d
     int result = cosmos_pt_init_vtd(mgr);
     if (result != 0) {
-        PT_LOG("VT-d Init fehlgeschlagen, DMA-Remapping nicht verfügbar");
-        // Weitermachen ohne DMA-Remapping (unsicher, aber funktional)
+        PT_LOG("VT-d Init failed, DMA remapping not available");
+        // Continue without DMA remapping (unsafe, but functional)
     }
     
-    // Schritt 2: GPU scannen (Bus 01, Device 00, Function 0)
+    // Step 2: Scan GPU (Bus 01, Device 00, Function 0)
     int gpu_idx = cosmos_pt_scan_device(mgr, 0x01, 0x00, 0x00);
     if (gpu_idx < 0) {
-        PT_LOG("FEHLER: GPU nicht gefunden!");
+        PT_LOG("ERROR: GPU not found!");
         return -1;
     }
     
-    // Schritt 3: HDMI Audio scannen (Bus 01, Device 00, Function 1)
+    // Step 3: Scan HDMI Audio (Bus 01, Device 00, Function 1)
     int audio_idx = cosmos_pt_scan_device(mgr, 0x01, 0x00, 0x01);
     if (audio_idx < 0) {
-        PT_LOG("WARNUNG: HDMI Audio nicht gefunden (nicht kritisch)");
+        PT_LOG("WARNING: HDMI Audio not found (not critical)");
     }
     
-    // Schritt 4: GPU an Gast zuweisen
+    // Step 4: Assign GPU to guest
     result = cosmos_pt_attach_device(mgr, hv, gpu_idx);
     if (result != 0) {
-        PT_LOG("FEHLER: GPU konnte nicht zugewiesen werden!");
+        PT_LOG("ERROR: Could not assign GPU!");
         return -2;
     }
     
-    // Schritt 5: HDMI Audio an Gast zuweisen (IOMMU Group 1 erfordert das!)
+    // Step 5: Assign HDMI Audio to guest (IOMMU Group 1 requires this!)
     if (audio_idx >= 0) {
         result = cosmos_pt_attach_device(mgr, hv, audio_idx);
         if (result != 0) {
-            PT_LOG("WARNUNG: HDMI Audio konnte nicht zugewiesen werden");
+            PT_LOG("WARNING: Could not assign HDMI Audio");
         }
     }
     
-    // Schritt 6: DMA-Remapping für GPU konfigurieren
+    // Step 6: Configure DMA remapping for GPU
     if (mgr->has_vtd && hv->ept_pml4_phys) {
         cosmos_pt_assign_device_dma(mgr, 0x01, 0x00, 0x00, hv->ept_pml4_phys);
         if (audio_idx >= 0) {
@@ -832,13 +832,13 @@ int cosmos_pt_setup_gpu(cosmos_passthrough_mgr* mgr, cosmos_hypervisor* hv) {
     }
     
     PT_LOG("╔══════════════════════════════════════════╗");
-    PT_LOG("║  ★ GPU PASSTHROUGH KOMPLETT! ★            ║");
+    PT_LOG("║  ★ GPU PASSTHROUGH COMPLETE! ★           ║");
     PT_LOG("║                                          ║");
-    PT_LOG("║  GTX 1060 6GB → Gast zugewiesen          ║");
+    PT_LOG("║  GTX 1060 6GB → Assigned to guest        ║");
     PT_LOG("║  VRAM (256MB) → EPT [Write-Combining]    ║");
     PT_LOG("║  MMIO (16MB)  → EPT [Uncacheable]        ║");
-    PT_LOG("║  MSI          → Direct Injection          ║");
-    PT_LOG("║  DMA          → VT-d Remapped             ║");
+    PT_LOG("║  MSI          → Direct Injection         ║");
+    PT_LOG("║  DMA          → VT-d Remapped            ║");
     PT_LOG("╚══════════════════════════════════════════╝");
     
     return 0;

@@ -16,7 +16,7 @@
 #include "net.h"
 #include "cosmos_fat32.h"
 #include <limits.h>
-// GANZ OBEN in die linux_stubs.cpp (unter die anderen #includes)
+// Top of linux_stubs.cpp
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -26,18 +26,18 @@ void play_hda_wav(uint64_t ram_addr, uint32_t size, uint32_t sample_rate, uint16
     SDL_AudioSpec wav_spec;
     SDL_zero(wav_spec);
     wav_spec.freq = sample_rate;
-    // Format basierend auf Bittiefe (meistens 16-Bit oder 8-Bit PCM)
+    // Format based on bit depth (typically 16-bit or 8-bit PCM)
     wav_spec.format = (bits == 16) ? AUDIO_S16LSB : AUDIO_U8; 
     wav_spec.channels = channels;
     wav_spec.samples = 4096;
-    wav_spec.callback = NULL; // Wir nutzen Push-Audio (Queue), kein Callback
+    wav_spec.callback = NULL; // Uses push audio (queue), no callback
 
-    // Audio-Gerät öffnen
+    // Open audio device
     SDL_AudioDeviceID audio_dev = SDL_OpenAudioDevice(NULL, 0, &wav_spec, NULL, 0);
     if (audio_dev > 0) {
-        // Die rohen WAV-Daten aus deinem RAM-Buffer in die Soundkarte pushen
+        // Push raw WAV data from RAM buffer to sound card
         SDL_QueueAudio(audio_dev, (void*)ram_addr, size);
-        // Play drücken! (0 = Unpause)
+        // Press play! (0 = Unpause)
         SDL_PauseAudioDevice(audio_dev, 0);
     }
 }
@@ -109,10 +109,10 @@ static int linux_get_block_size_mb(const char* dev_name) {
 }
 
 // =========================================================
-// FAT32 STUBS (Damit Linux kompiliert, bis der Bare-Metal FAT32 Code portiert ist)
+// FAT32 STUBS (For Linux build until bare-metal FAT32 code is ported)
 // =========================================================
 _44 fat32_init(_43 partition_lba, uint8_t* bpb_buffer) {
-    return 0; // Gibt "false" zurück -> Engine weiß, dass FAT32 hier gerade nicht geht
+    return 0; // Return false -> Engine recognizes FAT32 is currently unavailable
 }
 
 static bool linux_is_usb_device(const char* dev_name) {
@@ -210,10 +210,10 @@ _44 ahci_read(HBA_PORT *port, _89 startlba, _50 *target_ram_address) { return 0;
 _44 ahci_write(HBA_PORT *port, _89 startlba, _50 *source_ram_address) { return 0; }
 
 /// ==========================================
-/// HYBRID-INTERCEPTOR FÜR DATEISYSTEME
+/// HYBRID INTERCEPTOR FOR FILESYSTEMS
 /// ==========================================
 
-// ACHTUNG: Das ist exakt die Struktur, die der Disk Manager erwartet!
+// NOTE: This structure layout exactly matches what Disk Manager expects!
 struct CFS_DIR_ENTRY_LOCAL {
     uint8_t  type;           
     char     filename[11];
@@ -223,23 +223,23 @@ struct CFS_DIR_ENTRY_LOCAL {
     uint8_t  reserved;
 } __attribute__((packed));
 
-// Globale Variablen für den Hybrid-Ordner
+// Global variables for hybrid storage directory
 char hybrid_file_paths[28][256];
 uint32_t hybrid_file_lbas[28];
 uint32_t hybrid_file_sizes[28];
 int hybrid_file_count = 0;
 
 extern "C" bool disk_read_auto(uint32_t lba, uint64_t target_ram_addr) {
-    // --- SCHRITT 0: LBA 0 (BOOT SEKTOR) SIMULIEREN! ---
+    // --- STEP 0: SIMULATE LBA 0 (BOOT SECTOR) ---
     if (lba == 0) {
         memset((void*)target_ram_addr, 0, 512);
         uint8_t* boot = (uint8_t*)target_ram_addr;
-        boot[3] = 'C'; boot[4] = 'F'; boot[5] = 'S'; // Die magische Signatur!
+        boot[3] = 'C'; boot[4] = 'F'; boot[5] = 'S'; // Magic signature!
         boot[510] = 0x55; boot[511] = 0xAA;
         return true;
     }
 
-    // --- SCHRITT 1: DIRECTORY INTERCEPTOR (Sektor 1002) ---
+    // --- STEP 1: DIRECTORY INTERCEPTOR (Sector 1002) ---
     if (lba == 1002) {
         CFS_DIR_ENTRY_LOCAL* dir = (CFS_DIR_ENTRY_LOCAL*)target_ram_addr;
         memset((void*)target_ram_addr, 0, 2048); 
@@ -320,10 +320,10 @@ extern "C" bool disk_read_auto(uint32_t lba, uint64_t target_ram_addr) {
 }
 
 extern "C" bool disk_write_auto(uint32_t lba, uint64_t source_ram_addr) {
-    return false; // Dummy-Interceptor für Writes
+    return false; // Dummy interceptor for writes
 }
 extern "C" unsigned char* decode_image(unsigned char* buffer, int len, int* w, int* h, int* comp, int req_comp) {
-    // Wandelt das rohe JPG/PNG aus dem RAM in rohe RGB-Pixel um!
+    // Decodes raw JPG/PNG from RAM into RGB pixels
     return stbi_load_from_memory(buffer, len, w, h, comp, req_comp);
 }
 
@@ -333,20 +333,20 @@ extern "C" void free_image(unsigned char* data) {
 
 _43 ahci_read_sectors(_43 port, _43 start_lba, _43 count, _94 target_ram) { 
     if (port == 0) {
-        // PORT 0: Unser virtuelles Systemlaufwerk (./roms Interceptor)
+        // PORT 0: Virtual system drive (./roms interceptor)
         for(int i = 0; i < count; i++) {
             disk_read_auto(start_lba + i, target_ram + (i * 512));
         }
         return count; 
     } else {
-        // PORT > 0: Die ECHTEN Linux USB-Sticks und Festplatten lesen!
+        // PORT > 0: Read REAL Linux USB drives and storage disks!
         if (linux_dev_paths[port][0] != 0) {
             int fd = open(linux_dev_paths[port], O_RDONLY);
             if (fd >= 0) {
                 pread(fd, (void*)target_ram, count * 512, (off_t)start_lba * 512ULL);
                 close(fd);
             } else {
-                printf("[ERR] LINUX LAUFWERK NICHT LESBAR: %s\n", linux_dev_paths[port]);
+                printf("[ERR] LINUX STORAGE DRIVE NOT READABLE: %s\n", linux_dev_paths[port]);
             }
         }
         return count;
@@ -355,20 +355,20 @@ _43 ahci_read_sectors(_43 port, _43 start_lba, _43 count, _94 target_ram) {
 
 _43 ahci_write_sectors(_43 port, _43 start_lba, _43 count, _94 source_ram) { 
     if (port == 0) {
-        // PORT 0: Dummy Interceptor
+        // PORT 0: Dummy interceptor
         for(int i = 0; i < count; i++) {
             disk_write_auto(start_lba + i, source_ram + (i * 512));
         }
         return count; 
     } else {
-        // PORT > 0: ECHTE LINUX HARDWARE BESCHREIBEN!
+        // PORT > 0: WRITE TO REAL LINUX HARDWARE!
         if (linux_dev_paths[port][0] != 0) {
             int fd = open(linux_dev_paths[port], O_WRONLY);
             if (fd >= 0) {
                 pwrite(fd, (void*)source_ram, count * 512, (off_t)start_lba * 512ULL);
                 close(fd);
             } else {
-                printf("[ERR] SCHREIBEN AUF %s BLOCKIERT! (Fehlen sudo Rechte?)\n", linux_dev_paths[port]);
+                printf("[ERR] WRITE TO %s BLOCKED! (Missing sudo permissions?)\n", linux_dev_paths[port]);
             }
         }
         return count;

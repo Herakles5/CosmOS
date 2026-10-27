@@ -3,18 +3,18 @@
  *  COSMOS EPT BUILDER - Extended Page Table Identity Map
  * ============================================================================
  *
- *  Phase 1.5: Baut eine 1:1 Identity Map (GPA == HPA) mit 2MB Large Pages.
+ *  Phase 1.5: Builds a 1:1 Identity Map (GPA == HPA) with 2MB Large Pages.
  *
- *  Für den i7-7700 mit 16GB RAM:
+ *  For i7-7700 with 16GB RAM:
  *    PML4[0] → PDPT
  *    PDPT[0..15] → PD[0..15]  (16 × 1GB = 16GB)
- *    Jede PD hat 512 Einträge à 2MB = 1GB pro PD
- *    Total: 16 × 512 = 8192 2MB-Pages = 16GB gemapped
+ *    Each PD has 512 entries of 2MB = 1GB per PD
+ *    Total: 16 × 512 = 8192 2MB pages = 16GB mapped
  *
- *  Speicherbedarf: 1 PML4 + 1 PDPT + 16 PDs = 18 × 4KB = 72KB
+ *  Memory requirement: 1 PML4 + 1 PDPT + 16 PDs = 18 × 4KB = 72KB
  *
- *  MMIO-Bereiche (z.B. GPU, PCI Config Space) werden als Uncacheable (UC)
- *  gemapped, damit Hardware-Register korrekt funktionieren.
+ *  MMIO ranges (e.g. GPU, PCI Config Space) are mapped as Uncacheable (UC)
+ *  so that hardware registers function correctly.
  * ============================================================================
  */
 
@@ -32,7 +32,7 @@ static void* ept_alloc_page(uint64_t* out_phys) {
                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
     if (p == MAP_FAILED) return nullptr;
     memset(p, 0, 4096);
-    *out_phys = (uint64_t)p;  // Linux: virt == phys (für Tests)
+    *out_phys = (uint64_t)p;  // Linux: virt == phys (for tests)
     return p;
 }
 
@@ -53,15 +53,15 @@ static void* ept_alloc_page(uint64_t* out_phys) {
 /* ============================================================================
  *  MMIO REGIONS
  *
- *  Diese physischen Adressbereiche gehören zu Hardware-Geräten und
- *  DÜRFEN NICHT als Write-Back gecached werden. Sie müssen UC sein.
+ *  These physical address ranges belong to hardware devices and
+ *  MUST NOT be cached as Write-Back. They must be UC.
  *
- *  Typische MMIO-Bereiche auf einem Desktop-PC:
+ *  Typical MMIO ranges on a desktop PC:
  *  - 0xA0000  - 0xBFFFF:  VGA Frame Buffer (Legacy)
  *  - 0xC0000  - 0xFFFFF:  ROM Area
  *  - 0xE0000000 - 0xEFFFFFFF: PCIe MMCONFIG (256MB)
  *  - 0xF0000000 - 0xFFFFFFFF: Local APIC, IOAPIC, HPET, etc.
- *  - Über 4GB: GPU VRAM (variabel, oft 0x6000000000+)
+ *  - Above 4GB: GPU VRAM (variable, often 0x6000000000+)
  * ============================================================================ */
 
 struct mmio_region {
@@ -81,12 +81,12 @@ static const mmio_region known_mmio_regions[] = {
     { 0, 0, nullptr }  // Sentinel
 };
 
-// Prüfe ob eine 2MB-Page (start_addr bis start_addr+2MB) in einer MMIO-Region liegt
+// Check if a 2MB page (page_start to page_start+2MB) lies within an MMIO region
 static bool is_mmio_region(uint64_t page_start) {
     uint64_t page_end = page_start + EPT_PAGE_SIZE_2M - 1;
     
     for (int i = 0; known_mmio_regions[i].name != nullptr; i++) {
-        // Überlappung prüfen
+        // Check overlap
         if (page_start <= known_mmio_regions[i].end && 
             page_end >= known_mmio_regions[i].start) {
             return true;
@@ -98,32 +98,32 @@ static bool is_mmio_region(uint64_t page_start) {
 /* ============================================================================
  *  EPT IDENTITY MAP BUILDER
  *
- *  Erstellt die komplette EPT-Hierarchie:
- *    PML4 → PDPT → PD[] (mit 2MB Large Pages)
+ *  Constructs the complete EPT hierarchy:
+ *    PML4 → PDPT → PD[] (with 2MB Large Pages)
  *
- *  Jede 2MB-Page mappt GPA direkt auf HPA (1:1).
- *  MMIO-Bereiche werden als Uncacheable markiert.
+ *  Each 2MB page maps GPA directly to HPA (1:1).
+ *  MMIO regions are marked as Uncacheable.
  * ============================================================================ */
 int cosmos_hv_setup_ept(cosmos_hypervisor* hv) {
     if (!hv) return -1;
     
     EPT_LOG("========================================");
     EPT_LOG("  EPT Identity Map Builder");
-    EPT_LOG("  Phase 1.5: Speicher-Virtualisierung");
+    EPT_LOG("  Phase 1.5: Memory Virtualization");
     EPT_LOG("========================================");
     
-    // Wir mappen 512GB: 16GB RAM + MMIO-Bereiche (PCIe Geräte liegen oft >128GB)
-    // 512GB entspricht exakt einer voll ausgeschöpften PDPT.
+    // We map 512GB: 16GB RAM + MMIO regions (PCIe devices often lie >128GB)
+    // 512GB corresponds exactly to one fully utilized PDPT.
     uint64_t map_size = 512ULL * 1024 * 1024 * 1024;  // 512GB
     uint32_t num_gb = (uint32_t)(map_size / EPT_PAGE_SIZE_1G);
     
-    EPT_LOG("Mappe %u GB physischen Speicher (Identity Map)", num_gb);
+    EPT_LOG("Mapping %u GB physical memory (Identity Map)", num_gb);
     
-    // --- Schritt 1: PML4 allozieren ---
+    // --- Step 1: Allocate PML4 ---
     uint64_t pml4_phys;
     uint64_t* pml4 = (uint64_t*)ept_alloc_page(&pml4_phys);
     if (!pml4) {
-        EPT_LOG("FEHLER: PML4 konnte nicht alloziert werden!");
+        EPT_LOG("ERROR: Could not allocate PML4!");
         return -1;
     }
     
@@ -132,22 +132,22 @@ int cosmos_hv_setup_ept(cosmos_hypervisor* hv) {
     
     EPT_LOG("PML4 @ phys=0x%llX", (unsigned long long)pml4_phys);
     
-    // --- Schritt 2: PDPT allozieren ---
-    // Eine PDPT deckt 512GB ab (512 Einträge × 1GB).
-    // Für 512GB brauchen wir nur 1 PDPT.
+    // --- Step 2: Allocate PDPT ---
+    // One PDPT covers 512GB (512 entries × 1GB).
+    // For 512GB we need only 1 PDPT.
     uint64_t pdpt_phys;
     uint64_t* pdpt = (uint64_t*)ept_alloc_page(&pdpt_phys);
     if (!pdpt) {
-        EPT_LOG("FEHLER: PDPT konnte nicht alloziert werden!");
+        EPT_LOG("ERROR: Could not allocate PDPT!");
         return -2;
     }
     
-    // PML4[0] → PDPT (deckt die unteren 512GB ab)
+    // PML4[0] → PDPT (covers lower 512GB)
     pml4[0] = ept_make_table_entry(pdpt_phys);
     
     EPT_LOG("PDPT @ phys=0x%llX (PML4[0])", (unsigned long long)pdpt_phys);
     
-    // --- Schritt 3: Page Directories allozieren (eine pro GB) ---
+    // --- Step 3: Allocate Page Directories (one per GB) ---
     uint32_t pages_mapped = 0;
     uint32_t mmio_pages = 0;
     
@@ -155,14 +155,14 @@ int cosmos_hv_setup_ept(cosmos_hypervisor* hv) {
         uint64_t pd_phys;
         uint64_t* pd = (uint64_t*)ept_alloc_page(&pd_phys);
         if (!pd) {
-            EPT_LOG("FEHLER: PD[%u] konnte nicht alloziert werden!", gb);
+            EPT_LOG("ERROR: Could not allocate PD[%u]!", gb);
             return -3;
         }
         
         // PDPT[gb] → PD
         pdpt[gb] = ept_make_table_entry(pd_phys);
         
-        // 512 Einträge à 2MB = 1GB pro PD
+        // 512 entries of 2MB = 1GB per PD
         for (uint32_t entry = 0; entry < 512; entry++) {
             uint64_t phys_addr = ((uint64_t)gb * EPT_PAGE_SIZE_1G) + 
                                  ((uint64_t)entry * EPT_PAGE_SIZE_2M);
@@ -174,11 +174,11 @@ int cosmos_hv_setup_ept(cosmos_hypervisor* hv) {
                 flags = EPT_RWX | (EPT_MT_UC << EPT_MEMORY_TYPE_SHIFT) | EPT_IGNORE_PAT;
                 mmio_pages++;
             } else if (phys_addr == 0) {
-                // Erste 2MB-Page: Enthält Real-Mode IVT, BDA, etc.
-                // Trotzdem WB, aber wir könnten hier später feinere Kontrolle haben
+                // First 2MB page: contains Real Mode IVT, BDA, etc.
+                // Still WB, but could allow finer control later
                 flags = EPT_RWX_WB;
             } else {
-                // Normaler RAM: Write-Back
+                // Normal RAM: Write-Back
                 flags = EPT_RWX_WB;
             }
             
@@ -187,46 +187,46 @@ int cosmos_hv_setup_ept(cosmos_hypervisor* hv) {
         }
     }
     
-    // --- Schritt 4: EPTP zusammenbauen ---
+    // --- Step 4: Assemble EPTP ---
     uint64_t eptp = ept_make_eptp(pml4_phys);
     
-    EPT_LOG("--- EPT Statistik ---");
-    EPT_LOG("  Gemappte 2MB-Pages: %u", pages_mapped);
-    EPT_LOG("  Davon MMIO (UC):    %u", mmio_pages);
-    EPT_LOG("  Davon RAM (WB):     %u", pages_mapped - mmio_pages);
-    EPT_LOG("  Gesamter Speicher:  %llu MB", 
+    EPT_LOG("--- EPT Statistics ---");
+    EPT_LOG("  Mapped 2MB Pages:   %u", pages_mapped);
+    EPT_LOG("  Thereof MMIO (UC):  %u", mmio_pages);
+    EPT_LOG("  Thereof RAM (WB):   %u", pages_mapped - mmio_pages);
+    EPT_LOG("  Total Memory:       %llu MB", 
            (unsigned long long)(pages_mapped * 2));
-    EPT_LOG("  Tabellen alloziert: %u (PML4=1, PDPT=1, PDs=%u)",
+    EPT_LOG("  Tables allocated:   %u (PML4=1, PDPT=1, PDs=%u)",
            2 + num_gb, num_gb);
-    EPT_LOG("  Speicherbedarf:     %u KB", (2 + num_gb) * 4);
+    EPT_LOG("  Memory required:    %u KB", (2 + num_gb) * 4);
     EPT_LOG("  EPTP:               0x%llX", (unsigned long long)eptp);
     
-    // --- Schritt 5: EPTP in alle aktiven VMCS schreiben ---
+    // --- Step 5: Write EPTP into all active VMCS ---
     for (uint32_t cpu = 0; cpu < 256; cpu++) {
         if (hv->vcpus[cpu].vmcs_active) {
-            // Sicherstellen, dass der richtige VMCS geladen ist
+            // Ensure correct VMCS is loaded
             if (cosmos_vmptrld(&hv->vcpus[cpu].vmcs_phys) != 0) {
-                EPT_LOG("WARNUNG: VMPTRLD fehlgeschlagen für CPU %u", cpu);
+                EPT_LOG("WARNING: VMPTRLD failed for CPU %u", cpu);
                 continue;
             }
             
             cosmos_vmwrite(VMCS_EPTP, eptp);
-            EPT_LOG("CPU %u: EPTP in VMCS geschrieben", cpu);
+            EPT_LOG("CPU %u: EPTP written to VMCS", cpu);
         }
     }
     
     EPT_LOG("========================================");
-    EPT_LOG("  ★ EPT IDENTITY MAP KOMPLETT ★");
+    EPT_LOG("  ★ EPT IDENTITY MAP COMPLETE ★");
     EPT_LOG("========================================");
     
     return 0;
 }
 
 /* ============================================================================
- *  EPT PAGE FAULT HANDLER (für spätere dynamische Erweiterung)
+ *  EPT PAGE FAULT HANDLER (for future dynamic expansion)
  *
- *  Wird aufgerufen bei EPT Violation VM-Exit.
- *  Aktuell nur Logging, später: dynamisches Mapping, Copy-on-Write, etc.
+ *  Called on EPT Violation VM-Exit.
+ *  Currently logging only; future: dynamic mapping, Copy-on-Write, etc.
  * ============================================================================ */
 int cosmos_hv_handle_ept_violation(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
     uint64_t guest_phys = 0;
@@ -234,8 +234,7 @@ int cosmos_hv_handle_ept_violation(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
     uint64_t guest_rip = 0;
     
     cosmos_vmread(VMCS_EXIT_QUALIFICATION, &exit_qual);
-    // Guest Physical Address ist in einem separaten VMCS-Feld
-    // (VMCS_GUEST_PHYSICAL_ADDR = 0x2400)
+    // Guest Physical Address is in separate VMCS field (VMCS_GUEST_PHYSICAL_ADDR = 0x2400)
     cosmos_vmread(0x2400, &guest_phys);
     cosmos_vmread(VMCS_GUEST_RIP, &guest_rip);
     
@@ -251,23 +250,23 @@ int cosmos_hv_handle_ept_violation(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
            is_write ? "WRITE " : "",
            is_execute ? "EXEC" : "");
     
-    // TODO: Dynamisches Mapping implementieren
-    // Für jetzt: Triple Fault vermeiden, indem wir die Page mit RWX mappen
-    // Das ist unsicher, aber für Debugging nützlich
+    // TODO: Implement dynamic mapping
+    // For now: avoid Triple Fault by mapping page with RWX
+    // Unsafe, but useful for debugging
     
-    return -1;  // Signalisiert: nicht behandelt
+    return -1;  // Signals: unhandled
 }
 
 /* ============================================================================
- *  EPT MEMORY PROTECTION (für spätere Stealth-Features)
+ *  EPT MEMORY PROTECTION (for future stealth features)
  *
- *  Erlaubt es, bestimmte Speicherbereiche des Gasts zu schützen:
- *  - Hypervisor-Code verstecken (Execute-only, kein Read)
- *  - Gast-Kernel-Patches erkennen (Write-Protect)
- *  - GPU-VRAM isolieren
+ *  Allows protecting specific guest memory areas:
+ *  - Hide hypervisor code (Execute-only, no Read)
+ *  - Detect guest kernel patches (Write-Protect)
+ *  - Isolate GPU VRAM
  * ============================================================================ */
 
-// Ändere die Zugriffsrechte einer einzelnen 2MB-Page in der EPT
+// Change access permissions of a single 2MB page in EPT
 int cosmos_ept_set_page_flags(cosmos_hypervisor* hv, uint64_t guest_phys, uint64_t new_flags) {
     if (!hv || !hv->ept_pml4_virt) return -1;
     
@@ -275,22 +274,22 @@ int cosmos_ept_set_page_flags(cosmos_hypervisor* hv, uint64_t guest_phys, uint64
     
     // PML4 Index
     uint64_t pml4_idx = ept_pml4_index(guest_phys);
-    if (!(pml4[pml4_idx] & EPT_READ)) return -2;  // PML4 Entry nicht vorhanden
+    if (!(pml4[pml4_idx] & EPT_READ)) return -2;  // PML4 entry not present
     
     // PDPT
     uint64_t* pdpt = (uint64_t*)(pml4[pml4_idx] & EPT_ADDR_MASK);
     uint64_t pdpt_idx = ept_pdpt_index(guest_phys);
-    if (!(pdpt[pdpt_idx] & EPT_READ)) return -3;  // PDPT Entry nicht vorhanden
+    if (!(pdpt[pdpt_idx] & EPT_READ)) return -3;  // PDPT entry not present
     
-    // PD (hier sind unsere 2MB Large Pages)
+    // PD (contains our 2MB large pages)
     uint64_t* pd = (uint64_t*)(pdpt[pdpt_idx] & EPT_ADDR_MASK);
     uint64_t pd_idx = ept_pd_index(guest_phys);
     
-    // Physische Adresse beibehalten, nur Flags ändern
+    // Retain physical address, change only flags
     uint64_t phys_addr = pd[pd_idx] & 0x000FFFFFFFE00000ULL;
     pd[pd_idx] = phys_addr | EPT_LARGE_PAGE | new_flags;
     
-    // TLB für diese EPT-Übersetzung invalidieren
+    // Invalidate TLB for this EPT translation
     extern void cosmos_invept(uint64_t type, uint64_t eptp);
     uint64_t eptp = ept_make_eptp(hv->ept_pml4_phys);
     cosmos_invept(1, eptp);  // Single-context invalidation
@@ -298,25 +297,25 @@ int cosmos_ept_set_page_flags(cosmos_hypervisor* hv, uint64_t guest_phys, uint64
     return 0;
 }
 
-// Verstecke den Hypervisor-Speicher vor dem Gast
-// Macht Pages Execute-Only (kein Read, kein Write) - der Gast kann
-// den Code ausführen, aber nicht lesen oder modifizieren
+// Hide hypervisor memory from guest
+// Makes pages Execute-Only (no Read, no Write) - guest can
+// execute code, but cannot read or modify it
 int cosmos_ept_hide_memory(cosmos_hypervisor* hv, uint64_t phys_start, uint64_t size) {
-    EPT_LOG("Verstecke Speicher: 0x%llX - 0x%llX (%llu KB)",
+    EPT_LOG("Hiding memory: 0x%llX - 0x%llX (%llu KB)",
            (unsigned long long)phys_start,
            (unsigned long long)(phys_start + size),
            (unsigned long long)(size / 1024));
     
-    // Auf 2MB-Grenzen alignen
+    // Align to 2MB boundaries
     uint64_t aligned_start = phys_start & ~(EPT_PAGE_SIZE_2M - 1);
     uint64_t aligned_end = (phys_start + size + EPT_PAGE_SIZE_2M - 1) & ~(EPT_PAGE_SIZE_2M - 1);
     
     for (uint64_t addr = aligned_start; addr < aligned_end; addr += EPT_PAGE_SIZE_2M) {
-        // Execute-Only + WB (Gast kann nicht lesen was der Hypervisor tut)
+        // Execute-Only + WB (Guest cannot read what hypervisor does)
         uint64_t flags = EPT_EXECUTE | (EPT_MT_WB << EPT_MEMORY_TYPE_SHIFT) | EPT_IGNORE_PAT;
         int result = cosmos_ept_set_page_flags(hv, addr, flags);
         if (result != 0) {
-            EPT_LOG("WARNUNG: Konnte Page 0x%llX nicht verstecken (err=%d)",
+            EPT_LOG("WARNING: Could not hide page 0x%llX (err=%d)",
                    (unsigned long long)addr, result);
         }
     }
@@ -327,8 +326,8 @@ int cosmos_ept_hide_memory(cosmos_hypervisor* hv, uint64_t phys_start, uint64_t 
 /* ============================================================================
  *  EPT PAGE HIDING (Memory Stealth)
  *
- *  Versteckt eine 4KB physische Speicherseite vor dem Gast-OS.
- *  Teilt bei Bedarf eine 2MB Large Page in 512 4KB Pages auf.
+ *  Hides a 4KB physical memory page from the guest OS.
+ *  Splits a 2MB large page into 512 4KB pages when needed.
  * ============================================================================ */
 int cosmos_ept_hide_page(cosmos_hypervisor* hv, uint64_t target_phys, uint64_t dummy_phys) {
     if (!hv || !hv->ept_pml4_virt) return -1;
@@ -351,36 +350,36 @@ int cosmos_ept_hide_page(cosmos_hypervisor* hv, uint64_t target_phys, uint64_t d
     
     uint64_t* pt;
     if (pd_entry & EPT_LARGE_PAGE) {
-        // 2MB Page gefunden! Wir müssen sie in 512 4KB Pages aufteilen.
+        // 2MB Page found! We must split it into 512 4KB pages.
         uint64_t pt_phys;
         pt = (uint64_t*)ept_alloc_page(&pt_phys);
         if (!pt) return -5; // Out of memory
         
         uint64_t base_phys = pd_entry & EPT_ADDR_MASK;
         uint64_t flags = pd_entry & 0xFFF;
-        flags &= ~EPT_LARGE_PAGE; // Large Page bit entfernen
+        flags &= ~EPT_LARGE_PAGE; // Remove large page bit
         
-        // PT füllen
+        // Populate PT
         for (uint32_t i = 0; i < 512; i++) {
             pt[i] = ept_make_4k_entry(base_phys + (i * 4096), flags);
         }
         
-        // PD Eintrag aktualisieren
+        // Update PD entry
         pd[pd_idx] = ept_make_table_entry(pt_phys);
     } else {
-        // Bereits eine 4KB Page Table
+        // Already a 4KB Page Table
         pt = (uint64_t*)cosmos_phys_to_virt(pd_entry & EPT_ADDR_MASK);
     }
     
-    // PT Eintrag für target_phys ändern
+    // Change PT entry for target_phys
     uint64_t pt_entry = pt[pt_idx];
     uint64_t flags = pt_entry & 0xFFF;
     
-    // Map auf Dummy Page!
+    // Map to dummy page!
     pt[pt_idx] = ept_make_4k_entry(dummy_phys, flags);
     
-    // EPT TLB Flush wird vom Aufrufer (invept) gemacht.
-    EPT_LOG("Verstecke Page 0x%llX -> gemappt auf 0x%llX", 
+    // EPT TLB Flush is performed by caller (invept)
+    EPT_LOG("Hiding page 0x%llX -> mapped to 0x%llX", 
             (unsigned long long)target_phys, (unsigned long long)dummy_phys);
             
     return 0;
@@ -389,31 +388,31 @@ int cosmos_ept_hide_page(cosmos_hypervisor* hv, uint64_t target_phys, uint64_t d
 /* ============================================================================
  *  HYPERVISOR MEMORY STEALTH (Full EPT Hiding)
  *
- *  Iteriert über alle CPUs und versteckt die kritischen Hypervisor-Speicherseiten
- *  (VMXON, VMCS, MSR Bitmaps, Host-Stacks, Host-CR3) vor dem Gast-OS.
- *  Alle diese Seiten werden für den Gast auf eine "Dummy"-Zero-Page gemappt.
+ *  Iterates across all CPUs and hides critical hypervisor memory pages
+ *  (VMXON, VMCS, MSR bitmaps, host stacks, host CR3) from guest OS.
+ *  All these pages are mapped to a dummy zero page for the guest.
  * ============================================================================ */
 int cosmos_ept_hide_hv_memory(cosmos_hypervisor* hv) {
     if (!hv || !hv->ept_pml4_virt) return -1;
     
-    // 1. Erstelle eine Dummy-Page (mit Nullen gefüllt)
+    // 1. Create a dummy page (zero filled)
     uint64_t dummy_phys = 0;
     void* dummy_virt = ept_alloc_page(&dummy_phys);
     if (!dummy_virt) return -2;
     
-    EPT_LOG("Stealth Dummy-Page alloziert @ 0x%llX", (unsigned long long)dummy_phys);
+    EPT_LOG("Stealth dummy page allocated @ 0x%llX", (unsigned long long)dummy_phys);
     
-    // 2. Verstecke die Pages von allen CPUs
+    // 2. Hide pages across all CPUs
     for (uint32_t i = 0; i < 256; i++) {
         cosmos_vcpu* vcpu = &hv->vcpus[i];
-        if (!vcpu->vmx_enabled) continue; // Überspringe inaktive CPUs
+        if (!vcpu->vmx_enabled) continue; // Skip inactive CPUs
         
         if (vcpu->vmxon_phys) cosmos_ept_hide_page(hv, vcpu->vmxon_phys, dummy_phys);
         if (vcpu->vmcs_phys) cosmos_ept_hide_page(hv, vcpu->vmcs_phys, dummy_phys);
         if (vcpu->msr_bitmap_phys) cosmos_ept_hide_page(hv, vcpu->msr_bitmap_phys, dummy_phys);
         if (vcpu->host_cr3_phys) cosmos_ept_hide_page(hv, vcpu->host_cr3_phys, dummy_phys);
         
-        // Host Stack ist größer (HOST_STACK_SIZE = 16KB = 4 Pages)
+        // Host stack is larger (HOST_STACK_SIZE = 16KB = 4 pages)
         if (vcpu->host_stack_phys) {
             for (int p = 0; p < 4; p++) {
                 cosmos_ept_hide_page(hv, vcpu->host_stack_phys + (p * 4096), dummy_phys);
@@ -421,9 +420,9 @@ int cosmos_ept_hide_hv_memory(cosmos_hypervisor* hv) {
         }
     }
     
-    // 3. Verstecke die EPT PML4 selbst
+    // 3. Hide EPT PML4 itself
     cosmos_ept_hide_page(hv, hv->ept_pml4_phys, dummy_phys);
     
-    EPT_LOG("Alle Hypervisor-Strukturen sind nun in der EPT auf Dummy-Pages gemappt!");
+    EPT_LOG("All hypervisor structures are now mapped to dummy pages in EPT!");
     return 0;
 }

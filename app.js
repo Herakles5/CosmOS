@@ -649,7 +649,7 @@ const tickerScroll = document.getElementById('ticker-scroll');
 let volcanoData = [];
 let tsunamiData = [];
 
-// Hilfsfunktion für relative Zeitangaben
+// Helper function for relative timestamps
 function getRelativeTime(timestamp) {
     const diffMs = Date.now() - timestamp;
     const diffMins = Math.floor(diffMs / (1000 * 60));
@@ -659,7 +659,7 @@ function getRelativeTime(timestamp) {
     return `${diffHours}h ago`;
 }
 
-// Ticker rendern
+// Render ticker
 function renderTicker() {
     if (!tickerContent) return;
     
@@ -677,11 +677,11 @@ function renderTicker() {
     
     tickerContent.innerHTML = html;
     
-    // Setze die Dauer basierend auf der Anzahl der Items (ca. 8 Sekunden pro Item)
+    // Set duration based on number of items (approx 8 seconds per item)
     const totalItems = tsunamiData.length + volcanoData.length;
-    const duration = Math.max(60, totalItems * 8); // Mindestens 60s
+    const duration = Math.max(60, totalItems * 8); // Minimum 60s
     
-    // Animation zurücksetzen, damit es neu von rechts reinscrollt
+    // Reset animation to trigger scrolling from the right
     if (tickerScroll) {
         tickerScroll.style.animationDuration = `${duration}s`;
         tickerScroll.style.animationName = 'none';
@@ -690,11 +690,11 @@ function renderTicker() {
     }
 }
 
-// Echte Live-Daten von USGS laden und aufteilen
+// Fetch real live USGS data and distribute to feeds
 async function fetchLiveTickers() {
     try {
-        // Wir nutzen jetzt den Feed für Stärke 4.5+ der letzten 7 Tage,
-        // damit der Ticker immer gut mit signifikanten Events gefüllt ist!
+        // Use M4.5+ feed from the past 7 days,
+        // ensuring the ticker remains populated with significant seismic events
         const response = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson');
         const data = await response.json();
         
@@ -707,16 +707,16 @@ async function fetchLiveTickers() {
                 const place = props.place;
                 const mag = props.mag;
                 const time = props.time;
-                const tsunamiFlag = props.tsunami; // 1 wenn Tsunami-Warnung
+                const tsunamiFlag = props.tsunami; // 1 if tsunami warning active
 
-                // Signifikante seismische Events in den Vulkan-/Aktivitäten-Ticker schreiben
+                // Add significant seismic events to activity ticker
                 volcanoData.push({
                     name: place,
                     status: `Seismic Unrest - Mag ${mag.toFixed(1)}`,
                     timestamp: time
                 });
 
-                // Wenn die USGS ein Tsunami-Flag setzt, in den Tsunami-Ticker schreiben
+                // If USGS sets tsunami flag, write to tsunami ticker
                 if (tsunamiFlag === 1) {
                     tsunamiData.push({
                         region: place,
@@ -726,7 +726,7 @@ async function fetchLiveTickers() {
                 }
             });
 
-            // Fallback für Tsunami-Ticker, falls weltweit keine Warnung vorliegt
+            // Fallback for tsunami ticker if no warnings are active globally
             if (tsunamiData.length === 0) {
                 tsunamiData.push({
                     region: "Global Tsunami Monitoring",
@@ -742,15 +742,15 @@ async function fetchLiveTickers() {
     renderTicker();
 }
 
-// Initialer Aufruf
+// Initial fetch
 fetchLiveTickers();
 
-// Jede Minute Timer (relative Zeiten) aktualisieren
+// Update relative time display every minute
 setInterval(() => {
     renderTicker();
 }, 60000);
 
-// Alle 5 Minuten neue Daten von der API holen
+// Refresh API data every 5 minutes
 setInterval(fetchLiveTickers, 300000);
 
 async function fetchLongTermStats() {
@@ -1380,7 +1380,7 @@ document.addEventListener('click', (e) => {
     document.getElementById('calc-popup-desc').innerHTML = desc;
     document.getElementById('calc-popup-math').textContent = mathStr;
     
-    // HIER EINFÜGEN: Schiebt das Fenster rechts neben die Seitenleiste
+    // Align window to the right of the sidebar
     calcPopup.style.left = '360px'; 
     calcPopup.style.top = Math.max(50, e.clientY - 50) + 'px';
     calcPopup.style.transform = 'none';
@@ -2025,7 +2025,7 @@ document.querySelectorAll('.eq-popup').forEach(popup => {
         startY = clientY;
         initialLeft = popup.offsetLeft;
         initialTop = popup.offsetTop;
-        // Verhindert, dass CSS-Transforms die Positionierung stören
+        // Prevent CSS transforms from interfering with positioning
         popup.style.transform = 'none'; 
         popup.style.margin = '0';
         popup.style.bottom = 'auto';

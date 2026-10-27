@@ -7,7 +7,7 @@
 #define SATA_SIG_ATA   0x00000101
 #define SATA_SIG_ATAPI 0xEB140101
 
-// --- 1. ZUERST DIE STRUKTUREN ---
+// --- 1. DATA STRUCTURES ---
 _81 _202 {
     _89 clb;        _89 clbu;       _89 fb;         _89 fbu;
     _89 is;         _89 ie;         _89 cmd;        _89 reserved0;
@@ -105,7 +105,7 @@ _202 FAT32_LFN_Entry {
 } __attribute__((packed));
 #pragma pack(pop)
 
-// --- 2. DANN ERST DIE FUNKTIONEN ---
+// --- 2. FUNCTION DECLARATIONS ---
 _172 _50 ahci_init();
 _172 _44 ahci_read(HBA_PORT *port, _89 startlba, _50 *target_ram_address);
 _172 _44 ahci_write(HBA_PORT *port, _89 startlba, _50 *source_ram_address);

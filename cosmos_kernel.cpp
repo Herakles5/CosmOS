@@ -3,52 +3,52 @@
 #include "cosmos_cfs.h"
 #include "cosmos_bytes.h"
 
-// Externe Funktionen deklarieren
+// Declare external functions
 extern _43 pci_find_ahci_abar();
 extern _50 tba_ingest_live_frame(_184* live_frame_26, HBA_PORT* port);
-extern HBA_PORT* get_active_ahci_port(); // Hilfsfunktion aus cosmos_ahci.cpp
+extern HBA_PORT* get_active_ahci_port(); // Helper function from cosmos_ahci.cpp
 
 void kernel_main() {
     
-    // 1. HARDWARE INITIALISIEREN
+    // 1. HARDWARE INITIALIZATION
     _43 abar = pci_find_ahci_abar();
     _15(abar EQ 0) {
-        // ERROR: Kein AHCI gefunden. Kernel Panic!
+        // ERROR: No AHCI controller found. Kernel Panic!
         while(1); 
     }
     
-    // AHCI-Speicherstrukturen aufbauen und Laufwerke erkennen
+    // Set up AHCI memory structures and detect storage drives
     ahci_init(abar);
     
-    // Hol dir den ersten aktiven Port (die erste Festplatte)
+    // Retrieve the first active port (primary storage drive)
     HBA_PORT* my_hdd = get_active_ahci_port(); 
-    _15(my_hdd EQ 0) while(1); // Keine Festplatte angeschlossen!
+    _15(my_hdd EQ 0) while(1); // No hard drive connected!
 
-    // 2. DAS ORAKEL STARTET (Live-Stream Simulation)
-    // Wir bauen einen 26-Byte Frame mit den Sensordaten deines Orakels
+    // 2. ORACLE LAUNCH (Live-stream simulation)
+    // Construct a 26-byte frame containing Oracle sensor telemetry
     _184 my_26byte_frame[26];
     
-    // Wir simulieren 20 Live-Messungen des Orakels
+    // Simulate 20 live measurements from the Oracle
     _39(int i = 0; i < 20; i++) {
         
-        // Sensorwert generieren (z.B. Aether-Frequenz 0x3C8E)
+        // Generate sensor reading (e.g. Aether frequency 0x3C8E)
         _182 aether_freq = 0x3C8E + i;
         
-        // Nutzt DEINE cosmos_bytes Logik für den 26B Frame!
+        // Uses cosmos_bytes logic for the 26-byte frame
         cb_build(my_26byte_frame, aether_freq, 255, 0, 0, 255);
         
-        // Jage den 26B Frame in deinen Multiplexer. 
-        // Sobald 18 Frames (2 Container) da sind, brennt ahci_write sie stumm auf die Platte!
+        // Feed the 26-byte frame into the multiplexer. 
+        // Once 18 frames (2 containers) are buffered, ahci_write commits them to disk!
         tba_ingest_live_frame(my_26byte_frame, my_hdd);
     }
     
-    // 3. DATEISYSTEM VERSIEGELN
-    // Die Aufzeichnung ist beendet. Wir tragen die Datei in die Genesis DB ein!
-    // Start LBA war 2000, wir haben z.B. 1024 Bytes geschrieben.
+    // 3. FINALIZE FILESYSTEM
+    // Recording finished. Register file in the Genesis DB!
+    // Start LBA was 2000, wrote e.g. 1024 bytes.
     cfs_finalize_file(my_hdd, "ORACLE_SESSION_01.TBA", 2000, 1024);
     
-    // FERTIG! Cosmos OS geht in den Idle-Modus.
+    // COMPLETED! CosmOS enters idle loop.
     while(1) {
-        // OS Background Tasks (z.B. Blobby Volley rendern)
+        // OS Background tasks (e.g., render Blobby Volley)
     }
 }

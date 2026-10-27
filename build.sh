@@ -5,21 +5,21 @@ echo "=========================================="
 echo "    COSMOS OS - BARE METAL BUILD SYSTEM   "
 echo "=========================================="
 
-echo "-> Erstelle automatisches Backup..."
+echo "-> Creating automated backup..."
 BACKUP_DIR="backups/cosmos_$(date +%Y-%m-%d_%H-%M-%S)"
 mkdir -p "$BACKUP_DIR"
 cp *.cpp *.h *.s *.ld "$BACKUP_DIR/" 2>/dev/null || true
-echo "-> Quellcodes sicher kopiert nach: $BACKUP_DIR"
+echo "-> Source code safely copied to: $BACKUP_DIR"
 
 echo "------------------------------------------"
-echo "0. Alten Müll aufräumen..."
+echo "0. Cleaning up old build artifacts..."
 rm -f *.o *.elf *.bin cosmos.iso
 rm -rf isodir || true
 sleep 1
 mkdir -p isodir/boot/grub
 
 echo "------------------------------------------"
-echo "1. Erstelle 64-Bit Linker-Skript..."
+echo "1. Creating 64-Bit Linker Script..."
 cat > linker64.ld << 'EOF'
 ENTRY(os2_start)
 SECTIONS
@@ -40,7 +40,7 @@ SECTIONS
 EOF
 
 echo "------------------------------------------"
-echo "2. Kompiliere OS1 (32-Bit Bootloader & Disk Manager)..."
+echo "2. Compiling OS1 (32-Bit Bootloader & Disk Manager)..."
 as --32 bare_metal_hobby/boot.s -o boot.o
 g++ -I. -Ibare_metal_hobby -m32 -U__linux__ -O2 -c bare_metal_hobby/kernel.cpp -o kernel_32.o -ffreestanding -fno-exceptions -fno-rtti -fpermissive -Wno-int-to-pointer-cast
 g++ -I. -Ibare_metal_hobby -m32 -U__linux__ -O2 -c bare_metal_hobby/pci.cpp -o pci_32.o -ffreestanding -fno-exceptions -fno-rtti -fpermissive -Wno-int-to-pointer-cast
@@ -59,7 +59,7 @@ g++ -I. -Ibare_metal_hobby -m32 -U__linux__ -O2 -c bare_metal_hobby/memory.cpp -
 ld -m elf_i386 -T bare_metal_hobby/linker.ld -static -z noexecstack -o isodir/boot/kernel.bin boot.o kernel_32.o pci_32.o net_32.o cosmos_bytes_32.o cosmos_fs_32.o cosmos_tba_32.o cosmos_ahci_32.o cosmos_cfs_32.o cosmos_usb_32.o cosmos_hda_32.o cosmos_partition_32.o cosmos_fat32_32.o memory_32.o
 
 echo "------------------------------------------"
-echo "3. Kompiliere OS2 (64-Bit Payload Kernel)..."
+echo "3. Compiling OS2 (64-Bit Payload Kernel)..."
 as --64 bare_metal_hobby/os2_entry.s -o os2_entry.o
 g++ -I. -Ibare_metal_hobby -m64 -U__linux__ -mno-red-zone -O2 -c bare_metal_hobby/kernel_main.cpp -o kernel_main_64.o -ffreestanding -fno-exceptions -fno-rtti -fpermissive -Wno-int-to-pointer-cast
 g++ -I. -Ibare_metal_hobby -m64 -U__linux__ -mno-red-zone -O2 -c bare_metal_hobby/kernel.cpp -o kernel_64.o -ffreestanding -fno-exceptions -fno-rtti -fpermissive -Wno-int-to-pointer-cast
@@ -81,21 +81,21 @@ g++ -I. -Ibare_metal_hobby -m64 -U__linux__ -mno-red-zone -O2 -c cosmos_smp.cpp 
 g++ -I. -Ibare_metal_hobby -m64 -U__linux__ -mno-red-zone -O2 -c cosmos_nvme.cpp -o cosmos_nvme_64.o -ffreestanding -fno-exceptions -fno-rtti -fpermissive -Wno-int-to-pointer-cast
 
 echo "------------------------------------------"
-echo "4. Baue Hypervisor (Bare-Metal)..."
+echo "4. Building Hypervisor (Bare-Metal)..."
 bash build_hypervisor.sh baremetal
 
 echo "------------------------------------------"
-echo "5. Linke OS2 (Die flache KERNEL.BIN)..."
+echo "5. Linking OS2 (Flat KERNEL.BIN)..."
 ld -m elf_x86_64 -T linker64.ld -z noexecstack --allow-multiple-definition os2_entry.o kernel_main_64.o kernel_64.o pci_64.o net_64.o cosmos_bytes_64.o cosmos_fs_64.o cosmos_tba_64.o cosmos_ahci_64.o cosmos_cfs_64.o cosmos_usb_64.o cosmos_hda_64.o arcade.o stb_wrapper.o cosmos_partition_64.o cosmos_fat32_64.o memory_64.o cosmos_tls_64.o cosmos_smp_64.o cosmos_nvme_64.o hypervisor/build/cosmos_hypervisor_all.o -o kernel_main.elf
 
 objcopy -O binary kernel_main.elf isodir/KERNEL.BIN
 
-echo "5. Externe App kompilieren..."
+echo "5. Compiling external application..."
 cat > bare_metal_hobby/app_linker.ld << 'EOF'
 ENTRY(app_main)
 SECTIONS
 {
-    . = 0x01100000;  /* BARE METAL FIX: Auf 64 Megabyte hochschieben! */
+    . = 0x01100000;  /* BARE METAL FIX: Move to 64 megabyte offset */
     .text : { *(.text.entry) *(.text .text.*) }
     .rodata : { *(.rodata .rodata.*) }
     .data : { *(.data .data.*) }
@@ -104,18 +104,16 @@ SECTIONS
 }
 EOF
 
-#g++ -I. -Ibare_metal_hobby -m64 -U__linux__ -mno-red-zone -O2 -c app.cpp -o app.o -ffreestanding -fno-exceptions -fno-rtti
-#ld -m elf_x86_64 -T bare_metal_hobby/app_linker.ld -z noexecstack --unresolved-symbols=ignore-all app.o -o app.elf
-#objcopy -O binary app.elf app.bin
+# Compile app if required
 touch app.bin
-echo "-> app.bin erfolgreich extrahiert!"
+echo "-> app.bin successfully extracted!"
 
 # ==============================================================
-# BARE METAL FIX: DOPPEL-INJEKTION & AUTOMATISCHES RECHTE-PATCHING
+# BARE METAL FIX: DUAL INJECTION & AUTOMATIC PERMISSION PATCHING
 # ==============================================================
-echo "5. Injiziere app.bin und roms.tba in virtuelle Laufwerke..."
+echo "5. Injecting app.bin and roms.tba into virtual drives..."
 
-# 1. Die rohen Daten auf die Festplatten-Sektoren brennen
+# 1. Write raw data to target disk sectors
 dd if=app.bin of=cosmos_drive.img bs=512 seek=10000 conv=notrunc status=none
 dd if=app.bin of=cosmos_hdd.img bs=512 seek=10000 conv=notrunc status=none
 
@@ -124,14 +122,14 @@ if [ -f roms.tba ]; then
     dd if=roms.tba of=cosmos_hdd.img bs=512 seek=11000 conv=notrunc status=none
 fi
 
-# 2. Das temporäre Tool mit der EXAKTEN 18-Byte CFS V2 Kernel-Struktur füttern
+# 2. Feed temporary tool with exact 18-byte CFS V2 kernel structure
 cat > patch_image_fs.cpp << 'EOF'
 #include <iostream>
 #include <fstream>
 #include <cstring>
 #include <cstdint>
 
-// EXAKT DAS GLEICHE LAYOUT WIE IN DEINER KERNEL_MAIN.CPP! (18 Bytes packed)
+// EXACT MATCH WITH KERNEL_MAIN.CPP LAYOUT (18 Bytes packed)
 struct CFS_DIR_ENTRY { 
     uint8_t  type;          
     char     filename[11];  
@@ -151,7 +149,7 @@ void inject_entry(CFS_DIR_ENTRY* entries, const char* name, uint32_t size, uint3
     if (size == 0) return;
     int slot = -1;
     
-// 28 Einträge passen glatt in einen 512-Byte Sektor (28 * 18 = 504 Bytes)
+    // 28 entries fit into one 512-byte sector (28 * 18 = 504 Bytes)
     for (int i = 0; i < 28; i++) {
         if (entries[i].type == 1 && std::strncmp(entries[i].filename, name, std::strlen(name)) == 0) {
             slot = i; break;
@@ -164,12 +162,12 @@ void inject_entry(CFS_DIR_ENTRY* entries, const char* name, uint32_t size, uint3
     }
     
     if (slot != -1) {
-        entries[slot].type = 1; // 1 = Datei
+        entries[slot].type = 1; // 1 = File
         std::memset(entries[slot].filename, 0, 11);
         std::strncpy(entries[slot].filename, name, 11);
         entries[slot].start_lba = (uint16_t)lba;
         entries[slot].file_size = (uint16_t)size;
-        entries[slot].parent_idx = 255; // WICHTIG: 255 signalisiert dem Kernel "Root-Ordner"!
+        entries[slot].parent_idx = 255; // IMPORTANT: 255 indicates root folder to kernel
         entries[slot].reserved = 0;
     }
 }
@@ -178,16 +176,16 @@ void patch_file(const char* img_name, uint32_t app_size, uint32_t tba_size) {
     std::fstream file(img_name, std::ios::in | std::ios::out | std::ios::binary);
     if (!file) return;
     
-    // Sektor 1002 (Inhaltsverzeichnis) einlesen
+    // Read sector 1002 (directory table)
     file.seekg(1002 * 512);
     CFS_DIR_ENTRY entries[28]; 
     file.read((char*)entries, sizeof(entries));
     
-    // Einträge mit richtigem Padding & Parent-ID patchen
+    // Patch entries with correct padding & parent ID
     inject_entry(entries, "APP.BIN", app_size, 10000);
     inject_entry(entries, "ROMS.TBA", tba_size, 11000);
     
-    // Sektor 1002 wieder fehlerfrei zurückschreiben
+    // Write back sector 1002
     file.seekp(1002 * 512);
     file.write((char*)entries, sizeof(entries));
 }
@@ -201,52 +199,45 @@ int main() {
 }
 EOF
 
-# Tool kompilieren, ausführen und aufräumen
+# Compile tool, execute, and cleanup
 g++ patch_image_fs.cpp -o patch_image_fs
 ./patch_image_fs
 rm -f patch_image_fs.cpp patch_image_fs
 
-echo "-> Inhaltsverzeichnis (Sektor 1002) erfolgreich an CFS V2 angepasst!"
+echo "-> Directory table (Sector 1002) successfully adapted to CFS V2!"
 
 echo "------------------------------------------"
-echo "------------------------------------------"
-echo "6. ISO zusammenbauen..."
+echo "6. Assembling ISO image..."
 
-# Wir erstellen die grub.cfg mit den korrekten Pfaden
+# Generate grub.cfg with correct file paths
 cat > isodir/boot/grub/grub.cfg << 'EOF'
 set timeout=0
 set default=0
 menuentry "Cosmos OS" {
     set gfxpayload=1920x1080x32
     multiboot /boot/kernel.bin
-    module /KERNEL.BIN       # Dein Kernel-Payload
-    module /APP.BIN "cartridge"  # Die geschrumpfte RAM-Disk (als APP.BIN getarnt!)
+    module /KERNEL.BIN       # Kernel payload
+    module /APP.BIN "cartridge"  # Packed RAM disk
     boot
 }
 EOF
 
-# WICHTIG: Wir löschen das lose app.bin-Kopieren aus dem alten Skript,
-# da die App ja bereits fest im cosmos_drive.img eingebrannt ist!
 rm -f isodir/APP.BIN
 
-# ==============================================================
-# BARE METAL FIX: SCHRUMPFEN & TARNEN
-# ==============================================================
-# Wir schneiden 12.000 Sektoren aus und nennen es APP.BIN,
-# damit der 32-Bit Loader die Datei akzeptiert.
+# Extract sectors as APP.BIN for 32-bit loader compatibility
 dd if=cosmos_drive.img of=isodir/APP.BIN bs=512 count=25000 status=none
 
-# roms.tba zur Sicherheit mit in den ISO-Root legen
+# Place roms.tba into ISO root if present
 if [ -f roms.tba ]; then
     cp roms.tba isodir/ROMS.TBA
 fi
 
-# Alte ISO löschen
+# Remove older ISO
 rm -f cosmos.iso 
 
-# ISO neu bauen (Jetzt klein, schnell und voll kompatibel!)
+# Build bootable ISO
 grub-mkrescue -o cosmos.iso isodir
 
 echo "=========================================="
-echo "          ISO ERFOLGREICH GEBAUT          "
+echo "          ISO BUILT SUCCESSFULLY          "
 echo "=========================================="

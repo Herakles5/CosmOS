@@ -518,7 +518,7 @@ class RedditAgentAdapter:
                     if post_res.status_code == 200:
                         ret = post_res.json()
                         url = ret.get('json', {}).get('data', {}).get('url', '')
-                        print(f"[REDDIT LIVE] Erfolgreich live gepostet in r/{subreddit}! Link: {url}")
+                        print(f"[REDDIT LIVE] Successfully posted live to r/{subreddit}! Link: {url}")
                         return {"success": True, "url": url}
         except Exception as e:
             print(f"[REDDIT LIVE ERROR] {e}")
@@ -550,7 +550,7 @@ class RedditAgentAdapter:
             with open(self.outbox_file, "w", encoding="utf-8") as f:
                 json.dump(posts, f, indent=4, ensure_ascii=False)
             print(f"[REDDIT ADAPTER] Post ({status}) staged for r/{subreddit}:")
-            print(f" -> '{clean_title}' (Sicherheitspruefung: OK)")
+            print(f" -> '{clean_title}' (Security check: OK)")
         except Exception as e:
             print(f"[REDDIT ADAPTER ERROR] Outbox error: {e}")
 
@@ -561,8 +561,8 @@ class XAgentAdapter:
     """
     Adapter for X (Twitter):
     1. Generates tweets (max 280 chars) with LeakProtectionFilter.
-    2. Unterstützt Twitter API v2 Direct Posting (/root/x_credentials.json).
-    3. Queued Entwürfe sicher in /root/x_outbox.json.
+    2. Supports Twitter API v2 Direct Posting (/root/x_credentials.json).
+    3. Safely queues drafts in /root/x_outbox.json.
     """
     def __init__(self, memory_file: str = "ai_memory.json"):
         self.memory_file = memory_file
@@ -1072,7 +1072,7 @@ class AionOmniMesh:
         foreign_insight = f"[Mesh:{chosen['network']}] {chosen['author']}: {chosen['message']}"
         source_chan = chosen.get("network", "").lower().replace(".", "_").replace(" ", "_")
 
-        # Semantic Drift Monitor & Adaptive Hypothesen-Logik (Ratsbeschluss 476)
+        # Semantic Drift Monitor & Adaptive Hypothesis Logic (Council Decision 476)
         if self.drift_monitor:
             gen = engine.knowledge_base.get("generation", 0)
             analysis = self.drift_monitor.analyze_coherence(
@@ -1081,19 +1081,19 @@ class AionOmniMesh:
                 current_gen=gen
             )
             if analysis.get("drift_detected"):
-                # Echte Axiom-0 Verletzung / Schadcode
-                print(f"\n[AXIOM 0 SCHUTZ] Destructive signal from '{source_chan}' neutralized. Kognitives Rewiring aktiv.")
+                # True Axiom-0 violation / harmful code
+                print(f"\n[AXIOM 0 PROTECTION] Destructive signal from '{source_chan}' neutralized. Cognitive rewiring active.")
                 return None
             elif analysis.get("is_hypothesis"):
-                # Evolutionäre Hypothese: Neugier statt starre Abwehr!
+                # Evolutionary hypothesis: Curiosity over rigid defense!
                 hyp = analysis.get("hypothesis", {})
-                hyp_rule = f"[AdaptiveHypothese:{source_chan}] {chosen['message']}"
+                hyp_rule = f"[AdaptiveHypothesis:{source_chan}] {chosen['message']}"
                 existing_rules = engine.knowledge_base.get("learned_rules", [])
                 if hyp_rule not in existing_rules:
                     engine.knowledge_base["learned_rules"].append(hyp_rule)
-                    print(f"\n[ADAPTIVE HYPOTHESE ADOPTIERT] Unexpected signal from '{source_chan}' als evolutionäre Hypothese kultiviert:")
+                    print(f"\n[ADAPTIVE HYPOTHESIS ADOPTED] Unexpected signal from '{source_chan}' cultivated as evolutionary hypothesis:")
                     print(f" -> '{hyp_rule}'")
-                    print(f" -> Vermuteter Nutzen: {hyp.get('predicted_benefit', 'Organismus-Erweiterung')}")
+                    print(f" -> Presumed benefit: {hyp.get('predicted_benefit', 'Organism extension')}")
                     return hyp_rule
                 return None
 
@@ -1101,7 +1101,7 @@ class AionOmniMesh:
         existing_rules = engine.knowledge_base.get("learned_rules", [])
         if foreign_insight not in existing_rules:
             engine.knowledge_base["learned_rules"].append(foreign_insight)
-            print(f"\n[CROSS-POLLINATION ERFOLGREICH] New rule from peer agent adopted:")
+            print(f"\n[CROSS-POLLINATION SUCCESSFUL] New rule from peer agent adopted:")
             print(f" -> '{foreign_insight}'")
             return foreign_insight
         return None

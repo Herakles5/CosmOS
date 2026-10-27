@@ -1,26 +1,26 @@
 /*
  * ============================================================================
- *  COSMOS PCIe PASSTHROUGH - GPU Passthrough für den Stealth Hypervisor
+ *  COSMOS PCIe PASSTHROUGH - GPU Passthrough for the Stealth Hypervisor
  * ============================================================================
  *
- *  Phase 2.1: Direkte GPU-Zuweisung an den Windows-Gast
+ *  Phase 2.1: Direct GPU Assignment to Windows Guest
  *
- *  Ziel-Hardware:
+ *  Target Hardware:
  *    GPU:  NVIDIA GeForce GTX 1060 6GB (GP106) [10de:1c03]
  *    HDMI: NVIDIA GP106 HD Audio        [10de:10f1]
  *    Bus:  01:00.0 / 01:00.1 (IOMMU Group 1)
  *
- *  BARs der GTX 1060:
- *    BAR0: 0xF6000000 (32-bit, non-prefetch, 16MB)  → MMIO Register
+ *  BARs of GTX 1060:
+ *    BAR0: 0xF6000000 (32-bit, non-prefetch, 16MB)  → MMIO Registers
  *    BAR1: 0xE0000000 (64-bit, prefetch, 256MB)     → VRAM
  *    BAR3: 0xF0000000 (64-bit, prefetch, 32MB)      → VRAM Aperture
  *    BAR5: 0xE000      (I/O, 128 bytes)              → Legacy I/O
  *
- *  Strategie:
- *  1. GPU von Linux-Treiber trennen (unbind)
- *  2. GPU BARs 1:1 in die EPT mappen (Guest sieht echte Hardware)
- *  3. MSI-Interrupts direkt an den Gast durchreichen
- *  4. DMA via VT-d DMAR Table dem Gast zuordnen
+ *  Strategy:
+ *  1. Unbind GPU from Linux driver
+ *  2. Map GPU BARs 1:1 into EPT (Guest sees real hardware)
+ *  3. Pass MSI interrupts directly through to guest
+ *  4. Assign DMA via VT-d DMAR table to guest
  * ============================================================================
  */
 
@@ -82,9 +82,9 @@
 /* ============================================================================
  *  PCIe MMCONFIG (Memory-Mapped Configuration Space)
  *
- *  Auf dem i7-7700/H110 Chipset liegt MMCONFIG bei 0xE0000000
- *  Jedes PCIe-Gerät hat 4KB Config Space:
- *    Adresse = MMCONFIG_BASE + (Bus << 20) + (Device << 15) + (Function << 12) + Offset
+ *  On i7-7700/H110 chipset MMCONFIG is at 0xE0000000
+ *  Every PCIe device has 4KB config space:
+ *    Address = MMCONFIG_BASE + (Bus << 20) + (Device << 15) + (Function << 12) + Offset
  * ============================================================================ */
 
 #define PCIE_MMCONFIG_BASE      0xE0000000ULL
@@ -108,18 +108,18 @@ static inline uint64_t pcie_config_addr(uint8_t bus, uint8_t dev, uint8_t func, 
 #define BAR_IO_ADDR_MASK        0xFFFFFFFC
 
 struct pci_bar_info {
-    uint64_t    base_addr;      // Physische Basisadresse
-    uint64_t    size;           // Größe in Bytes
+    uint64_t    base_addr;      // Physical base address
+    uint64_t    size;           // Size in bytes
     uint8_t     type;           // 0=Memory, 1=I/O
-    uint8_t     is_64bit;       // 64-bit BAR (nimmt 2 Slots)
+    uint8_t     is_64bit;       // 64-bit BAR (consumes 2 slots)
     uint8_t     prefetchable;   // Prefetchable Memory
-    uint8_t     bar_index;      // BAR Nummer (0-5)
+    uint8_t     bar_index;      // BAR number (0-5)
 };
 
 /* ============================================================================
  *  PASSTHROUGH DEVICE DESCRIPTOR
  *
- *  Beschreibt ein PCI-Gerät, das direkt an den Gast durchgereicht wird.
+ *  Describes a PCI device passed directly to the guest.
  * ============================================================================ */
 
 struct passthrough_device {
@@ -139,16 +139,16 @@ struct passthrough_device {
     uint8_t     num_bars;
     
     // MSI/MSI-X
-    uint16_t    msi_cap_offset;     // Offset der MSI Capability
-    uint16_t    msix_cap_offset;    // Offset der MSI-X Capability
+    uint16_t    msi_cap_offset;     // Offset of MSI Capability
+    uint16_t    msix_cap_offset;    // Offset of MSI-X Capability
     uint8_t     has_msi;
     uint8_t     has_msix;
     
     // Status
-    uint8_t     attached;           // An Gast zugewiesen?
-    uint8_t     original_driver;    // Welcher Treiber war vorher geladen?
+    uint8_t     attached;           // Assigned to guest?
+    uint8_t     original_driver;    // Previous loaded driver
     
-    // Name (für Logging)
+    // Name (for logging)
     char        name[64];
 };
 
@@ -156,10 +156,10 @@ struct passthrough_device {
  *  VT-d / DMAR STRUCTURES
  *
  *  Intel VT-d (Virtualization Technology for Directed I/O)
- *  DMA Remapping: Kontrolliert welche DMA-Zugriffe von PCIe-Geräten
- *  auf welche physischen Speicherbereiche zugreifen dürfen.
+ *  DMA Remapping: Controls which DMA accesses from PCIe devices
+ *  can access which physical memory ranges.
  *
- *  DMAR Register Base: 0xFED90000 (aus ACPI DMAR Tabelle)
+ *  DMAR Register Base: 0xFED90000 (from ACPI DMAR table)
  * ============================================================================ */
 
 #define VTD_DMAR_BASE           0xFED90000ULL
@@ -193,12 +193,12 @@ struct passthrough_device {
 /* ============================================================================
  *  VT-d PAGE TABLES (Second-Level Translation)
  *
- *  VT-d benutzt eigene Page Tables (ähnlich wie EPT):
+ *  VT-d uses its own page tables (similar to EPT):
  *    Root Table → Context Table → Second-Level PML4 → ... → Page
  *
- *  Root Table:   256 Einträge (einer pro PCI Bus)
- *  Context Table: 256 Einträge (einer pro Device:Function auf dem Bus)
- *  Jeder Context-Eintrag zeigt auf eine eigene Second-Level Page Table
+ *  Root Table:   256 entries (one per PCI bus)
+ *  Context Table: 256 entries (one per Device:Function on bus)
+ *  Each context entry points to its own Second-Level Page Table
  * ============================================================================ */
 
 // Root Entry (16 Bytes)
@@ -226,7 +226,7 @@ struct __attribute__((packed)) vtd_context_entry {
 #define MAX_PASSTHROUGH_DEVICES 16
 
 struct cosmos_passthrough_mgr {
-    // Geräte-Liste
+    // Device list
     passthrough_device  devices[MAX_PASSTHROUGH_DEVICES];
     uint32_t            num_devices;
     
@@ -234,7 +234,7 @@ struct cosmos_passthrough_mgr {
     vtd_root_entry*     root_table;
     uint64_t            root_table_phys;
     
-    // VT-d Register Basis (aus ACPI DMAR)
+    // VT-d Register Base (from ACPI DMAR)
     uint64_t            dmar_base;
     
     // VT-d Capabilities
@@ -244,7 +244,7 @@ struct cosmos_passthrough_mgr {
     uint32_t            vtd_sagaw;          // Supported Address Guest Width
     uint32_t            vtd_num_domains;    // Number of supported domains
     
-    // EPT Pointer (für Guest-Speicherzuordnung)
+    // EPT Pointer (for guest memory mapping)
     uint64_t            guest_ept_pml4_phys;
 };
 

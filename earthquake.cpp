@@ -515,7 +515,7 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
         // Clip to window
         if (px1 >= cx && px1 <= cx+cw && py1 >= cy && py1 <= cy+ch &&
             px2 >= cx && px2 <= cx+cw && py2 >= cy && py2 <= cy+ch) {
-            DrawLineAlpha(px1, py1, px2, py2, 0x113311, 0.7f); // Dunklere Küstenlinien
+            DrawLineAlpha(px1, py1, px2, py2, 0x113311, 0.7f); // Darker coastlines
         }
     }
     
@@ -781,7 +781,7 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
     }
     
     if (!map_only) {
-        // Zoom UI Buttons (+ und - Symbole manuell zeichnen, da + im Font evtl fehlt)
+        // Zoom UI Buttons (Draw + and - symbols manually in case + is missing from font)
         DrawRoundedRect(cx + 15, cy + 15, 30, 30, 4, 0x333333);
         // + Horizontal
         DrawRoundedRect(cx + 22, cy + 28, 16, 4, 1, 0xFFFFFF);

@@ -246,7 +246,7 @@ static void sglDrawRasterTriangle(sglVec3 v0, sglVec3 v1, sglVec3 v2, uint32_t c
     float z0 = v0.z + 5.0f;
     float z1 = v1.z + 5.0f;
     float z2 = v2.z + 5.0f;
-    if (z0 < 0.1f || z1 < 0.1f || z2 < 0.1f) return; // Fast Z-Clip (verhindert Glitches)
+    if (z0 < 0.1f || z1 < 0.1f || z2 < 0.1f) return; // Fast Z-Clip (prevents glitches)
     
     float fov = 200.0f;
     sglVec3 p0 = { vp_x + vp_w/2.0f + (v0.x/z0)*fov, vp_y + vp_h/2.0f - (v0.y/z0)*fov, v0.z };

@@ -860,7 +860,7 @@ void pe_execute(uint8_t* pe_data, uint32_t pe_sz) {
 
 char linux_file_paths[28][256];
 
-/// CHIP-8 Emulator Variablen von "außen" bekannt machen
+/// Expose CHIP-8 emulator state variables externally
 extern "C" void c8_reset();
 extern unsigned char c8_ram[4096];
 extern unsigned short c8_pc;
@@ -892,25 +892,25 @@ _182 pkg_target_port = 80;
 void* pkg_output_win_ptr = 0;
 
 /// ==========================================
-/// BARE METAL FIX: EXTERNE LAUFWERKS-BRÜCKE
+/// BARE METAL FIX: EXTERNAL STORAGE DRIVE BRIDGE
 /// ==========================================
-/// 1. Dem UI erklären, wie ein Laufwerk aussieht
+/// 1. Declare storage drive descriptor layout to UI
 _202 DriveInfo { _43 type; _43 size_mb; _43 base_port; _30 model[41]; };
 
-/// 2. Die globalen Variablen aus den anderen Dateien anzapfen
+/// 2. Bind external global state variables from driver modules
 _172 DriveInfo drives[8];
 _172 _43 drive_count;
 _172 _89 usb_io_base; 
 extern uint64_t global_xhci_base_addr;
 
-/// 3. Die Laufwerks-Treiber dem UI bekannt machen
+/// 3. Expose storage driver routines to UI subsystem
 _172 _44 ahci_read_sectors(_43 port_no, _43 lba, _43 count, _94 buffer_addr);
 _172 _44 ahci_write_sectors(_43 port_no, _43 lba, _43 count, _94 buffer_addr);
 _172 _44 usb_bot_read_sectors(_43 dev_addr, _43 ep_out, _43 ep_in, _89 lba, _43 num_sectors, _184* buffer);
 _172 _43 usb_bot_get_capacity(_43 dev_addr, _43 ep_out, _43 ep_in);
 _172 _44 usb_enumerate_device(_43 port_idx, _43 new_address);
 
-/// 4. I/O Befehl für den USB-Scanner im UI
+/// 4. I/O dispatch routine for UI USB scanner
 static inline _182 inw(_182 port) {
     return 0;
 }
@@ -926,12 +926,12 @@ extern uint32_t cartridge_end;
 
 bool is_app_running = false;
 // --- BARE METAL EXTERNS ---
-// Sag der kernel_main.cpp, dass diese Variable in der cosmos_ahci.cpp existiert!
+// Declare variable exported from cosmos_ahci.cpp to kernel_main.cpp
 extern uint32_t global_ahci_abar;
 struct HBA_PORT; 
 extern HBA_PORT* get_active_ahci_port();
 extern _44 ahci_read(HBA_PORT* port, _89 startlba, void* target_ram_address);
-// disable_nx ist extern "C" - wir nutzen native 64-Bit Typen für saubere Pointer-Casts!
+// disable_nx is extern "C" - use native 64-bit integer types for clean pointer casts!
 extern "C" void disable_nx_for_app(unsigned long long virtual_addr, unsigned long long size_in_bytes);
 /// ==========================================
 /// OS2 NATIVE 64-BIT NETWORK SCANNER
@@ -1010,12 +1010,12 @@ void os2_smart_scan() {
 }
 void internal_test_task() {
     while(1) {
-        // Direkter Video-RAM Zugriff (0xB8000 ist fast immer gemappt)
+        // Direct video memory access (0xB8000 mapped legacy VGA text buffer)
         char* vga = (char*)0xB8000;
         vga[0] = 'T'; // 'T' für Task
         vga[1] = 0x0A; // Hellgrün
         
-        // Pause, um die CPU nicht zu grillen
+        // Yield spinloop pause to prevent CPU thermal saturation
         for(volatile int i = 0; i < 1000000; i++) {}
         
         // Abgeben
@@ -1040,25 +1040,25 @@ _50 run_emulator_engine(_43, _43, _43, _43, _44);
 volatile uint64_t system_ticks = 0; 
 uint64_t last_window_click = 0;
 
-/// HIER WIRD SIE ECHT DEFINIERT (Kein extern mehr!)
+/// Concrete global definition (non-extern allocation)
 int task_quantum = 0; 
 
 /// Freiwillige CPU-Abgabe
 void yield() {
     task_quantum = 15; 
     
-    /// BARE METAL FIX: sti schließt die Interrupts wieder auf!
-    /// So kann der Hardware-Timer uns wecken, auch wenn wir aus 
+    /// BARE METAL FIX: sti unmasks hardware interrupts!
+    /// Enables hardware timer interrupt wakeups even from idle loop 
     /// einem System-Call kommen!
     ; 
 }
 
 /// ==========================================
-/// DER WORKER TASK
+/// WORKER TASK SUBSYSTEM
 /// ==========================================
 void dynamic_task_worker() {
     while(1) {
-        /// Dieser Task wird per Klick zur Laufzeit in den RAM geladen!
+        /// Task loaded dynamically into physical RAM at runtime via UI trigger!
         volatile int z = 0;
         z++;
         yield(); 
@@ -1078,9 +1078,9 @@ Task tasks[4];
 int current_task = 0;      
 int num_tasks = 1;         
 
-// BARE METAL FIX: Eine Struktur, die exakt den Stack abbildet,
-// wie ihn deine pit_isr vor dem iretq erwartet!
-// BARE METAL FIX: Die 16 Bytes, die den Triple Fault verursacht haben!
+// BARE METAL FIX: Stack frame layout matching ISR convention
+// expected by pit_isr prior to executing iretq!
+// BARE METAL FIX: Stack padding eliminating legacy triple fault!
 #ifdef __linux__
 static uint64_t get_ram_addr_raw() { static uint8_t* p = new uint8_t[32*1024*1024]; return (uint64_t)p; }
 static uint64_t get_ram_addr_bmp() { static uint8_t* p = new uint8_t[32*1024*1024]; return (uint64_t)p; }
@@ -1095,11 +1095,11 @@ static uint64_t get_ram_addr_copy() { static uint8_t* p = new uint8_t[32*1024*10
 #define get_ram_addr_copy() 0x09000000ULL
 #endif
 struct InterruptFrame {
-    // Exakt die 15 Register deiner Naked-ISR
+    // Exact 15 general purpose registers saved by naked ISR
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
     uint64_t rdi, rsi, rbp, rbx, rdx, rcx, rax;
     
-    // Die 5 Register, die iretq frisst
+    // 5 CPU execution context registers popped by iretq
     uint64_t rip;
     uint64_t cs;
     uint64_t rflags;
@@ -1108,9 +1108,9 @@ struct InterruptFrame {
 } __attribute__((packed));
 void sys_idle_task() {
     while(1) {
-        // Hier kannst du Dinge tun, die immer laufen sollen,
-        // auch wenn keine App geladen ist.
-        // Wenn du nichts tun willst:
+        // System background idle worker loop
+        // executes continuously even when no foreground application is running
+        // Idle pause instruction:
         ; // CPU schlafen legen, bis ein Interrupt kommt
     }
 }
@@ -1135,45 +1135,45 @@ void create_task(void (*entry_point)()) {
     }
     
     // ==========================================
-    // BARE METAL FIX: DER KUGELSICHERE STACK
-    // Keine .bss Arrays mehr! Wir nutzen 18 MB (0x01200000)
-    // Jeder Task bekommt 1 volles Megabyte Abstand.
+    // BARE METAL FIX: ROBUST ISOLATED TASK STACK
+    // Direct physical stack allocation at 18MB (0x01200000)
+    // Each task receives 1MB isolated stack space margin
     // ==========================================
     uint64_t stack_base = 0x01200000 + (id * 0x100000); 
     stack_base &= ~0xF; // Perfektes 16-Byte Alignment
     
     InterruptFrame* frame = (InterruptFrame*)(stack_base - sizeof(InterruptFrame));
     
-    // Alles mit Nullen füllen, um Müll aus dem RAM zu entfernen
+    // Zero initialize stack frame to eliminate residual memory junk
     uint8_t* frame_ptr = (uint8_t*)frame;
     for (uint32_t i = 0; i < sizeof(InterruptFrame); i++) {
         frame_ptr[i] = 0;
     }
     
-    // 64-Bit Variablen für die Segment-Register (verhindert 16-Bit Müll!)
+    // 64-bit variables for segment registers (prevents upper-word garbage)
     uint64_t current_cs = 0, current_ss = 0;
     ;
     ;
     
-    // Frame befüllen
+    // Populate stack frame registers
     frame->rip = (uint64_t)entry_point;
     frame->cs = current_cs;        
     frame->ss = current_ss;        
     
     // BARE METAL FIX: Absolut saubere Flags erzwingen! (IF=1, Reserved=1)
-    // Keine zufälligen Bits mehr aus dem Kernel übernehmen.
+    // Prevent inheriting undefined flags from kernel context
     frame->rflags = 0x0202;  
     
-    // Den Stack-Pointer für das C++ ABI auf -8 ausrichten
+    // Align stack pointer to 16-byte boundary - 8 for System V C++ ABI
     frame->rsp = stack_base - 8; 
     
-    // Task eintragen und scharf schalten
+    // Register task descriptor in scheduler active queue
     tasks[id].rsp = (uint64_t)frame;
     tasks[id].active = true;
     tasks[id].paused = false;
     if (id >= num_tasks) num_tasks = id + 1;
     
-    // 2. Timer wieder an! Auf in die Schlacht!
+    // 2. Re-enable PIT timer interrupt; resume scheduling!
     ; 
 }
 
@@ -1182,7 +1182,7 @@ extern "C" uint64_t schedule(uint64_t old_rsp) {
     
     tasks[current_task].rsp = old_rsp;
     
-    // Nächsten aktiven und NICHT pausierten Task suchen!
+    // Find next schedulable non-paused task!
     for (int i = 0; i < num_tasks; i++) {
         current_task++;
         if (current_task >= num_tasks) current_task = 0;
@@ -1191,8 +1191,8 @@ extern "C" uint64_t schedule(uint64_t old_rsp) {
         }
     }
     
-    // Falls alle pausiert sind (was nicht passieren sollte, da Task 0 (OS) nie pausiert),
-    // landen wir sicher wieder bei Task 0 oder dem letzten laufenden Task.
+    // Fallback guard if all tasks are paused:
+    // safely fall back to Task 0 (core OS) or last runnable context.
     
     return tasks[current_task].rsp;
 }
@@ -1217,23 +1217,23 @@ int folder_name_idx = 6;
 /// ==========================================
 /// BARE METAL FIX: USER SPACE RAM (64 KB pro Task)
 /// ==========================================
-/// aligned(4096) sorgt dafür, dass die Programme sauber auf RAM-Seiten-Grenzen liegen!
+/// aligned(4096) ensures executable payload is aligned to 4KB page boundaries!
 uint8_t user_programs[4][65536] __attribute__((aligned(4096)));
 /// ==========================================
-/// BARE METAL TOOL: STRING CONCAT (DER KLEBER)
+/// UTILITY: STRING CONCATENATION
 /// ==========================================
 void str_cat(char* dest, const char* src) {
-    /// 1. Gehe zum Ende des ersten Textes (bis zur Null)
+    /// 1. Advance to null terminator of destination string
     while (*dest) {
         dest++;
     }
-    /// 2. Kopiere den zweiten Text genau dort hin
+    /// 2. Append source string starting at terminator position
     while (*src) {
         *dest = *src;
         dest++;
         src++;
     }
-    /// 3. Setze am Ende die neue Null-Terminierung
+    /// 3. Write final null terminator byte
     *dest = 0;
 }
 /// ==========================================
@@ -1242,7 +1242,7 @@ void str_cat(char* dest, const char* src) {
 uint32_t pci_read(uint32_t bus, uint32_t slot, uint32_t func, uint32_t offset) {
     uint32_t address = (uint32_t)((bus << 16) | (slot << 11) | (func << 8) | (offset & 0xFC) | 0x80000000);
     
-    /// Direkter CPU-Hardware-Zugriff (Inline Assembler) -> Braucht keine externen Dateien!
+    /// Direct CPU I/O access via inline assembly
     ;
     return 0;
 }
@@ -1266,7 +1266,7 @@ extern "C" _50 send_arp_ping();
 
 
 /// ==========================================
-/// BARE METAL FIX: DER UNIVERSAL-LESE-ADAPTER (FINAL)
+/// BARE METAL FIX: UNIVERSAL STORAGE READ ADAPTER
 /// ==========================================
 extern int selected_drive_idx; 
 extern int ahci_read_sectors(uint32_t lba, uint64_t dest_ram); 
@@ -1274,7 +1274,7 @@ extern _44 xhci_bot_read_sectors(_184 slot_id, uint32_t lba, uint64_t dest_ram);
 extern char linux_dev_paths[8][48];
 
 /// ==========================================
-/// BARE METAL FIX: DER UNIVERSELLE DISK-ROUTER
+/// BARE METAL FIX: UNIVERSAL STORAGE DISK ROUTER
 /// ==========================================
 struct CFS_DIR_ENTRY { 
     uint8_t type;          /// 1 Byte: 0 = Leer, 1 = Datei, 2 = Ordner
@@ -1391,13 +1391,13 @@ bool disk_read_auto(uint32_t lba, uint64_t target_ram_addr) {
     
     /// FALL 1: SATA / AHCI FESTPLATTE
     _15(type EQ 2) {
-        /// HIER rufen wir den echten AHCI-Treiber mit 4 Argumenten auf!
+        /// Dispatch to AHCI controller driver with 4 arguments!
         _96 ahci_read_sectors(port, lba, 1, target_ram_addr);
     }
     
     /// FALL 2: xHCI USB MASS STORAGE (Typ 3)
     _15(type EQ 3) {
-        /// port ist jetzt slot_id (1, 2, ...)
+        /// port parameter represents slot_id (1, 2, ...)
         _96 xhci_bot_read_sectors((uint8_t)port, (uint32_t)lba, (uint64_t)target_ram_addr);
     }
     
@@ -1423,7 +1423,7 @@ bool disk_read_auto(uint32_t lba, uint64_t target_ram_addr) {
 }
 
 /// ==========================================
-/// BARE METAL FIX: DER UNIVERSELLE WRITE-ROUTER
+/// BARE METAL FIX: UNIVERSAL STORAGE WRITE ROUTER
 /// ==========================================
 extern _44 xhci_bot_write_sectors(_184 slot_id, uint32_t lba, uint64_t dest_ram);
 
@@ -1487,13 +1487,13 @@ bool disk_write_auto(uint32_t lba, uint64_t source_ram_addr) {
     
     /// FALL 2: xHCI USB MASS STORAGE (Typ 3)
     _15(type EQ 3) {
-        /// port ist jetzt slot_id!
+        /// port parameter maps to slot_id!
         _96 xhci_bot_write_sectors((uint8_t)port, (uint32_t)lba, (uint64_t)source_ram_addr);
     }
     
     /// FALL 3: UHCI USB MASS STORAGE (Typ 4)
     _15(type EQ 4) {
-        /// UHCI! Wir haben noch kein usb_bot_write_sectors
+        /// UHCI controller fallback (write path stub)
         _96 _86;
     }
     
@@ -1514,7 +1514,7 @@ bool disk_write_auto(uint32_t lba, uint64_t source_ram_addr) {
 }
 
 /// ==========================================
-/// BARE METAL FIX: PCI SCANNER FÜR USB (UHCI)
+/// BARE METAL FIX: PCI SCANNER FOR USB (UHCI)
 /// ==========================================
 static inline void outl(uint16_t port, uint32_t val) { ; }
 static inline uint32_t inl(uint16_t port) { return 0; }
@@ -1593,26 +1593,26 @@ void find_and_init_usb() {
     }
 }
 
-/// Der Retter-Wrapper für alte Speicher-Befehle im CFS:
+/// Backward compatibility wrapper for legacy CFS storage routines:
 int ahci_write_sectors(uint32_t lba, uint64_t buffer_addr) {
     return disk_write_auto(lba, buffer_addr);
 }
 
 /// ==========================================
-/// BARE METAL FIX: DER RETTER-WRAPPER (C++ OVERLOADING)
+/// BARE METAL FIX: COMPATIBILITY WRAPPER (C++ OVERLOADING)
 /// ==========================================
-/// Fängt alle alten Aufrufe aus main() und process_cmd() ab
-/// und leitet sie vollautomatisch an den neuen Router weiter!
+/// Intercepts legacy calls from main() and process_cmd()
+/// and automatically redirects them to the universal storage router!
 int ahci_read_sectors(uint32_t lba, uint64_t buffer_addr) {
     return disk_read_auto(lba, buffer_addr);
 }
 /// ==========================================
-/// BARE METAL FIX: DER UNIVERSAL-SCHREIB-ADAPTER
+/// BARE METAL FIX: UNIVERSAL STORAGE WRITE ADAPTER
 /// ==========================================
 extern int ahci_write_sectors(uint32_t lba, uint64_t src_ram); 
 extern _44 xhci_bot_write_sectors(_184 slot_id, uint32_t lba, uint64_t src_ram);
 
-/// BARE METAL FIX: Den RAM für Texte restlos reinigen!
+/// BARE METAL FIX: Zero initialize text buffer completely!
 void mem_set(void* ptr, uint8_t value, uint32_t num) {
     uint8_t* p = (uint8_t*)ptr;
     while (num--) *p++ = value;
@@ -1685,35 +1685,35 @@ extern bool mouse_right_down;
 extern int mouse_wheel;
 int mouse_sub_x = 40000;
 int mouse_sub_y = 30000;
-/// Deine einstellbare Sensitivität! 
+/// Configurable mouse sensitivity scalar 
 /// 10 = 1.0 (Normal) | 50 = 5 (Halb) | 100 = 10 (Extrem langsam)
 int mouse_sens = 120; /// <-- Versuch es mal mit 30 (0.3) für die Diva!
 /// ==========================================
-/// BARE METAL FIX: DIE USB-MAUS SCHNITTSTELLE
+/// BARE METAL FIX: USB MOUSE INPUT INTERFACE
 /// ==========================================
 void update_mouse_position(int dx, int dy, int btn) {
     
-    /// BARE METAL FIX: Der USB-Werte-Wrap!
-    /// Wir zwingen die 0-255 Werte hart in den negativen Bereich (-128 bis +127)
+    /// BARE METAL FIX: USB 8-bit signed delta conversion!
+    /// Cast unsigned 0..255 byte into signed delta (-128..+127)
     int real_dx = (signed char)dx;
     int real_dy = (signed char)dy;
     
-    /// 1. Die echte Mausbewegung mit Sensitivität multiplizieren
+    /// 1. Scale raw mouse movement delta by sensitivity multiplier
     mouse_sub_x += (real_dx * mouse_sens);
     mouse_sub_y += (real_dy * mouse_sens);
     
-    /// 2. Den echten Bildschirm-Pixel berechnen
+    /// 2. Calculate clamped screen cursor coordinates
     int new_x = mouse_sub_x / 100;
     int new_y = mouse_sub_y / 100;
 
-    /// 3. Achsen abriegeln UND Sub-Pixel-Konto zurücksetzen!
+    /// 3. Clamp screen boundaries and clear sub-pixel accumulator!
     if (new_x < 0) { new_x = 0; mouse_sub_x = 0; }
     if (new_x > 799) { new_x = 799; mouse_sub_x = 799 * 100; }
     
     if (new_y < 0) { new_y = 0; mouse_sub_y = 0; }
     if (new_y > 599) { new_y = 599; mouse_sub_y = 599 * 100; }
 
-    /// 4. An dein System übergeben
+    /// 4. Dispatch cursor state to window manager
     mouse_x = new_x;
     mouse_y = new_y;
 
@@ -1830,7 +1830,7 @@ _43 str_len(_71 _30* s) { _43 l=0; _114(*s++)l++; _96 l; }
 _44 is_over(_43 mx, _43 my, _43 ox, _43 oy, _43 r) { _96 (mx-ox)*(mx-ox) + (my-oy)*(my-oy) < r*r; }
 _44 is_over_rect(_43 mx, _43 my, _43 x, _43 y, _43 w, _43 h) { _96 (mx >= x AND mx <= x+w AND my >= y AND my <= y+h); }
 /// ==========================================
-/// BARE METAL FIX: HEX-KONVERTER FÜR DEBUGGING
+/// BARE METAL FIX: INTEGER TO HEX STRING FORMATTER FOR DEBUGGING
 /// ==========================================
 void byte_to_hex(unsigned char byte, char* str) {
     const char* hex_digits = "0123456789ABCDEF";
@@ -1838,7 +1838,7 @@ void byte_to_hex(unsigned char byte, char* str) {
     str[1] = hex_digits[byte & 0x0F];
     str[2] = 0; /// Null-Terminierung für den String
 }
-/// TEXT ENGINE HELPER FÜR FENSTER
+/// WINDOW TEXT ENGINE HELPERS
 bool str_equal(const char* s1, const char* s2) {
     while(*s1 && (*s1 == *s2)) { s1++; s2++; }
     return (*(const unsigned char*)s1 == *(const unsigned char*)s2);
@@ -1888,15 +1888,15 @@ int selected_drive_idx = -1;
 /// OS2 CFS SYSTEM V2 (With Persistent Folders)
 /// ==========================================
 
-/// BARE METAL FIX: is_folder Flag wieder hinzugefügt!
+/// BARE METAL FIX: Restored is_folder directory attribute flag!
 struct FileEntry { uint8_t exists; char name[64]; uint16_t size; uint16_t start_lba; uint8_t is_folder; uint8_t parent_idx; };
 FileEntry cfs_files[28];
 uint32_t active_file_lba = 0;
 uint32_t active_file_idx = 0;
-/// 255 bedeutet: Wir sind im Root-Verzeichnis (Ganz oben)
+/// 255 indicates: Root directory level
 uint8_t current_folder_id = 255;
 _44 dsk_mgr_opened = _86; /// BARE METAL FIX: Speichert, ob wir im Datei-Explorer sind!
-/// NEU: Speicher für die Laufwerksgröße
+/// Storage capacity metric cache
 uint32_t drive_total_gb = 0;
 uint32_t drive_used_kb = 0;
 bool is_mounted = false;
@@ -1926,7 +1926,7 @@ void set_idt_gate(int n, uint64_t handler, uint8_t flags = 0x8E) {
     idt[n].offset_high = (handler >> 32) & 0xFFFFFFFF; 
     idt[n].zero = 0; 
 }
-/// BARE METAL FIX: Maske auf 0xFE (11111110). NUR der Timer darf durch!
+/// BARE METAL FIX: PIC mask set to 0xFE (11111110) - unmasking timer IRQ0 only!
 void remap_pic() { outb(0x20, 0x11); outb(0xA0, 0x11); outb(0x21, 0x20); outb(0xA1, 0x28); outb(0x21, 0x04); outb(0xA1, 0x02); outb(0x21, 0x01); outb(0xA1, 0x01); outb(0x21, 0xFE); outb(0xA1, 0xFF); }
 struct interrupt_frame;
 int sys_selected_item = 0; 
@@ -1969,11 +1969,11 @@ _30 get_ascii_qwertz(_184 sc) {
 /// ==========================================
 /// BARE METAL FIX: AHCI SATA DRIVER (32-BIT)
 /// ==========================================
-/// Die Hardware-Struktur eines SATA-Ports im Arbeitsspeicher
+/// SATA Port MMIO register mapping structure
 struct HBA_PORT {
     uint32_t clb, clbu, fb, fbu, is, ie, cmd, res0, tfd, sig, ssts, sctl, serr, sact, ci, sntf, fbs, res1[11], vendor[4];
 };
-/// Das Haupt-Gehirn des AHCI Controllers
+/// Generic Host Control (GHC) MMIO register structure
 struct HBA_MEM {
     uint32_t cap, ghc, is, pi, vs, ccc_ctl, ccc_pts, em_loc, em_ctl, cap2, bohc;
     uint8_t res[0xA0 - 0x2C];
@@ -1991,7 +1991,7 @@ void pci_write(uint16_t bus, uint16_t slot, uint16_t func, uint16_t offset, uint
     outl(0xCFC, val);
 }
 /// ==========================================
-/// BARE METAL FIX: KUGELSICHERER AHCI TREIBER
+/// BARE METAL FIX: ROBUST AHCI STORAGE CONTROLLER DRIVER
 /// ==========================================
 struct HBA_CMD_HEADER { uint16_t flags; uint16_t prdtl; uint32_t prdbc; uint32_t ctba; uint32_t ctbau; uint32_t res1[4]; };
 struct HBA_PRDT_ENTRY { 
@@ -2026,7 +2026,7 @@ int ahci_rw(uint32_t lba, uint64_t buffer_addr, int is_write) {
     HBA_PORT* port = &((HBA_MEM*)active_ahci_bar5)->ports[active_sata_port];
     port->is = 0xFFFFFFFF; 
     
-    /// 64-BIT FIX: Upper (clbu) und Lower (clb) 32-Bit kombinieren!
+    /// 64-BIT FIX: Combine upper (clbu) and lower (clb) 32-bit registers!
     uint64_t clb_full = port->clb | ((uint64_t)port->clbu << 32);
     HBA_CMD_HEADER* cmdheader = (HBA_CMD_HEADER*)clb_full;
     
@@ -2034,13 +2034,13 @@ int ahci_rw(uint32_t lba, uint64_t buffer_addr, int is_write) {
     cmdheader[0].prdtl = 1;
     cmdheader[0].prdbc = 0;
     
-    /// 64-BIT FIX: ctbau und ctba kombinieren!
+    /// 64-BIT FIX: Combine upper (ctbau) and lower (ctba) 32-bit base address!
     uint64_t ctba_full = cmdheader[0].ctba | ((uint64_t)cmdheader[0].ctbau << 32);
     HBA_CMD_TBL* cmdtbl = (HBA_CMD_TBL*)ctba_full;
     
     for(int i=0; i<138; i++) ((uint8_t*)cmdtbl)[i] = 0;
     
-    /// 64-BIT FIX: RAM-Adresse in zwei 32-Bit Blöcke zerteilen für dba und dbau
+    /// 64-BIT FIX: Split 64-bit RAM address into lower (dba) and upper (dbau) halves
     cmdtbl->prdt_entry[0].dba = (uint32_t)(buffer_addr & 0xFFFFFFFF); 
     cmdtbl->prdt_entry[0].dbau = (uint32_t)((buffer_addr >> 32) & 0xFFFFFFFF);
     cmdtbl->prdt_entry[0].dbc = 511; 
@@ -2051,7 +2051,7 @@ int ahci_rw(uint32_t lba, uint64_t buffer_addr, int is_write) {
     fis[4] = lba & 0xFF; fis[5] = (lba >> 8) & 0xFF; fis[6] = (lba >> 16) & 0xFF;
     fis[7] = 0x40 | ((lba >> 24) & 0x0F); fis[12] = 1; 
     
-    /// Timeout für 64-Bit CPU Geschwindigkeiten
+    /// Timeout loop calibrated for high-frequency 64-bit CPUs
     uint32_t spin = 0; 
     while((port->tfd & (0x80 | 0x08)) && spin++ < 1000000);
     if(spin >= 1000000) return 0;
@@ -2068,7 +2068,7 @@ int ahci_rw(uint32_t lba, uint64_t buffer_addr, int is_write) {
     return 1;
 }
 
-/// Namen auf Sectors (Mehrzahl) geändert
+/// Function identifier normalized to plural (Sectors)
 int ahci_identify(uint64_t buffer_addr) {
     if(active_ahci_bar5 == 0) return 0;
     HBA_PORT* port = &((HBA_MEM*)active_ahci_bar5)->ports[active_sata_port];
@@ -2110,9 +2110,9 @@ int ahci_identify(uint64_t buffer_addr) {
 /// ==========================================
 /// BARE METAL FIX: SYSTEM CONTROL & INFO
 /// ==========================================
-// BARE METAL MAGIC: Compiler-reservierter RAM für den SATA-Chip
+// Compiler-aligned DMA memory buffer for SATA AHCI controller
 __attribute__((aligned(4096))) uint8_t bare_metal_ahci_mem[0x10000];
-/// BARE METAL FIX: Brücke zur net.cpp für DHCP!
+/// BARE METAL FIX: Interface bridge to net.cpp for DHCP!
 extern "C" void send_dhcp_discover();
 extern _30 ip_address[32];
 extern _30 net_mask[32];
@@ -2121,10 +2121,10 @@ char user_name[32] = "COSMOS";
 char cpu_brand[49] = "SCANNING CPU...";
 uint8_t sys_lang = 0; 
 uint8_t sys_theme = 0;
-/// BARE METAL FIX: Der globale Status-String ist zurück!
+/// BARE METAL FIX: Global system status string indicator restored!
 char cmd_status[256] = "SYSTEM READY";
 uint32_t hda_debug_c0_resp = 0;
-/// NEU: Textspeicher für die klickbare Hardware-Liste
+/// Interactive hardware device list text buffer
 char hw_storage[256] = "PRESS TO SCAN";
 char hw_net[256]     = "PRESS TO SCAN";
 char hw_gpu[256]     = "PRESS TO SCAN";
@@ -2132,14 +2132,14 @@ char hw_usb[256]     = "PRESS TO SCAN";
 void get_cpu_brand() { 
     uint32_t a = 0, b = 0, c = 0, d = 0; 
     
-    /// BARE METAL FIX: Auch die erste Abfrage muss abgesichert werden!
+    /// BARE METAL FIX: Guard initial feature query against unsupported CPUID!
     ;
     
     if(a < 0x80000004) { str_cpy(cpu_brand,"GENERIC X86"); return; } 
     
     char* s = cpu_brand; 
     for(uint32_t i=0x80000002; i<=0x80000004; i++){
-        /// BARE METAL FIX: Der kugelsichere 64-Bit CPUID Aufruf!
+        /// BARE METAL FIX: Robust 64-bit CPUID invocation!
         ;
         *(uint32_t*)s=a; s+=4; *(uint32_t*)s=b; s+=4; *(uint32_t*)s=c; s+=4; *(uint32_t*)s=d; s+=4;
     } 
@@ -2175,7 +2175,7 @@ void system_shutdown() {
     while(1) asm volatile("cli; hlt"); /// CPU anhalten
 #endif
 }
-/// BARE METAL FIX: Echter Hardware-Scanner (Scannt ALLE Funktionen 0-7)
+/// BARE METAL FIX: Hardware scanner sweeping all 8 PCI functions (0-7)
 void scan_pci_class(uint8_t target_class, char* out_buf, const char* prefix) {
 #if 1
     if (target_class == 0x01) { str_cpy(out_buf, "CTRL [8086:2829]"); return; } // AHCI
@@ -2209,7 +2209,7 @@ void scan_pci_drives(Window* dsk_win) {
 #ifdef __linux__
     print_win(dsk_win, "COSMOS LINUX HARDWARE SCANNER\n--------------------------\n");
     
-    /// Rufe ahci_mount_drive() auf - das scannt jetzt /sys/block für echte Devices!
+    /// Invoke ahci_mount_drive() - scans block devices for active storage volumes!
     ahci_mount_drive();
     
     /// Zeige was gefunden wurde
@@ -2229,7 +2229,7 @@ void scan_pci_drives(Window* dsk_win) {
         print_win(dsk_win, "NO DRIVES FOUND.\n");
     }
     
-    /// Netzwerk: Echte IP vom Linux-Kernel holen
+    /// Network: Query active IPv4 address from kernel interface
     send_dhcp_discover();
     char net_info[128];
     snprintf(net_info, sizeof(net_info), "NETWORK: %s\n", ip_address);
@@ -2294,7 +2294,7 @@ _50 focus_window(_43 id) {
     win_z[49] = id; 
 }
 
-/// GANZ OBEN IN DER DATEI (Globaler Speicher für den Cursor)
+/// Global cursor coordinate and sprite state storage
 _43 v_cx = 400;
 _43 v_cy = 300;
 uint64_t last_click_time = 0;
@@ -2304,40 +2304,40 @@ uint64_t last_click_time = 0;
 _50 handle_input() { 
     mouse_just_pressed = _86;
     
-    /// Wir lesen bis zu 32 Bytes aus dem Puffer, damit Maus und Tastatur sich nicht stauen
+    /// Drain up to 32 bytes from controller FIFO to prevent input latency
     for(int i = 0; i < 32; i++) {
         _184 st = inb(0x64);
         
-        /// Ist überhaupt ein Byte im Puffer? (Bit 0)
+        /// Check if byte is pending in input buffer (Bit 0: Output Buffer Full)
         if ((st & 1) == 0) break; 
         
         _184 d = inb(0x60);
         
-        /// Ist es ein Maus-Byte? (Bit 5 im Status-Register)
+        /// Check auxiliary device flag (Bit 5: PS/2 Mouse packet byte)
         if (st & 0x20) { 
             m_packet[m_ptr] = d;
             
-            /// WICHTIGER BARE-METAL SCHUTZ: Das erste Byte eines Maus-Pakets 
-            /// muss immer Bit 3 gesetzt haben (Sync-Bit). 
-            /// Fehlt es, sind die Daten verrutscht und wir verwerfen das Byte!
+            /// Packet synchronization guard: First byte of 3-byte mouse packet 
+            /// must always have Bit 3 asserted (packet sync bit). 
+            /// If sync bit is missing, packet framing is shifted; discard byte!
             if (m_ptr == 0 && !(d & 0x08)) {
                 continue; 
             }
             
             m_ptr++;
             
-            /// Wenn wir 3 Bytes gesammelt haben, werten wir das Paket aus
+            /// Once 3 bytes are accumulated, decode PS/2 movement packet
             if (m_ptr == 3) {
                 m_ptr = 0;
                 
                 int dx = m_packet[1];
                 int dy = m_packet[2];
                 
-                /// PS/2 Vorzeichen korrigieren (9-Bit auf 32-Bit Integer erweitern)
+                /// Sign-extend 9-bit PS/2 relative delta to 32-bit signed integer
                 if (m_packet[0] & 0x10) dx |= 0xFFFFFF00;
                 if (m_packet[0] & 0x20) dy |= 0xFFFFFF00;
                 
-                /// Y-Achse invertieren (PS/2 zählt nach oben, unser Bildschirm nach unten)
+                /// Invert Y delta (PS/2 reports upward positive; screen Y coordinates descend)
                 dy = -dy;
                 
                 /// Tasten auswerten (Bit 0 = Links, Bit 1 = Rechts)
@@ -2347,7 +2347,7 @@ _50 handle_input() {
                 update_mouse_position(dx, dy, btn);
             }
         } else {
-            /// Es ist ein reines Tastatur-Byte!
+            /// Standard PS/2 keyboard scancode received
             key_scancode = d;
             key_ready = _128;
         }
@@ -2361,7 +2361,7 @@ _50 handle_input() {
 // COSMOS GL - BARE METAL 3D ENGINE V1
 // ==========================================
 
-// 1. STRUKTUREN (Der Raum)
+// 1. 3D MATH & SPATIAL GEOMETRY STRUCTURES
 struct Vec3 { float x, y, z; };
 struct Vec2 { int x, y; };
 // ==========================================
@@ -2394,7 +2394,7 @@ Vec3 RotateX(Vec3 p, float angle) {
 float camera_fov = 1000.0f;     
 float camera_z_offset = 1200.0f;
 // ==========================================
-// KAMERA-GEDÄCHTNIS (Außerhalb der Main-Loop!)
+// 3D CAMERA TRANSFORM & ORIENTATION CACHE
 // ==========================================
 float global_cam_rot_x = 0.0f;
 float global_cam_rot_y = 0.0f;
@@ -2425,37 +2425,37 @@ void PutPixelAlpha(uint32_t x, uint32_t y, uint32_t color, float alpha) {
 
 // 4. PROJEKTION (3D Welt -> 2D Monitor)
 // ==========================================
-// BARE METAL 3D PROJEKTION (Aufgerüstet)
+// BARE METAL 3D PERSPECTIVE PROJECTION PIPELINE
 // ==========================================
 Vec2 Project3D(Vec3 point, int cx, int cy) {
     float z = point.z + camera_z_offset;
     
-    // Verhindern, dass Objekte hinter der Kamera gezeichnet werden (Division durch Null / Clipping)
+    // Near-plane clipping: prevent rendering objects behind camera (avoids divide-by-zero)
     if (z <= 0.1f) return { -1, -1 }; 
     
-    // Die Perspektiven-Division (3D -> 2D)
+    // Perspective division pass (3D world space -> 2D screen space)
     float projected_x = (point.x / z) * camera_fov;
     float projected_y = (point.y / z) * camera_fov;
     
-    // Wir projizieren es relativ zum übergebenen Zentrum (cx, cy)!
+    // Project coordinates relative to specified viewport center (cx, cy)!
     return { cx + (int)projected_x, cy - (int)projected_y };
 }
 // ==========================================
-// BARE METAL 3D: DER DREIECKS-RASTERIZER
+// BARE METAL 3D: TRIANGLE RASTERIZER ENGINE
 // ==========================================
 
 // ==========================================
-// BARE METAL 3D: DER DREIECKS-RASTERIZER (Kugelsicher!)
+// BARE METAL 3D: ROBUST TRIANGLE RASTERIZER ENGINE
 // ==========================================
 
-// Wir nutzen float für die Mathematik. Das verhindert Integer-Overflows 
-// und ignoriert eventuelle 'unsigned' Probleme aus deiner Vec2 Struct!
+// Use single-precision floating point math to eliminate integer overflow 
+// and bypass unsigned coordinate wrapping issues!
 float EdgeFunction(Vec2 a, Vec2 b, int px, int py) {
     return ((float)px - (float)a.x) * ((float)b.y - (float)a.y) - ((float)py - (float)a.y) * ((float)b.x - (float)a.x);
 }
 
 void DrawTriangle(Vec2 v0, Vec2 v1, Vec2 v2, uint32_t color) {
-    // Sicheres Casting auf int
+    // Safe bounded cast to integer raster space
     int v0x = (int)v0.x; int v0y = (int)v0.y;
     int v1x = (int)v1.x; int v1y = (int)v1.y;
     int v2x = (int)v2.x; int v2y = (int)v2.y;
@@ -2481,7 +2481,7 @@ void DrawTriangle(Vec2 v0, Vec2 v1, Vec2 v2, uint32_t color) {
             float w1 = EdgeFunction(v2, v0, x, y);
             float w2 = EdgeFunction(v0, v1, x, y);
             
-            // Wenn der Pixel drin ist, zeichnen!
+            // Rasterize pixel if barycentric coordinates fall within triangle
             if ((w0 >= 0 && w1 >= 0 && w2 >= 0) || (w0 <= 0 && w1 <= 0 && w2 <= 0)) {
                 row_ptr[x] = color;
             }
@@ -2530,7 +2530,7 @@ void DrawLineAlpha(int x0, int y0, int x1, int y1, uint32_t color, float alpha) 
     }
 }
 
-// 6. 3D-LINIEN-ZEICHNER (Die Brücke zwischen 3D und 2D)
+// 6. 3D VECTOR WIREFRAME RASTERIZER
 // ==========================================
 // BARE METAL 3D: LINIEN-ZEICHNER (Update)
 // ==========================================
@@ -2538,10 +2538,10 @@ void DrawLine3D(Vec3 p1, Vec3 p2, uint32_t color, int cx, int cy) {
     Vec2 v1 = Project3D(p1, cx, cy);
     Vec2 v2 = Project3D(p2, cx, cy);
     
-    // Z-Clipping: Wenn ein Punkt hinter der Kamera ist (-1), zeichne die Linie nicht!
+    // Near plane clip: omit segment if either endpoint lies behind camera plane
     if (v1.x == -1 || v2.x == -1) return;
     
-    // Hier ruft er deine 2D DrawLine Funktion auf (die du schon hast)
+    // Blit to screen via 2D DrawLine primitive
     DrawLine(v1.x, v1.y, v2.x, v2.y, color); 
 }
 
@@ -2561,7 +2561,7 @@ _50 Swap() {
     uint64_t* dst = (uint64_t*)fb;
     uint64_t* src = (uint64_t*)bb;
     
-    // Gesamtanzahl der 64-Bit Blöcke berechnen
+    // Calculate total 64-bit QWORD block count
     uint32_t total_blocks = (screen_h * screen_pitch) / 8;
     
     for (uint32_t i = 0; i < total_blocks; i++) {
@@ -2728,7 +2728,7 @@ _50 DrawActiveSun(_43 cx, _43 cy, _43 radius) {
 
                 _15(dist_sq <= r2) {
                     // ==========================================
-                    // DER KERN (Drehendes Magma)
+                    // SOLAR CORE (Rotational magma flare shader)
                     // ==========================================
                     _43 z = int_sqrt(r2 - dist_sq);
                     float rx = x * c_time - z * s_time;
@@ -2759,8 +2759,8 @@ _50 DrawActiveSun(_43 cx, _43 cy, _43 radius) {
                     else if (px < 0 && py < 0) p_angle = 4.0f + p_angle;
                     else if (px >= 0 && py < 0) p_angle = 8.0f - p_angle;
                     
-                    // 2. Erzeuge radiale Spikes durch Überlagerung von Sinus-Wellen auf dem Winkel!
-                    // p_angle * 12.0f steuert die ANZAHL der Strahlen.
+                    // 2. Generate radial solar flares by modulating harmonic sinusoids on polar angle!
+                    // p_angle * 12.0f frequency governs flare beam density.
                     float wave1 = bare_sin(p_angle * 12.0f + time * 3.0f);
                     float wave2 = bare_cos(p_angle * 7.0f - boil_offset);
                     float flare = wave1 * wave2; 
@@ -2782,7 +2782,7 @@ _50 DrawActiveSun(_43 cx, _43 cy, _43 radius) {
                     }
                     flare = flare * audio_scale;
                     
-                    // 3. Spikes bis zu 25 Pixel nach außen schießen lassen!        
+                    // 3. Project flare filaments up to 25 pixels beyond solar radius!        
                     _43 dynamic_glow = radius + 2 + (int)(flare * 25.0f);
                     
                     // Sicherheitsnetz gegen CPU-Freezes (Div/0)
@@ -2797,7 +2797,7 @@ _50 DrawActiveSun(_43 cx, _43 cy, _43 radius) {
                             uint32_t bg = *pixel; 
                             
                             // ==========================================
-                            // ECHTES FEUER (255 Rot, 120 Grün, 0 Blau)
+                            // INCANDESCENT FLARE (255 Red, 120 Green, 0 Blue)
                             // ==========================================
                             _43 final_r = (255 * alpha + ((bg >> 16) & 0xFF) * (255 - alpha)) / 255; 
                             _43 final_g = (120 * alpha + ((bg >> 8) & 0xFF) * (255 - alpha)) / 255; 
@@ -2828,7 +2828,7 @@ void DrawPlanet3D(Vec3 pos, float radius, uint32_t color, int cx, int cy) {
     Vec2 center = Project3D(pos, cx, cy);
     if (center.x == -1) return;
     
-    // Die Perspektive: Radius wird kleiner, je weiter weg der Planet ist!
+    // Perspective scaling: apparent radius decreases with distance from camera!
     int screen_r = (int)((radius / z) * camera_fov);
     if (screen_r <= 0) return;
 
@@ -2858,7 +2858,7 @@ void DrawPlanet3D(Vec3 pos, float radius, uint32_t color, int cx, int cy) {
         for (int x = start_x; x <= end_x; x++) {
             int dist_sq = x*x + y*y;
             if (dist_sq <= r2) {
-                // Simpler Fake-3D-Schatten (Kugel-Wölbung)
+                // Fast pseudo-3D spherical diffuse shading curve
                 int pz = int_sqrt(r2 - dist_sq);
                 float light = (float)pz / (float)screen_r; 
                 
@@ -2940,7 +2940,7 @@ void DrawDome3D(Vec3 center, float radius, uint32_t color, float alpha, int cx, 
         
         for (float a = 0.0f; a < 6.28318f; a += 0.01f) {
             float next_a = a + 0.01f;
-            // 1. Basis-Ring (liegt flach auf der Erde)
+            // 1. Equatorial planetary ring base plane
             Vec3 bp1 = { center.x + (bare_cos(a)*r), center.y, center.z + (bare_sin(a)*r) };
             Vec3 bp2 = { center.x + (bare_cos(next_a)*r), center.y, center.z + (bare_sin(next_a)*r) };
             Vec3 bc1 = rot(bp1); Vec3 bc2 = rot(bp2);
@@ -2949,12 +2949,12 @@ void DrawDome3D(Vec3 center, float radius, uint32_t color, float alpha, int cx, 
                 if (v1.x != -1 && v2.x != -1) DrawLineAlpha(v1.x, v1.y, v2.x, v2.y, color, current_alpha);
             }
             
-            // 2. Silhouette (Umriss der Kuppel gegen den Himmel, berechnet im Kamera-Raum!)
+            // 2. Dome horizon silhouette projected in view space
             Vec3 sp1 = { cam_center.x + (bare_cos(a)*r), cam_center.y + (bare_sin(a)*r), cam_center.z };
             Vec3 sp2 = { cam_center.x + (bare_cos(next_a)*r), cam_center.y + (bare_sin(next_a)*r), cam_center.z };
             Vec3 sw1 = inv_rot(sp1); Vec3 sw2 = inv_rot(sp2);
             
-            // Nur zeichnen, wenn oberhalb der Basis! (Welt y >= center.y)
+            // Render hemisphere strictly above ground plane (World Y >= center.y)
             if (sw1.y >= center.y - 1.0f && sw2.y >= center.y - 1.0f) {
                 if (sp1.z + camera_z_offset > 0.1f && sp2.z + camera_z_offset > 0.1f) {
                     Vec2 v1 = Project3D(sp1, cx, cy); Vec2 v2 = Project3D(sp2, cx, cy);
@@ -2997,10 +2997,10 @@ _50 DrawOrganicPlanet(_43 cx, _43 cy, _43 radius, _89 base_col) {
 volatile uint32_t app_window_buffer[2500] = {0}; 
 volatile bool app_window_active = false;
 
-// BARE METAL FIX: Fullscreen Overlay Buffer für app.cpp (1.9 MB)
+// BARE METAL FIX: Fullscreen overlay buffer for app.cpp (1.9 MB)
 volatile uint32_t* app_overlay_buffer = new uint32_t[1920*1080];
 
-// 2. Deine kompilierte App als Hex-Array (Der echte Flummi)
+// 2. Embedded application binary payload (Flummi binary)
 unsigned char app_bin[] = {
   0xf3, 0x0f, 0x1e, 0xfa, 0xb8, 0x04, 0x00, 0x00, 0x00, 0xcd, 0x80, 0x48,
   0x85, 0xc0, 0x0f, 0x84, 0x0c, 0x01, 0x00, 0x00, 0x41, 0x57, 0x49, 0x89,
@@ -3039,21 +3039,21 @@ void diagnose_ahci_ports() {
 
     volatile uint32_t* abar = (volatile uint32_t*)global_ahci_abar;
 
-    // --- BARE METAL FIX: Nur aufwecken, wenn er WIRKLICH schläft! ---
-    // Wir prüfen erst, ob Bit 31 schon gesetzt ist (wie in QEMU).
+    // --- BARE METAL FIX: Only trigger wake cycle if controller is idle! ---
+    // Verify if GHC.AE (Bit 31) is already asserted (e.g. in QEMU / hypervisor).
     if ((abar[0] & (1 << 31)) == 0) {
         abar[0] = abar[0] | (1 << 31); // GHC.AE setzen
         for(volatile int i=0; i<100000; i++); 
     }
 
-    // Jetzt erst lesen wir PI (Offset 0x0C, Index 3)
+    // Read Ports Implemented (PI) register at offset 0x0C
     uint32_t pi = abar[3]; 
     // ==========================================
-    // TEST 1: KÖNNEN WIR DEN CHIP ÜBERHAUPT LESEN?
+    // TEST 1: VERIFY CONTROLLER MMIO REGISTER READABILITY
     // ==========================================
     if (pi == 0 || pi == 0xFFFFFFFF) {
-        // Wenn PI 0 ist, lesen wir leeren Arbeitsspeicher!
-        // Das bedeutet: Deine 64-Bit Page-Tables blockieren den Zugriff auf die Hardware.
+        // If PI is 0, register read returns unmapped memory!
+        // Indicates 64-bit paging tables do not map hardware MMIO space.
         str_cpy(cmd_status, "ERR: MMIO/PAGING BLOCKIERT (PI=0)");
         return;
     }
@@ -3061,7 +3061,7 @@ void diagnose_ahci_ports() {
     int active_ports_count = 0;
     
     // ==========================================
-    // TEST 2: CHIP ANTWORTET, ABER WO IST DIE FESTPLATTE?
+    // TEST 2: CONTROLLER RESPONDED; LOCATING ACTIVE STORAGE DISKS
     // ==========================================
     for (int i = 0; i < 32; i++) {
         if (pi & (1 << i)) { // Mainboard sagt: "Diesen Port gibt es physikalisch"
@@ -3072,13 +3072,13 @@ void diagnose_ahci_ports() {
             uint8_t det = ssts & 0x0F;     // Device Detection Bits
             
             if (det == 3) {
-                str_cpy(cmd_status, "HDD AUF PORT GEFUNDEN!");
+                str_cpy(cmd_status, "HDD FOUND ON PORT!");
                 return; 
             }
         }
     }
     
-    // Wenn er hier ankommt, hat er Ports gescannt, aber an keinem hing eine Platte!
+    // Reached end of port sweep without detecting connected SATA disk
     if (active_ports_count > 0) {
         str_cpy(cmd_status, "ERR: PORTS DA, ABER HDD FEHLT!");
     } else {
@@ -3086,7 +3086,7 @@ void diagnose_ahci_ports() {
     }
 }
 unsigned int app_bin_len = 333;
-// Unser unzerstörbarer Puffer im Code-Segment
+// Dedicated staging buffer in executable address space
 __attribute__((section(".text"), aligned(4096))) uint8_t safe_app_buffer[65536] = {0};
 
 bool has_free_task_slot() {
@@ -3108,13 +3108,13 @@ bool load_and_run_bin(uint32_t start_lba, uint32_t sector_count) {
     uint64_t target_ram = 0x01100000; 
     uint8_t* ram = (uint8_t*)target_ram;
     
-    str_cpy(cmd_status, "LADE FLUMMI...");
+    str_cpy(cmd_status, "LOADING FLUMMI...");
 
     for(uint32_t i=0; i < 512 * sector_count; i++) ram[i] = 0;
     
     for(uint32_t s=0; s < sector_count; s++) {
         if (!disk_read_auto(start_lba + s, target_ram + (s * 512))) {
-            str_cpy(cmd_status, "ERR: LESEFEHLER!");
+            str_cpy(cmd_status, "ERR: READ ERROR!");
             return false;
         }
         for(volatile int w=0; w<2000; w++) ; // Kurze Pause für sauberes USB-Timing
@@ -3122,7 +3122,7 @@ bool load_and_run_bin(uint32_t start_lba, uint32_t sector_count) {
     
     // ==========================================
     // BARE METAL FIX: CPU CACHE & TLB FLUSH
-    // Zwingt die echte CPU, den Code zu akzeptieren und verhindert Freezes!
+    // Flush instruction cache pipeline to guarantee execution stability!
     // ==========================================
     ;
     
@@ -3131,7 +3131,7 @@ bool load_and_run_bin(uint32_t start_lba, uint32_t sector_count) {
     ;
     
     // ==========================================
-    // SIGNATUR PRÜFEN
+    // VALIDATE BINARY SIGNATURE
     // ==========================================
     bool valid = false;
     if (ram[0] == 0xF3 && ram[1] == 0x0F && ram[2] == 0x1E && ram[3] == 0xFA) valid = true; // endbr64
@@ -3182,7 +3182,7 @@ extern "C" uint64_t syscall_dispatcher(uint64_t sys_num, uint64_t arg1, uint64_t
     else if (sys_num == 3) { Put(arg1, arg2, arg3); return 0; }
     
     // ==========================================
-    // BARE METAL FIX: Syscall 4 - RAM Fenster an App übergeben!
+    // BARE METAL FIX: Syscall 4 - Pass framebuffer pointer to application!
     // ==========================================
     else if (sys_num == 4) { 
         app_window_active = true; 
@@ -3211,7 +3211,7 @@ __attribute__((naked)) void syscall_isr() {
     ;
 }
 /// ==========================================
-/// BARE METAL PCI SCANNER (gefixt für OS2!)
+/// BARE METAL PCI BUS SCANNER (Updated for OS2)
 /// ==========================================
 uint32_t e1000_mmio_base = 0; 
 
@@ -3222,12 +3222,12 @@ void pci_scan_advanced() {
     pci_dev_count = 0;
     for (uint32_t bus = 0; bus < 256; bus++) {
         for (uint32_t slot = 0; slot < 32; slot++) {
-            /// Multi-Function Device: Alle 8 Funktionen durchsuchen!
+            /// Multi-Function Device: Probe all 8 functions (0-7)!
             for (uint32_t func = 0; func < 8; func++) {
                 
                 uint32_t vendor_device = pci_read(bus, slot, func, (uint32_t)0);
                 if (vendor_device == 0xFFFFFFFF) {
-                    /// func=0 nicht da = kein Multi-Function Device, rest überspringen
+                    /// Function 0 absent: not a multi-function device; skip remaining slots
                     if (func == 0) break;
                     continue;
                 }
@@ -3236,8 +3236,8 @@ void pci_scan_advanced() {
                 uint32_t vendor = vendor_device & 0xFFFF;
                 uint32_t device = vendor_device >> 16;
                 
-                /// BARE METAL FIX: Alle Intel NICs erkennen (nicht nur QEMU 0x100E)!
-                /// I219-V, I217, I211, I210, I218 - alle nutzen das E1000 Register-Layout.
+                /// BARE METAL FIX: Detect broad range of Intel Gigabit NICs (I219-V, I217, I211, I210, etc.)!
+                /// Compatible controller family shares the standard E1000 MMIO register layout.
                 uint32_t nic_class = pci_read(bus, slot, func, (uint32_t)0x08);
                 uint8_t nic_cls = (nic_class >> 24) & 0xFF;
                 if (vendor == 0x8086 && nic_cls == 0x02 && e1000_mmio_base == 0) {
@@ -3278,8 +3278,8 @@ void pci_scan_advanced() {
                     /// Bei 64-bit BAR: obere 32 Bit lesen
                     if (bar_type == 0x04) {
                         uint32_t bar1 = pci_read(bus, slot, func, 0x14);
-                        /// Wenn obere 32 Bit != 0, wir können das nicht mappen (>4GB)
-                        /// Aber auf normalen Rechnern ist es immer < 4GB
+                        /// Guard: Cannot map 64-bit BAR located above 4GB physical ceiling
+                        /// Typical bare-metal firmware assigns MMIO regions below 4GB boundary
                         if (bar1 != 0) continue; /// Zu hoch!
                     }
                     
@@ -3292,7 +3292,7 @@ void pci_scan_advanced() {
                     if (hda_base_addr != 0) {
                         /// HDA MMIO-Region mappen (z.B. 0xFE890000)
                         map_mmio_64(hda_base_addr);
-                        /// Auch die HDA RAM-Puffer (CORB/RIRB bei 34 MB) mappen
+                        /// Map High Definition Audio DMA buffers (CORB/RIRB at physical 34MB)
                         map_mmio_64(0x02200000);
                         hda_init_controller(hda_base_addr);
                     }
@@ -3302,15 +3302,15 @@ void pci_scan_advanced() {
     }
 }
 
-/// Brücke zu deinem eigenen DHCP-Code aus OS1
+/// Interface bridge to DHCP configuration subsystem
 extern void send_dhcp_discover();
 
 void read_mac_address(char* mac_text_buffer) {
-    /// 1. Die Register RAL und RAH aus dem Mainboard-Speicher lesen
+    /// 1. Read RAL and RAH hardware registers from Ethernet MMIO BAR
     uint32_t ral = *(volatile uint32_t*)(e1000_mmio_base + 0x5400);
     uint32_t rah = *(volatile uint32_t*)(e1000_mmio_base + 0x5404);
 
-    /// 2. Die 6 Bytes der MAC-Adresse extrahieren
+    /// 2. Extract 6 octets of network interface MAC address
     uint8_t mac[6];
     mac[0] = ral & 0xFF;
     mac[1] = (ral >> 8) & 0xFF;
@@ -3319,7 +3319,7 @@ void read_mac_address(char* mac_text_buffer) {
     mac[4] = rah & 0xFF;
     mac[5] = (rah >> 8) & 0xFF;
 
-    /// 3. In einen wunderschönen String formatieren (XX:XX:XX:XX:XX:XX)
+    /// 3. Format into standardized hex MAC string (XX:XX:XX:XX:XX:XX)
     int pos = 0;
     for (int i = 0; i < 6; i++) {
         char hex_byte[3];
@@ -3333,7 +3333,7 @@ void read_mac_address(char* mac_text_buffer) {
     mac_text_buffer[pos] = 0; /// Wichtig: String sauber beenden!
 }
 void dynamic_task_worker(); /// Forward-Deklaration für den Spawner
-/// Brücke: Sag dem Compiler, dass diese Funktion weiter unten kommt!
+/// Forward declaration: function defined later in translation unit
 void sleep_ms(uint32_t ms);
 char cmd_input_buf[64];
 int cmd_input_idx = 0;
@@ -3342,7 +3342,7 @@ int app_installer_idx = 0;
 char sys_ota_buf[256];
 int sys_ota_idx = 0;
 void process_cmd(char* input, Window* cmd_win) {
-    /// Befehl nochmal auf dem Bildschirm ausgeben (Echo)
+    /// Echo entered command string to console window
     print_win(cmd_win, "C:\\> "); print_win(cmd_win, input); print_win(cmd_win, "\n");
     if(str_equal(input, "CLS")) {
         cmd_win->cursor_pos = 0; cmd_win->content[0] = 0;
@@ -3367,7 +3367,7 @@ void process_cmd(char* input, Window* cmd_win) {
         print_win(cmd_win, cpu_brand); print_win(cmd_win, "\n");
     }
 	/// ==========================================
-    /// DIE VERMISSTEN HARDWARE- & INFO-BEFEHLE
+    /// HARDWARE TELEMETRY & SYSTEM COMMAND PROCESSORS
     /// ==========================================
     else if(str_equal(input, "MEM")) {
         print_win(cmd_win, "RAM  : 8192 MB TOTAL\n");
@@ -3381,27 +3381,27 @@ void process_cmd(char* input, Window* cmd_win) {
         print_win(cmd_win, "SCANNING ALL SATA PORTS (0-5)...\n");
         int total_found = 0;
         
-        /// Wir feuern unseren Scanner auf die ersten 6 Ports ab!
+        /// Dispatch partition scanner across first 6 SATA storage ports!
         for (uint8_t port = 0; port < 6; port++) {
             
-            /// Unser Scanner aus cosmos_partition.cpp setzt den gpt_partition_count
-            /// bei jedem neuen Port-Scan automatisch wieder auf 0!
+            /// Partition scanner resets gpt_partition_count
+            /// to 0 at the start of each storage port sweep!
             scan_partitions(port); 
             
-            /// Wenn er Partitionen gefunden hat, wissen wir: Da ist eine Platte!
+            /// Detected partitions confirm active physical disk on port
             if (gpt_partition_count > 0) {
                 print_win(cmd_win, "--------------------------------\n");
                 print_win(cmd_win, "DRIVE FOUND ON SATA PORT ");
                 char portStr[4]; int_to_str(port, portStr); print_win(cmd_win, portStr);
                 print_win(cmd_win, "\n");
                 
-                /// Wir listen alle gefundenen Partitionen dieser Platte auf
+                /// Enumerate and display all detected partitions on disk
                 for (int p = 0; p < gpt_partition_count; p++) {
                     print_win(cmd_win, "-> PART ");
                     char numStr[4]; int_to_str(p + 1, numStr); print_win(cmd_win, numStr);
                     print_win(cmd_win, " | START LBA: ");
                     
-                    /// Hex-Konvertierung der 64-Bit LBA
+                    /// Convert 64-bit LBA sector index to hexadecimal string
                     char lbaStr[15]; 
                     byte_to_hex((gpt_partition_starts[p] >> 24) & 0xFF, lbaStr);
                     byte_to_hex((gpt_partition_starts[p] >> 16) & 0xFF, lbaStr + 2);
@@ -3462,7 +3462,7 @@ void process_cmd(char* input, Window* cmd_win) {
                 print_win(cmd_win, "TYPE : UNKNOWN ADAPTER\n");
             }
             
-            /// DHCP Request auslösen
+            /// Dispatch DHCP lease discovery request
             print_win(cmd_win, "STAT : WAITING FOR LINK...\n");
             net_check_link();
             send_dhcp_discover();
@@ -3510,7 +3510,7 @@ void process_cmd(char* input, Window* cmd_win) {
         
         uint64_t buf_dir = (uint64_t)global_buf_dir; 
         
-        /// NEU: Nur 2 Parameter (LBA 1002 und Puffer-Adresse)
+        /// Simplified interface: LBA 1002 and destination buffer pointer
         ahci_read_sectors(1002, buf_dir);
         
         sleep_ms(50); 
@@ -3547,7 +3547,7 @@ void process_cmd(char* input, Window* cmd_win) {
         if (!found) print_win(cmd_win, "ERROR: SATA ROOT DIR FULL!\n");
     }
     /// ==========================================
-    /// NEU: DER TASK-SPAWNER BEFEHL
+    /// TASK SPAWNER COMMAND HANDLER
     /// ==========================================
     else if(str_equal(input, "START")) {
         if (has_free_task_slot()) {
@@ -3558,7 +3558,7 @@ void process_cmd(char* input, Window* cmd_win) {
         }
     }
     /// ==========================================
-    /// NEU: DER PAKET MANAGER (INSTALL URL / GET URL)
+    /// PACKAGE MANAGER SUBSYSTEM (INSTALL URL / GET URL)
     /// ==========================================
     else if(str_starts(input, "INSTALL ") || str_starts(input, "GET ")) {
         _44 is_install = str_starts(input, "INSTALL ");
@@ -3620,10 +3620,10 @@ void process_cmd(char* input, Window* cmd_win) {
         }
     }
     /// ==========================================
-    /// NEU: DER FESTPLATTEN-LOADER
+    /// DISK EXECUTABLE LOADER
     /// ==========================================
     else if(str_equal(input, "RUNAPP")) {
-        // Lade app.bin direkt von der Festplatte (LBA 10000) in den RAM und starte sie!
+        // Load app.bin from disk (LBA 10000) directly into RAM and execute!
         bool success = load_and_run_bin(10000, 10);
         if (success) {
             print_win(cmd_win, "LOADING APP FROM DISK...\n");
@@ -3643,15 +3643,15 @@ void sleep_ms(uint32_t ms) {
     uint64_t target_ticks = system_ticks + ms;
     
     while (system_ticks < target_ticks) {
-        /// Legt die CPU physisch schlafen. Sie wacht nur für eine Mikrosekunde auf, 
-        /// wenn der PIT (oder die Maus) einen Interrupt abfeuert, prüft die Zeit 
-        /// und schläft sofort weiter!
+        /// Puts CPU into physical low-power halt state (hlt). Wakes on hardware interrupt 
+        /// (PIT timer tick or input scancode), evaluates scheduler queues, 
+        /// and returns immediately to low-power sleep!
         ; 
     }
 }
 void background_task() {
     while(1) {
-        // Unsichtbare Aufgaben (später für Netzwerk, etc.)
+        // Background daemon tasks (network polling, system health)
         volatile int x = 0;
         x++;
         
@@ -3659,7 +3659,7 @@ void background_task() {
         ; 
     }
 }
-// --- GANZ OBEN IN DER DATEI (Außerhalb von main!) ---
+// --- GLOBAL MODULE STORAGE (Outside main entry) ---
 
 extern uint32_t global_ahci_abar;
 
@@ -3668,11 +3668,11 @@ void bare_metal_port_init(int port_no) {
     volatile uint32_t* abar = (volatile uint32_t*)global_ahci_abar;
     volatile uint32_t* port_regs = abar + 64 + (port_no * 32); 
     
-    // 1. Motor aus
+    // 1. Spin down disk drive motor
     port_regs[6] &= ~0x00000001; 
     port_regs[6] &= ~0x00000010; 
     
-    // ANTI-FREEZE: Notausgang nach 1.000.000 Zyklen!
+    // TIMEOUT SAFETY: Guard abort after 1,000,000 spin cycles!
     int timeout = 1000000;
     while ((port_regs[6] & (1 << 14)) && timeout--) { ; }
     timeout = 1000000;
@@ -3683,7 +3683,7 @@ void bare_metal_port_init(int port_no) {
     // 2. WICHTIG: 64-Bit Variable nutzen
     uint64_t base_addr = (uint64_t)&bare_metal_ahci_mem[0];
     
-    // RAM komplett säubern
+    // Zero initialize RAM memory buffer completely
     volatile char* mem = (volatile char*)base_addr;
     for (int i = 0; i < 0x10000; i++) mem[i] = 0; 
 
@@ -3692,7 +3692,7 @@ void bare_metal_port_init(int port_no) {
     uint64_t fb  = base_addr + 0x1000;
     uint64_t ctb = base_addr + 0x2000;
     
-    // 4. BARE METAL MAGIC: Die 64-Bit Adresse in Low und High aufteilen
+    // 4. Partition 64-bit address into lower and upper 32-bit registers
     port_regs[0] = (uint32_t)(clb & 0xFFFFFFFF); 
     port_regs[1] = (uint32_t)(clb >> 32);        
     
@@ -3705,7 +3705,7 @@ void bare_metal_port_init(int port_no) {
     cmd_list[2] = (uint32_t)(ctb & 0xFFFFFFFF); 
     cmd_list[3] = (uint32_t)(ctb >> 32);        
     
-    // 5. Fehler löschen
+    // 5. Clear status and error condition bits
     port_regs[12] = 0xFFFFFFFF; 
     port_regs[4]  = 0xFFFFFFFF; 
     
@@ -3721,7 +3721,7 @@ void bare_metal_port_init(int port_no) {
 /// BARE METAL DOWNLOAD SAVER
 /// ==========================================
 extern "C" void kernel_save_download(unsigned long long source_ram, int file_size, const char* name) {
-    // 1. Suche einen freien Dateislot im CFS
+    // 1. Locate available file slot in CFS directory table
     int free_slot = -1;
     for (int i = 0; i < 28; i++) {
         if (cfs_files[i].exists == 0) {
@@ -3732,7 +3732,7 @@ extern "C" void kernel_save_download(unsigned long long source_ram, int file_siz
     
     if (free_slot == -1) return; // Festplatte voll (keine Slots)
 
-    // 2. Finde den nächsten freien LBA (Sektor)
+    // 2. Allocate next free LBA storage sector
     uint32_t next_lba = 10000; // Startwert (Sicherer Bereich)
     for (int i = 0; i < 28; i++) {
         if (cfs_files[i].exists && cfs_files[i].start_lba >= next_lba) {
@@ -3740,15 +3740,15 @@ extern "C" void kernel_save_download(unsigned long long source_ram, int file_siz
         }
     }
 
-    // 3. Auf die physische Festplatte schreiben
+    // 3. Commit sectors to physical storage disk
     uint32_t sectors = (file_size + 511) / 512;
     for (uint32_t s = 0; s < sectors; s++) {
         disk_write_auto(next_lba + s, source_ram + (s * 512));
-        // Kurze Pause fürs Timing
+        // Brief delay for controller write settling
         for(volatile int w = 0; w < 2000; w++) ;
     }
 
-    // 4. In die RAM-Tabelle eintragen (Das siehst du im Disk Manager)
+    // 4. Record entry in filesystem directory table (rendered in Disk Manager)
     cfs_files[free_slot].exists = 1;
     cfs_files[free_slot].start_lba = next_lba;
     cfs_files[free_slot].size = file_size;
@@ -3771,7 +3771,7 @@ extern "C" void kernel_save_browser_download() {
 	extern _43 browser_download_len;
 	extern _30 browser_url[];
 	
-	// 1. HTTP-Header überspringen (Suche nach dem Ende des Textes)
+	// 1. Skip HTTP header payload (locate CRLF delimiter)
 	uint32_t payload_start = 0;
 	for(uint32_t i=0; i<browser_download_len-4; i++) {
 		if (browser_download_buffer[i] == '\r' && browser_download_buffer[i+1] == '\n' &&
@@ -3784,7 +3784,7 @@ extern "C" void kernel_save_browser_download() {
 
 	uint32_t file_size = browser_download_len - payload_start;
 
-	// 2. Freien Sektor (LBA) und freien Slot in der Dateiliste finden
+	// 2. Allocate free sector LBA and directory slot in file table
 	uint32_t next_lba = 11000;
 	int free_slot = -1;
 	for (int i = 0; i < 28; i++) {
@@ -3797,7 +3797,7 @@ extern "C" void kernel_save_browser_download() {
 	}
 	if (free_slot == -1) return; // Festplatte voll!
 
-	// 3. Auf die physische Festplatte brennen!
+	// 3. Commit binary payload to physical disk sectors!
 	uint32_t sectors = (file_size + 511) / 512;
 	for (uint32_t s=0; s<sectors; s++) {
 		uint64_t ram_addr = (uint64_t)&browser_download_buffer[payload_start + s*512];
@@ -3805,7 +3805,7 @@ extern "C" void kernel_save_browser_download() {
 		for(volatile int w=0; w<2000; w++) ; // Timing-Pause
 	}
 
-	// 4. In das Inhaltsverzeichnis (Sektor 1002) der Festplatte eintragen
+	// 4. Commit entry to filesystem directory table (sector 1002)
 	uint64_t buf_dir = (uint64_t)global_buf_dir;
 	ahci_read_sectors(1002, buf_dir);
 	for(volatile int w=0; w<500000; w++) ;
@@ -3816,7 +3816,7 @@ extern "C" void kernel_save_browser_download() {
 	dir[free_slot].start_lba = next_lba;
 	dir[free_slot].parent_idx = 255; // Ab in den Root-Ordner
 
-	// Dateinamen aus der URL extrahieren
+	// Parse resource filename from URL path
 	for(int n=0; n<11; n++) { dir[free_slot].filename[n] = 0; cfs_files[free_slot].name[n] = 0; }
 	int slash_idx = 0;
 	for (int k=0; k<100; k++) {
@@ -3919,7 +3919,7 @@ void decompress_tba(_184* src, _43 src_len, _184* dst, _43 originalSize) {
     while (dstIdx < originalSize) dst[dstIdx++] = 0;
 }
 
-/// 6. DER HAUPT-EINSTIEG 
+/// 6. PRIMARY SYSTEM ENTRY POINT 
 extern bool sound_muted;
 extern _50 play_sound(_89 n_freq, _43 duration);
 extern _50 play_freq(_89 f);
@@ -7564,14 +7564,14 @@ BootInfo* global_boot_info = 0;
 extern "C" void hs_start_sniffer();
 
 extern "C" void kernel_main64(BootInfo* boot_info) {
-	// Sag dem Kernel SOFORT, dass er tote Kind-Prozesse (Zombies) wegräumen soll
+	// Instruct kernel to automatically reap terminated child processes (SIGCHLD ignore)
 	signal(SIGCHLD, SIG_IGN);
     hs_start_sniffer();
     global_boot_info = boot_info;
     
 #ifdef __linux__
-    // BARE METAL FIX: Laptop-CPU auf Höchstleistung zwingen!
-    // Verhindert, dass der Linux Power-Manager die FPS auf 20-30 drosselt.
+    // Force processor governor to maximum performance profile!
+    // Prevents power saving throttling from dropping display frame rates below 60 FPS.
     ::system("for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo performance > $f 2>/dev/null; done");
 #endif
     /// ==========================================
@@ -7613,7 +7613,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
     */
 #endif
     
-    // Ab hier ist float erlaubt!
+    // FPU state active; floating point math enabled from this point forward
     // init_heap();
 	screen_w     = boot_info->screen_width;      
     screen_h     = boot_info->screen_height;
@@ -7642,7 +7642,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
     
     for(int i = 0; i < 256; i++) set_idt_gate(i, 0);
     
-    // BARE METAL FIX: Der Airbag! Fange alle Hardware-Fehler ab!
+    // BARE METAL FIX: Register signal handlers to catch hardware faults and exceptions!
     for(int i = 0; i < 32; i++) {
         set_idt_gate(i, (uint64_t)dummy_isr);
     }
@@ -7660,19 +7660,19 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
     
     /// TASK MANAGER INITIALISIEREN
     tasks[0].active = true;         /// Wir deklarieren Cosmos OS als Task 0
-	// Anstatt des Test-Tasks starten wir jetzt einen sauberen Hintergrund-Task
-    // Dieser Task kümmert sich um System-Metriken (z.B. Zeit, CPU-Last, etc.)
+	// Launch background telemetry task
+    // Task monitors real-time telemetry (system uptime, CPU utilization, thread states)
 #ifndef __linux__
 	create_task(sys_idle_task);
 #endif
-    //create_task(background_task);   /// Wir feuern unseren ersten echten Hintergrund-Task ab!
+    //create_task(background_task);   /// Background task registration hook
     #ifndef __linux__
     ; /// ZÜNDUNG: Multitasking beginnt!
 #endif
     /// ==========================================
-    /// DEIN ORIGINAL-CODE STARTET AB HIER WIEDER:
+    /// MAIN COSMOS EVENT LOOP RESUMES HERE:
     /// ==========================================
-	// Irgendwo in deiner Hintergrund-Schleife (z.B. nach dem Zeichnen der Sterne):
+	// Background render cycle (following starfield blit):
     read_rtc();
     get_cpu_brand();
     usb_mouse_callback = update_mouse_position;
@@ -7684,7 +7684,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         stars[i].y = (cosmos_random() % 1199) - 599;
         stars[i].z = (cosmos_random() % 1000) + 1;
         stars[i].type = cosmos_random() % 1000; 
-        /// BARE METAL FIX: Speed auf einen sauberen Mittelwert (4 bis 9)
+        /// BARE METAL FIX: Clamp speed to balanced range (4 to 9)
         stars[i].speed = (cosmos_random() % 6) + 4;
     }
     /// ==========================================
@@ -7720,15 +7720,15 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
     str_cpy(windows[14].title, "SMASH CATS 3D"); windows[14].x=250; windows[14].y=100; windows[14].w=600; windows[14].h=300; windows[14].color=0x4488FF;
     str_cpy(windows[15].title, "HYBRID KERNEL"); windows[15].x=0; windows[15].y=300; windows[15].w=600; windows[15].h=300; windows[15].color=0x000088;
 	
-    /// BARE METAL FIX: Alle Orakel-Variablen sofort befüllen!
+    /// BARE METAL FIX: Populate all Oracle telemetry state variables on startup!
 	scan_pci_drives(&windows[4]);
     
-    /// 1. Puffer komplett nullen (RAM Müll vernichten!)
+    /// 1. Clear telemetry buffers to zero
     mem_set(hw_storage, 0, 256);
     mem_set(hw_net, 0, 256);
     mem_set(hw_gpu, 0, 256);
 
-    /// 2. Die EINZIGE Scan-Schleife ausführen (pci.cpp)
+    /// 2. Execute single comprehensive PCI device bus sweep
 #ifndef __linux__
     pci_scan_all();
 #endif 
@@ -7737,7 +7737,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 #endif
 	check_incoming();
 	//system_init_usb();
-    /// 3. Bildschirm-Abschneider (Gegen das Worträtsel)
+    /// 3. Display boundary text clipping
     hw_storage[35] = 0;
     hw_net[35] = 0;
     hw_gpu[35] = 0;
@@ -7916,7 +7916,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             }
             
             if (payload_start > 0 && payload_start < browser_download_len) {
-                // Finde LBA und Slot für die neue Datei
+                // Allocate LBA sector and directory slot for new file
                 uint32_t next_lba = 11000;
                 int free_slot = -1;
                 for (int i = 0; i < 28; i++) {
@@ -8009,12 +8009,12 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 
             _15(!(sc & 0x80)) { /// Taste wurde GEDRÜCKT (Make Code)
                 
-                /// BARE METAL FIX: Die Taste als ASCII für unsere Apps kopieren!
+                /// BARE METAL FIX: Forward ASCII key translation to active application!
                 last_app_key = get_ascii_qwertz(sc);
                 key_new = _128;
                 /// ==========================================
-                /// HIER KOMMT DEIN DEBUGGER REIN!
-                /// Er überschreibt bei JEDEM Tastendruck den Status unten rechts!
+                /// DEBUG TELEMETRY STATUS HOOK
+                /// Updates bottom-right telemetry bar on every keystroke scancode!
                 /// ==========================================
                 _30 dbg_str[30] = "KEY: ";
                 _30 h_str[5]; 
@@ -8022,7 +8022,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 str_cat(dbg_str, h_str);
                 str_cpy(cmd_status, dbg_str);
                 
-                /// 1. Globale Hotkeys (F-Tasten für Apps)
+                /// 1. Global application function keys (F1-F12)
                 _15(sc EQ 0x3B) system("mousepad &");        // F1 = TXT
                 _15(sc EQ 0x3C) toggle_app(1);               // F2 = APP
                 _15(sc EQ 0x3D) toggle_app(3);               // F3 = SYS
@@ -8032,12 +8032,12 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 _15(sc EQ 0x41) os_vsync_enabled = !os_vsync_enabled; // F7 = VSYNC TOGGLE
                 _15(sc EQ 0x44) toggle_app(7); /// F10 = SYSTEM DEBUG POPUP
 
-                /// 2. Welches Fenster ist ganz oben (Fokus)?
+                /// 2. Determine topmost focused window
                 _43 fw_id = win_z[49]; 
                 Window* fw = &windows[fw_id];
                 
                 _15(fw AND fw->open AND !fw->minimized) {
-                    /// --- TASTATUR STEUERT DAS SYSTEM FENSTER (ID 3) ---
+                    /// --- KEYBOARD INPUT TO SYSTEM SETTINGS WINDOW (ID 3) ---
                     _15(fw->id EQ 3) {
                         _15(sc EQ 0x50) { // Pfeil Runter
                             if (sys_selected_item < 5) sys_selected_item++; 
@@ -8049,7 +8049,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         
                         _15(sc EQ 0x1C) { // ENTER-TASTE
                             
-                            /// INDEX 0: DER GROSSE ROTE ORAKEL-BUTTON OBEN
+                            /// INDEX 0: PRIMARY ORACLE DIAGNOSTICS BUTTON
                             if (sys_selected_item == 0) {
                                 mirror_count = 0;
                                 for(uint32_t b=0; b<256; b++) {
@@ -8070,7 +8070,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                                                 uint32_t cls = (class_rev >> 24) & 0xFF;
                                                 uint32_t sub = (class_rev >> 16) & 0xFF;
                                                 
-                                                /// Ist es eine echte 64-Bit Adresse?
+                                                /// Validate valid non-null 64-bit physical address
                                                 if((bar0_l & 0x06) == 0x04) { 
                                                     mirror_list[mirror_count].bar0 = ((uint64_t)bar0_h << 32) | (bar0_l & 0xFFFFFFF0);
                                                 } else {
@@ -8088,16 +8088,16 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                                         }
                                     }
                                 }
-                                /// WICHTIG: Das Orakel darf sich NUR hier beim Enter-Druck öffnen!
+                                /// Oracle window opens strictly on Enter keypress confirmation!
                                 show_oracle = true; 
                             }
                             
-                            /// INDEX 1, 2, 3: DIE ANDEREN HARDWARE-SCANS (Nur bei Enter!)
+                            /// INDICES 1, 2, 3: HARDWARE PROBE ACTIONS (On Enter confirmation)
                             else if (sys_selected_item == 1) { scan_pci_class(0x01, hw_storage, "CTRL"); }
                             else if (sys_selected_item == 2) { scan_pci_class(0x02, hw_net, "NIC"); }
                             else if (sys_selected_item == 3) { scan_pci_class(0x03, hw_gpu, "GPU"); }
                                 
-                            /// INDEX 4: DER USB HOST START! (Nur bei Enter!)
+                            /// INDEX 4: USB HOST CONTROLLER INITIALIZATION (On Enter confirmation)
                             else if (sys_selected_item == 4) {
                                 system_init_usb(); 
                             }
@@ -8105,19 +8105,19 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         }
                     }
 					// ==========================================
-					// ULTIMATIVER F9 BYPASS FÜR DIE 3D ENGINE
+					// F9 HOTKEY TOGGLE FOR 3D ENGINE VIEW
 					// ==========================================
 					_15(key_new AND key_scancode EQ 0x43) { // 0x43 = F9
 						_15(windows[14].open EQ _86) {
-							// Fenster ist zu -> ÖFFNEN!
+							// Window is closed -> OPEN!
 							windows[14].id = 14;   
 							windows[14].w = 800;   
 							windows[14].h = 600;   
 							windows[14].x = (screen_w - 800) / 2; // Zentriert  
 							windows[14].y = (screen_h - 600) / 2;   
 							
-							// === DER WICHTIGSTE TEIL ===
-							// Mache das Fenster für Cosmos "offiziell" sichtbar!
+							// FOCUS & VISIBILITY STATE SYNCHRONIZATION
+							// Mark window officially visible and bring to top of z-order!
 							windows[14].open = _128;
 							windows[14].minimized = _86;
 							windows[14].color = 0x4488FF;
@@ -8131,7 +8131,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 							app_window_active = _128; 
 							focus_window(14);
 						} _41 {
-							// Fenster ist offen -> SCHLIESSEN!
+							// Window is open -> CLOSE!
 							windows[14].open = _86;
 							app_window_active = _86;
 						}
@@ -8241,7 +8241,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                            focus_window(k);
                            _43 bx = wx + ww/2; 
                            
-                           /// DIE TITELLEISTE WIRD GEKLICKT
+                           /// WINDOW TITLEBAR CLICK EVENT HANDLER
                            _15(mouse_y < wy+30) { 
                                
                                /// MINIMIEREN
@@ -8262,13 +8262,13 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                                        win->open=_86; last_window_click = system_ticks; 
                                    }
                                }
-                               /// DRAG & DROP (Greift sofort, wenn man keinen Button erwischt)
+                               /// WINDOW DRAG (Initiates when clicking titlebar client area)
                                _41 { 
                                    drag_win = k; drag_off_x = mouse_x - wx; drag_off_y = mouse_y - wy; 
                                }
                            }
                            
-                           /// FENSTERGRÖSSE ÄNDERN
+                           /// RESIZE WINDOW CORNER GRIP HANDLER
                            _15(mouse_x > wx+ww-20 AND mouse_y > wy+wh-20) { resize_win = k; }
                            
                            /// WIN32 CHILD CONTROLS CLICK
@@ -8318,7 +8318,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             }
         }
         /// ==========================================
-        /// 1. DER ABSOLUT SCHWARZE WELTRAUM
+        /// 1. DEEP SPACE VOID RENDERING PASS
         /// ==========================================
         _39(_43 i = 0; i < screen_w*screen_h; i++) bb[i] = 0x000000;
 		app_window_active = _86; // Setzt die 3D Engine in jedem Frame standardmaessig auf AUS (_86 = false)
@@ -8379,7 +8379,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         _15(!galaxy_open AND galaxy_expansion > 0) galaxy_expansion -= 30;
         
         /// ==========================================
-        /// 2B. PLANETEN (HINTER DER SONNE)
+        /// 2B. PLANETARY BODIES (OCCLUDED BEHIND SUN)
         /// ==========================================
         _39(_43 i=0; i<6; i++) {
             Window* win = &windows[map_ids[i]];
@@ -8456,7 +8456,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         // 3D ORBIT-PHYSIK & Z-SORTIERUNG (ECHTES SYSTEM)
         // ==========================================
         
-        // 1. Die Geschwindigkeiten (Je weiter draußen, desto langsamer!)
+        // 1. Keplerian orbital velocity (outer bodies travel slower)
         float t_mer = frame * 0.041f;
         float t_ven = frame * 0.016f;
         float t_ear = frame * 0.010f;
@@ -8466,7 +8466,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         float t_ura = frame * 0.0002f;
         float t_nep = frame * 0.0001f;
 
-        // 2. Die Umlaufbahnen (Leichte Neigungen für einen organischen 3D-Look)
+        // 2. Orbital inclination (subtle tilt angles for realistic 3D appearance)
         Vec3 p1_mer = { bare_cos(t_mer) * 140.0f,  5.0f * bare_sin(t_mer), bare_sin(t_mer) * 140.0f };
         Vec3 p2_ven = { bare_cos(t_ven) * 180.0f, -3.0f * bare_sin(t_ven), bare_sin(t_ven) * 180.0f };
         Vec3 p3_ear = { bare_cos(t_ear) * 230.0f,  0.0f,                   bare_sin(t_ear) * 230.0f };
@@ -8476,7 +8476,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         Vec3 p7_ura = { bare_cos(t_ura) * 640.0f, -5.0f * bare_sin(t_ura), bare_sin(t_ura) * 640.0f };
         Vec3 p8_nep = { bare_cos(t_nep) * 750.0f,  2.0f * bare_sin(t_nep), bare_sin(t_nep) * 750.0f };
 
-        // 3. Das Universum auflisten (9 Objekte!)
+        // 3. Celestial body inventory (9 orbital bodies)
         RenderObj system[9] = {
             { 0, {0, 0, 0}, 80,  0 },                  // Sonne (Kocht!)
             { 1, p1_mer,     3,  0xAAAAAA },           // Merkur (Winzig, Grau)
@@ -8523,12 +8523,12 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         }
 
         // ==========================================
-        // 4. DIE INTERAKTIVE KAMERA (Rechte Maustaste & Mausrad)
+        // 4. INTERACTIVE 3D CAMERA (Right mouse button & scroll wheel)
         // ==========================================
         
         bool right_mouse_held = mouse_right_down; 
 
-        // Nur wenn die rechte Maustaste gedrückt ist, drehen wir das Universum!
+        // Orbit camera rotates when right mouse button is held!
         if (right_mouse_held) {
             global_cam_rot_y += ((int)mouse_x - last_mouse_x) * -0.005f; 
             global_cam_rot_x += ((int)mouse_y - last_mouse_y) * -0.005f; 
@@ -8544,11 +8544,11 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         last_mouse_x = (int)mouse_x;
         last_mouse_y = (int)mouse_y;
         
-        // Sinus/Kosinus aus den globalen Winkeln ziehen
+        // Compute trigonometry from global rotation angles
         float sy = bare_sin(global_cam_rot_y); float cy = bare_cos(global_cam_rot_y);
         float sx = bare_sin(global_cam_rot_x); float cx = bare_cos(global_cam_rot_x);
 
-        // Die 9 Objekte rotieren
+        // Apply 3D rotation transform to all 9 celestial bodies
         for (int i = 0; i < 9; i++) {
             Vec3 p = system[i].pos;
             float nx = p.x * cy - p.z * sy;
@@ -8562,8 +8562,8 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             system[i].pos = p; 
         }
 
-        // 5. BUBBLE SORT FÜR 9 OBJEKTE (Z-Tiefe)
-        // Die innere Schleife geht bis 8 (j+1 erreicht maximal 8)
+        // 5. Z-DEPTH SORTING (Painter's algorithm for 9 celestial objects)
+        // Inner pass bounds clamp index to 8 (j+1 <= 8)
         for (int i = 0; i < 9; i++) {
             for (int j = 0; j < 8; j++) {
                 if (system[j].pos.z < system[j+1].pos.z) {
@@ -8574,7 +8574,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             }
         }
 
-        // 6. ZEICHNEN der sortierten Liste
+        // 6. RENDER sorted celestial bodies back-to-front
         if (cfg_bg_mode == 1) {
             time_t now = time(NULL);
             struct tm *t = localtime(&now);
@@ -8608,29 +8608,29 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 float ny = p.y * cx_cam - p.z * sx_cam; nz = p.y * sx_cam + p.z * cx_cam; p.y = ny; p.z = nz; return p;
             };
             
-            // 1. Landflächen füllen (Naturfarben: variiert je nach Breitengrad)
+            // 1. Terrestrial biome rendering (climatic colors vary by latitude)
             for(int i = 0; i < num_land_spans; i++) {
                 Vec3 p1 = { land_spans[i][0], 0.0f, land_spans[i][1] };
                 Vec3 p2 = { land_spans[i][2], 0.0f, land_spans[i][3] };
-                // Breitengrad-abhängige Farbe (z-Position = Entfernung vom Nordpol)
+                // Latitude-dependent chromatic tone (z coordinate = distance from polar axis)
                 float dist = land_spans[i][1]; // z-Koordinate
                 float abs_dist = (dist < 0) ? -dist : dist;
                 float norm = abs_dist / 750.0f; // 0=Nordpol, 1=Rand
                 uint32_t land_color;
                 if (norm > 0.75f) {
-                    // Tundra/Eis (nahe Antarktis) - blass grünlich-grau
+                    // Tundra / permafrost (polar latitudes) - pale glacial gray
                     land_color = 0x889988;
                 } else if (norm > 0.55f) {
-                    // Gemäßigt - saftiges Grün
+                    // Temperate zone - lush vibrant green
                     land_color = 0x2D7A3A;
                 } else if (norm > 0.30f) {
-                    // Subtropisch - wärmeres Grün
+                    // Subtropical zone - warm olive green
                     land_color = 0x3B8C35;
                 } else if (norm > 0.15f) {
-                    // Tropisch / Wüste - sandbraun bis olivgrün  
+                    // Tropical / arid desert - sandstone amber to ochre  
                     land_color = 0x7A6B3A;
                 } else {
-                    // Arktisch (Nordpol-Nähe) - eisig weiß-grau
+                    // Arctic polar cap - brilliant icy white-gray
                     land_color = 0x99AABB;
                 }
                 p1 = map_rot(p1); p2 = map_rot(p2);
@@ -8640,7 +8640,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 }
             }
             
-            // 2. Küstenlinien (dunklere Kontur für Definition)
+            // 2. Ocean coastlines (darker rim contour for visual definition)
             uint32_t coast_color = 0x1A4422;
             for(int i = 0; i < num_coast_lines; i++) {
                 Vec3 p1 = { coast_lines[i][0], 0.0f, coast_lines[i][1] };
@@ -8652,17 +8652,17 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 }
             }
             
-            // 3. TIERKREIS-STERNZEICHEN (Zodiac) außerhalb des Firmaments
-            // Die 12 Sternzeichen sind auf einer großen Kugel um das Firmament verteilt
+            // 3. ZODIAC CONSTELLATIONS outside celestial sphere
+            // 12 zodiac constellations mapped across outer celestial sphere
             float zodiac_radius = 3300.0f; // Größer als die Kuppel (3000)
             float zodiac_height = 800.0f; // Höhe über der Ebene
             static float shimmer_phase = 0.0f;
             shimmer_phase += 0.02f; // Langsame Schimmer-Animation
             
             for (int z = 0; z < NUM_ZODIAC; z++) {
-                // Position des Sternbilds auf dem Himmelskreis (30° pro Zeichen)
+                // Celestial coordinate of constellation along ecliptic circle (30 deg each)
                 // Drehung in Echtzeit: Einmal pro Sterntag (ca. 23h 56m)
-                // Die Sterne verschieben sich jeden Tag um ~1 Grad gegenüber der Sonne.
+                // Sidereal progression: stars shift ~1 degree daily relative to sun.
                 float t_sun = real_h / 24.0f * 2.0f * 3.14159f;
                 float total_days = t->tm_yday + real_h / 24.0f;
                 float zodiac_base_angle = t_sun + (total_days / 365.25f) * 6.28318f;
@@ -8671,18 +8671,18 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 float center_z = bare_sin(angle) * zodiac_radius;
                 float center_y = zodiac_height + bare_sin(angle * 3.0f) * 50.0f; // Leichte Wellenbewegung
                 
-                // Lokale Achsen für das Sternbild (tangential zum Kreis)
+                // Local coordinate tangent frame for constellation plane
                 float tx = -bare_sin(angle); // Tangente X
                 float tz = bare_cos(angle);  // Tangente Z
                 float scale = 3.0f; // Skalierung der Sternbilder
                 
-                // Sterne zeichnen (mit Schimmer-Effekt wie im Wasser!)
+                // Render stars with organic aquatic twinkling shimmer effect
                 for (int s = 0; s < zodiac[z].num_points; s++) {
                     float sx_off = zodiac[z].points[s].x * scale;
                     float sy_off = zodiac[z].points[s].y * scale;
                     float base_bright = zodiac[z].points[s].brightness;
                     
-                    // Wasser-Schimmer: jeder Stern flackert unabhängig
+                    // Dynamic scintillation: each stellar node flickers independently
                     float shimmer = bare_sin(shimmer_phase * 3.0f + z * 1.7f + s * 2.3f);
                     float shimmer2 = bare_sin(shimmer_phase * 2.1f + z * 0.9f + s * 3.7f);
                     float brightness = base_bright * (0.4f + 0.6f * ((shimmer + 1.0f) * 0.5f));
@@ -8699,12 +8699,12 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         Vec2 sp = Project3D(rotated, v_cx, v_cy);
                         if (sp.x != -1) {
                             uint32_t intensity = (uint32_t)(brightness * 255.0f);
-                            // Leicht bläulich-weiß wie Sterne im Wasser
+                            // Luminous celestial blue-white hue
                             uint32_t r_val = (uint32_t)(intensity * 0.85f);
                             uint32_t g_val = (uint32_t)(intensity * 0.9f);
                             uint32_t b_val = intensity;
                             
-                            // Stern-Größe (1-3 Pixel je nach Helligkeit und Puls)
+                            // Stellar point size (1-3 pixels scaled by luminance pulse)
                             int star_size = (int)(base_bright * 2.0f * size_pulse);
                             if (star_size < 1) star_size = 1;
                             for (int dy = -star_size; dy <= star_size; dy++) {
@@ -8722,7 +8722,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     }
                 }
                 
-                // Verbindungslinien zwischen den Sternen (sehr schwach, schimmernd)
+                // Constellation asterism links (faint shimmering line segments)
                 for (int l = 0; l < zodiac[z].num_lines; l++) {
                     int from = zodiac[z].lines[l].from;
                     int to = zodiac[z].lines[l].to;
@@ -8739,7 +8739,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     if (lp1.z + camera_z_offset > 0.1f && lp2.z + camera_z_offset > 0.1f) {
                         Vec2 v1 = Project3D(lp1, v_cx, v_cy); Vec2 v2 = Project3D(lp2, v_cx, v_cy);
                         if (v1.x != -1 && v2.x != -1) {
-                            // Schimmer-Alpha für die Linien
+                            // Modulated alpha falloff for constellation lines
                             float line_shimmer = bare_sin(shimmer_phase * 1.5f + z * 2.0f + l * 1.1f);
                             float line_alpha = 0.08f + 0.07f * ((line_shimmer + 1.0f) * 0.5f);
                             DrawLineAlpha(v1.x, v1.y, v2.x, v2.y, 0x6688CC, line_alpha);
@@ -8777,14 +8777,14 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         Vec2 sun2d = {-1, -1};
         
         if (cfg_bg_mode == 1) {
-            // Nach der Z-Sortierung sind Sonne und Mond irgendwo im Array verstreut. Wir suchen sie:
+            // Identify Sun and Moon instances following depth sorting:
             for(int i=0; i<9; i++) {
                 if (system[i].type == 0) sun2d = Project3D(system[i].pos, v_cx, v_cy);
                 if (system[i].color == 0xDDDDDD) moon2d = Project3D(system[i].pos, v_cx, v_cy);
             }
             
             if (moon2d.x != -1) {
-                // Mittig auf den Mond zeichnen
+                // Center avatar glyph over lunar sphere
                 TextC(moon2d.x, moon2d.y - 4, fps_buffer, 0x000000, _128); 
             }
         } else {
@@ -8792,13 +8792,13 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         } 
 		
         /// ==========================================
-        /// LIVE RTC (DATUM UND UHRZEIT) ALS HUD ÜBER ALLEM
+        /// REAL-TIME CLOCK (RTC HUD OVERLAY)
         /// ==========================================
         TextC(v_cx, v_cy-15, "COSMOS", 0x000000, _128);
         TextC(v_cx, v_cy+5,  "SYSTEM", 0x000000, _128);
 
 #ifdef __linux__
-        // Fragt den Linux-Kernel nach der echten Systemzeit
+        // Query system real-time clock from kernel
         time_t now = time(NULL);
         struct tm *t = localtime(&now);
         rtc_h = t->tm_hour;
@@ -8876,8 +8876,8 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         /// ==========================================
         /// 3. ACRYLIC GLASS WINDOW RENDERING
         /// ==========================================
-		/// BARE METAL FIX: Modal-Status berechnen, BEVOR die Fenster gezeichnet werden!
-        /// Wenn Fenster ID 2 (Save As) offen und sichtbar ist, ist der Modus aktiv.
+		/// BARE METAL FIX: Compute modal interaction state BEFORE windows are rendered!
+        /// Modal mode active whenever Save As dialog (Window ID 2) is visible.
         _44 is_modal_blocked = (windows[2].open AND !windows[2].minimized);
         aion_window_open = 0;
         _39(_43 i=0; i<50; i++) {
@@ -8889,10 +8889,10 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             _43 ww=(win->fullscreen?screen_w:win->w); 
             _43 wh=(win->fullscreen?screen_h:win->h);
 			/// =========================================================
-            /// BARE METAL FIX: BLOCKED-STATUS FÜR ALLE FENSTER DEFINIEREN!
+            /// BARE METAL FIX: EVALUATE MODAL INPUT LOCK FOR ALL WINDOWS!
             /// =========================================================
             _44 blocked = (is_modal_blocked AND k NEQ 2);
-            /// Milchglas-Hintergrund für offene Fenster zeichnen
+            /// Render translucent frosted-glass background for open windows
             DrawGlassRect(wx, wy, ww, wh, 12, win->color);
             /// Title Bar Background
             DrawRoundedRect(wx, wy, ww, 30, 0, 0x333333);
@@ -9239,7 +9239,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 os_app_x = wx; os_app_y = wy; os_app_w = ww; os_app_h = wh;
                 app_window_active = _128; 
                 
-                // MUSS HIER STEHEN, SONST IST DAS FENSTER LEER!
+                // REQUIRED PLACEMENT: Prevents blank canvas rendering!
                 run_smash_cats_engine(wx, wy, ww, wh, blocked);
             }
             /// =========================================================
@@ -9431,7 +9431,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 _43 mid = wx + ww/2;
                 _43 btn_y = wy + 45;
                 
-                /// FIX: Nur Klicks zulassen, wenn das Fenster GANZ OBEN liegt!
+                /// FIX: Consume mouse events only if window is topmost in z-order!
                 _44 is_active = (win_z[49] EQ win->id);
                 
                 /// 1. THEME & LANG TOGGLES
@@ -9439,7 +9439,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 _15(sys_lang EQ 0) str_cpy(lang_lbl, "[ LANG: EN ]"); _41 str_cpy(lang_lbl, "[ SPR: DE ]");
                 _15(sys_lang EQ 0) { _15(sys_theme EQ 0) str_cpy(theme_lbl, "[ THEME: COMPUTER ]"); _41 str_cpy(theme_lbl, "[ THEME: GENESIS ]"); } 
                 _41 { _15(sys_theme EQ 0) str_cpy(theme_lbl, "[ THEMA: COMPUTER ]"); _41 str_cpy(theme_lbl, "[ THEMA: GENESIS ]"); }
-                /// 2. MOUSE SENSITIVITY SLIDER (System: Klick-zum-Setzen)
+                /// 2. MOUSE SENSITIVITY SLIDER (Click-to-set interaction)
                 _43 slider_x = wx + 20;
                 _43 slider_y = wy + 140; // Unter dem Trennstrich
                 _43 slider_w = 150;
@@ -9447,24 +9447,24 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 // Hintergrund-Schiene
                 DrawRoundedRect(slider_x, slider_y, slider_w, 8, 4, 0x444444);
                 
-                // Knob-Position (Berechnung basierend auf mouse_sens)
+                // Slider thumb coordinate derived from mouse_sens
                 // Range: 10 bis 300
                 _43 knob_x = slider_x + ((mouse_sens - 10) * slider_w / 290);
                 DrawRoundedRect(knob_x - 5, slider_y - 2, 10, 12, 4, 0xFFFFFF);
                 
                 // Label & Wert-Anzeige
                 Text(wx + 180, slider_y - 2, "MOUSE SENSITIVITY:", 0xAAAAAA, _128);
-                // Hier müsstest du ggf. noch einen Int-to-String Konverter nutzen, 
-                // falls du die Zahl anzeigen willst.
+                // Numeric formatter hook for rendering slider value 
+                // on screen next to slider widget
 
-                // Interaction: Klick-Abfrage für den Slider
+                // Click and drag event handler for sensitivity slider
                 _44 mouse_klick_slider = (mouse_just_pressed AND is_active AND is_over_rect(mouse_x, mouse_y, slider_x, slider_y, slider_w, 20));
                 
                 _15(input_cooldown EQ 0 AND mouse_klick_slider) {
-                    // Berechnung: Maus-X relativ zum Slider-Anfang
+                    // Calculate cursor X offset relative to slider rail
                     _43 rel_x = mouse_x - slider_x;
                     
-                    // Umrechnung auf den Bereich 10 - 300
+                    // Map track position to sensitivity scalar range [10..300]
                     mouse_sens = (rel_x * 290 / slider_w) + 10;
                     
                     // Bounds Check
@@ -9495,8 +9495,8 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 
                 if (input_cooldown == 0 && mouse_just_pressed && is_over_rect(mouse_x, mouse_y, btn_inst_x, btn_inst_y, btn_inst_w, 25)) {
                     
-                    // WSL-FIX: '-hold' hält das Fenster bei Fehlern offen! 
-                    // './install_cosmos.sh' sucht das Skript in deinem aktuellen lokalen Ordner!
+                    // Terminal flag '-hold' preserves window output upon exit 
+                    // Resolves './install_cosmos.sh' from active local working directory
                     ::system("xterm -hold -bg black -fg '#00FF00' -fa 'Monospace' -fs 11 -title 'CosmOS Installer' -e 'bash ./install_cosmos.sh' &");
                     
                     input_cooldown = 30;
@@ -9523,27 +9523,27 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 _30 l_disk[20] = "STORAGE:"; _30 l_net[20] = "NETWORK:"; _30 l_gpu[20] = "GRAPHIC:"; _30 l_usb[20] = "USB HOST:";
                 _15(sys_lang NEQ 0) { str_cpy(l_disk, "FESTPLATTE:"); str_cpy(l_net, "NETZWERK:"); str_cpy(l_gpu, "GRAFIK:"); }
                 
-                /// --- DYNAMISCHE FARBEN FÜR TASTATUR-FOKUS ---
+                /// --- DYNAMIC ACCENT HIGHLIGHTS FOR KEYBOARD FOCUS ---
                 uint32_t c_st_lbl = 0x555555, c_st_val = 0x0044CC;
                 uint32_t c_nt_lbl = 0x555555, c_nt_val = 0x0044CC;
                 uint32_t c_gp_lbl = 0x555555, c_gp_val = 0x0044CC;
                 uint32_t c_us_lbl = 0x555555, c_us_val = 0x0044CC;
                 uint32_t btn_color = 0x444444;
 
-                /// BARE METAL FIX: Index verschoben, Button ist ganz oben!
+                /// BARE METAL FIX: Re-indexed navigation order; button elevated to top!
                 if (sys_selected_item == 0) { btn_color = 0xAA0000; }
                 if (sys_selected_item == 1) { c_st_lbl = 0xCC4444; c_st_val = 0xCC4444; }
                 if (sys_selected_item == 2) { c_nt_lbl = 0xCC4444; c_nt_val = 0xCC4444; }
                 if (sys_selected_item == 3) { c_gp_lbl = 0xCC4444; c_gp_val = 0xCC4444; }
                 if (sys_selected_item == 4) { c_us_lbl = 0xCC4444; c_us_val = 0xCC4444; }
 				/// ==========================================
-				/// DER GROSSE ORAKEL-BUTTON (GANZ OBEN)
+				/// PRIMARY ORACLE DIAGNOSTICS BUTTON (TOP)
 				/// ==========================================
 				_43 btn_scan_x = wx + 20;
 				_43 btn_scan_y = wy + 150; /// Wieder nach oben geschoben!
 				
 				uint32_t btn_oracle_color = 0x444444; 
-				/// Wenn er mit den Pfeiltasten angewählt ist (Index 0), leuchtet er Rot!
+				/// When highlighted via arrow navigation (Index 0), illuminates in accent red!
 				if (sys_selected_item == 0) { btn_oracle_color = 0xAA0000; }
 				
 				DrawRoundedRect(btn_scan_x, btn_scan_y, 250, 30, 4, btn_oracle_color);
@@ -9563,7 +9563,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     input_cooldown = 25;
                 }
 				
-				/// Klick-Abfrage für die MAUS
+				/// Mouse click interaction detector
 				_44 mouse_klick_oracle = (mouse_just_pressed AND is_over_rect(mouse_x, mouse_y, btn_scan_x, btn_scan_y, 250, 30));
 				
 				_15(input_cooldown EQ 0 AND is_active AND mouse_klick_oracle) {
@@ -9587,7 +9587,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 Text(wx+30, wy+275, l_disk, c_st_lbl, _128); Text(wx+130, wy+275, hw_storage, c_st_val, _128);
                 
                 /// KLICKBAR: NETWORK (Hardware Scan)
-                /// Breite auf 180 reduziert, damit es nicht mit DHCP kollidiert!
+                /// Button width adjusted to 180px to avoid overlap with DHCP telemetry!
                 _44 net_hov = is_over_rect(mouse_x, mouse_y, wx+30, wy+295, 180, 20);
                 _15(input_cooldown EQ 0 AND mouse_just_pressed AND is_active AND net_hov) {
                     scan_pci_class(0x02, hw_net, "NIC");
@@ -9622,7 +9622,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     input_cooldown = 25;
                 }
 
-                /// NEU: Hier zeichnen wir den Status-String direkt unter den Button!
+                /// Status telemetry rendered immediately beneath trigger button!
                 TextC(wx+ww-80, wy+325, cmd_status, 0xCC4444, _128);
                 
                 _15(input_cooldown EQ 0 AND mouse_just_pressed AND is_active AND dhcp_hov) {
@@ -9691,7 +9691,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     input_cooldown = 25; 
                 }
                 
-                /// KLICKBAR: USB (DAS IST JETZT DIE ZÜNDUNG!)
+                /// INTERACTIVE: USB STORAGE CONTROLLER INITIALIZATION TRIGGER!
                 _15(input_cooldown EQ 0 AND mouse_just_pressed AND is_active AND is_over_rect(mouse_x, mouse_y, wx+30, wy+345, 300, 20)) {
                     system_init_usb(); 
                     input_cooldown = 25;
@@ -9765,7 +9765,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     input_cooldown = 25; 
                 }
                 
-                /// HDA DEBUG INFO (zeigt was der Treiber wirklich findet)
+                /// HIGH DEFINITION AUDIO DIAGNOSTIC TELEMETRY
                 extern uint32_t hda_base_addr;
                 extern uint32_t hda_dac_nid;
                 extern uint32_t hda_pin_nid;
@@ -9890,7 +9890,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         char s_id[5]; int_to_str(t, s_id);
                         char* t_name = (char*)((t == 0) ? "COSMOS KERNEL" : "BACKGROUND TASK");
                         
-                        /// Ist dieser Task genau in diesem Frame aktiv auf der CPU? -> GRÜN!
+                        /// Active CPU execution indicator -> Renders green when running in current frame!
                         _89 c_box = (current_task == t) ? 0x00AA00 : (tasks[t].paused ? 0xAA8800 : 0x555555); 
                         
                         DrawRoundedRect(wx+30, task_y, 290, 20, 3, c_box);
@@ -9935,7 +9935,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             _15(win->id EQ 1) { 
                 TextC(wx+ww/2, wy+40, "INSTALLED APPS", 0x222222, _128);
 
-                // --- DAS RASTER-SYSTEM (Einmal definieren, überall nutzen!) ---
+                // --- UNIFIED UI GRID SYSTEM (Reusable layout metrics) ---
                 int bw = 150; // Button Breite (kleiner & eleganter)
                 int bh = 35;  // Button Höhe
                 
@@ -10174,7 +10174,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 
                 /// BARE METAL FIX: GLOBALE MEMORY-CACHES UM OOM-CRASHES ZU VERHINDERN!
                 static uint8_t* global_mft_cache = 0;
-                // FIX: 60 MB statt 10 MB, damit die 50.000 NTFS Records reinpassen!
+                // Memory buffer expanded to 60MB to accommodate up to 50,000 NTFS directory records!
                 if (!global_mft_cache) global_mft_cache = new uint8_t[60*1024*1024]; 
                 
                 static uint8_t* tba_comp_buffer = 0;
@@ -10183,7 +10183,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 if (!tba_decomp_buffer) tba_decomp_buffer = new uint8_t[10*1024*1024];
                 
                 /// ------------------------------------------
-                /// VIEW 2: GEÖFFNETES LAUFWERK
+                /// VIEW 2: MOUNTED STORAGE VOLUME FILE LIST
                 /// ------------------------------------------
                 _15(dsk_mgr_opened) {
                     DrawRoundedRect(wx+15, wy+45, 180, 55, 4, 0x222222); Text(wx+25, wy+50, "DRIVE CAPACITY:", 0xAAAAAA, _128);
@@ -10254,7 +10254,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         }
                     }
                     
-                    /// PASTE BUTTON (ZWISCHENABLAGE EINFÜGEN)
+                    /// CLIPBOARD PASTE ACTION BUTTON
                     _15(clipboard_active) {
                         DrawRoundedRect(wx+370, wy+45, 80, 25, 4, 0x00AA55); 
                         TextC(wx+410, wy+53, "PASTE", 0xFFFFFF, _128);
@@ -11166,7 +11166,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         _41 _15(boot[3] == 'E' && boot[4] == 'X' && boot[5] == 'F' && boot[6] == 'A' && boot[7] == 'T') {
                             print_win(win, "\n[OK] exFAT VOLUME FOUND!\n");
                             print_win(win, "[SYS] exFAT PARSER NOT IMPLEMENTED YET.\n");
-                            // Hier kommt später dein exFAT Code rein!
+                            // Extension point for exFAT driver integration
                         }
                         // ==========================================
                         _41 _15(boot[0] == 0x50 && boot[1] == 0x4B && boot[2] == 0x03 && boot[3] == 0x04) {
@@ -11201,7 +11201,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                                     _39(int p=0; p<4; p++) {
 										uint8_t pt = boot[446 + (p * 16) + 4];
 										
-										// FIX: Wenn 'NTFS' gefunden wird, setze LBA zwingend auf 0!
+										// FIX: When NTFS signature is identified, enforce partition base LBA to 0!
 										_15(pt == 0x07 || (boot[3]=='N' && boot[4]=='T')) {
 											target_ntfs_lba = (boot[3]=='N' && boot[4]=='T') ? 0 : *(_43*)&boot[446 + (p * 16) + 8];
 											_37;
@@ -11426,10 +11426,10 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             /// NOTEPAD (ID 0) - BARE METAL FIX (SICHTBAR!)
             /// ==========================================
             _15(win->id EQ 0) {
-                /// BARE METAL FIX: Fokus-Check für Notepad Buttons!
+                /// BARE METAL FIX: Focus verification for Notepad action buttons!
                 _44 is_active = (win_z[49] EQ win->id);
                 
-                /// BARE METAL FIX: Harte Farbe (Weiß) für Text!
+                /// BARE METAL FIX: High-contrast white glyph color for text editor!
                 _89 safe_txt_color = 0xFFFFFF; 
                 Text(wx+15, wy+45, win->content, safe_txt_color, _86);
                 
@@ -11581,7 +11581,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                                 
                                 uint32_t file_size = browser_download_len - payload_start;
                                 
-                                /// Finde dynamisch einen freien Platz ganz hinten auf der Festplatte
+                                /// Dynamically locate contiguous free sectors at tail of disk
                                 uint32_t target_sec = 11000;
                                 for (int i = 0; i < 28; i++) {
                                     if (cfs_files[i].exists && cfs_files[i].start_lba >= target_sec) {
@@ -11589,7 +11589,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                                     }
                                 }
                                 
-                                /// Die gesamte Datei Sektor für Sektor schreiben!
+                                /// Stream full file payload sector-by-sector to storage disk!
                                 uint32_t sectors = (file_size + 511) / 512;
                                 for (uint32_t s=0; s<sectors; s++) {
                                     disk_write_auto(target_sec + s, (uint64_t)&browser_download_buffer[payload_start + s*512]);
@@ -11601,7 +11601,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                             }
                             
                             /// ==========================================
-                            /// GEMEINSAMER CODE (FÜR BEIDE MODI)
+                            /// SHARED EXECUTION PATH (FOR BOTH OPERATING MODES)
                             /// ==========================================
                             entries[slot].type = 1;
                             _39(int n=0; n<11; n++) entries[slot].filename[n] = 0;
@@ -11654,7 +11654,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                             entries[slot].file_size = 0;
                             entries[slot].start_lba = 0; 
                             
-                            /// BARE METAL FIX: Ordner-Hierarchie auf Platte sichern!
+                            /// BARE METAL FIX: Persist folder directory hierarchy to disk!
                             entries[slot].parent_idx = current_folder_id; 
                             
                             disk_write_auto(1002, buf_dir);
@@ -11900,7 +11900,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
             }
         }
         
-        /// BARE METAL FIX: Tastatur-Ereignisse nach einem Frame verwerfen!
+        /// BARE METAL FIX: Clear single-frame keyboard event flags!
 
         key_new = _86;
         last_app_key = 0;
@@ -12006,9 +12006,9 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         
         Swap(); 
 #ifdef __linux__
-        // usleep(1000) drosselt die CPU-Last von 100% auf ca. 2-5%
-        // Verhindert, dass CosmOS den gesamten Computer blockiert!
-        // Der FPS-Wert bleibt so bei den gewuenschten 100-150 FPS.
+        // usleep(1000) reduces idle CPU load from 100% to ~2-5%
+        // Yields host execution slices to prevent starving system resources
+        // Regulates display loop comfortably at target 100-150 FPS.
         usleep(1000);
 #endif
         frame++;

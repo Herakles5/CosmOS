@@ -33,7 +33,7 @@ _81 _202 {
 
 #pragma pack(pop)
 
-// Funktions-Deklarationen für den Rest des Kernels
+// Function declarations for the kernel subsystem
 _172 _50 cfs_finalize_file(HBA_PORT* port, _71 _30* filename, _89 start_lba, _89 total_bytes);
 _172 _89 cfs_read_file(HBA_PORT* port, _71 _30* target_filename, void* ram_destination);
 _172 _50 cfs_format_drive(HBA_PORT* port, _94 total_sectors);

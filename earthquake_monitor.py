@@ -61,7 +61,7 @@ def save_posted_ids(posted: set):
         with open(POSTED_IDS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
     except Exception as e:
-        log(f"Fehler beim Speichern von {POSTED_IDS_FILE}: {e}")
+        log(f"Error saving {POSTED_IDS_FILE}: {e}")
 
 def load_resonance_state() -> dict:
     if os.path.exists(RESONANCE_STATE_FILE):
@@ -77,7 +77,7 @@ def save_resonance_state(state: dict):
         with open(RESONANCE_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
     except Exception as e:
-        log(f"Fehler beim Speichern von {RESONANCE_STATE_FILE}: {e}")
+        log(f"Error saving {RESONANCE_STATE_FILE}: {e}")
 
 def push_to_queue(queue_file: str, item: dict):
     queue = []
@@ -87,18 +87,18 @@ def push_to_queue(queue_file: str, item: dict):
                 queue = json.load(f)
         except Exception:
             queue = []
-    # Dringende Erdbeben- & Resonanz-Meldungen haben absolute Prioritaet (Vorne einfuegen)
+    # Urgent earthquake & resonance alerts have absolute priority (insert at head)
     queue.insert(0, item)
     try:
         with open(queue_file, "w", encoding="utf-8") as f:
             json.dump(queue, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        log(f"Fehler beim Schreiben in {queue_file}: {e}")
+        log(f"Error writing to {queue_file}: {e}")
 
 def fetch_schumann_resonance():
     """
-    Berechnet den Gaia Charge Multiplier und Resonance Impact Level
-    analog zu EarthquakeApp/app.js aus dem NOAA Space Weather Kp-Index.
+    Calculates Gaia Charge Multiplier and Resonance Impact Level
+    analogous to EarthquakeApp/app.js from NOAA Space Weather Kp-Index.
     """
     url = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
     kp_val = 1.0
@@ -112,9 +112,9 @@ def fetch_schumann_resonance():
                 kp_val = float(last_entry.get("Kp", 1.0))
                 time_tag = last_entry.get("time_tag", "")
     except Exception as e:
-        log(f"Hinweis beim Abruf von NOAA SWPC K-Index: {e}")
+        log(f"Notice fetching NOAA SWPC K-Index: {e}")
 
-    # Exakte Formel aus EarthquakeApp app.js:
+    # Exact formula from EarthquakeApp app.js:
     if kp_val <= 3.0:
         charge = 0.79 + (kp_val / 3.0) * 0.21
     elif kp_val <= 5.0:
@@ -138,8 +138,8 @@ def fetch_schumann_resonance():
 
 def fetch_live_earthquakes():
     """
-    Holt weltweite Erdbeben der letzten 24h von USGS und EMSC.
-    Filtert strikt auf M5.0 bis M9.9.
+    Fetches worldwide earthquakes of the past 24h from USGS and EMSC.
+    Filters strictly for M5.0 to M9.9.
     """
     raw_quakes = []
     
@@ -253,7 +253,7 @@ def format_earthquake_post_x(eq: dict, sr: dict) -> str:
 
 def format_earthquake_post_fb(eq: dict, sr: dict) -> str:
     """
-    Formatiert ausfuehrlichen Facebook-Beitrag mit vollstaendigem wissenschaftlichem Kontext.
+    Formats detailed Facebook post with full scientific context.
     """
     time_str = datetime.fromtimestamp(eq["time"] / 1000, tz=timezone.utc).strftime("%d.%m.%Y um %H:%M UTC")
     is_elevated = sr["impact"] in ["Elevated", "High Tension"]
@@ -319,19 +319,19 @@ def format_resonance_alert_fb(sr: dict) -> str:
 
 def check_and_publish():
     sr = fetch_schumann_resonance()
-    log(f"Schumann-Resonanz Status: Kp={sr['kp']:.2f}, GaiaCharge={sr['charge']:.2f}x, Impact={sr['impact']}")
+    log(f"Schumann Resonance Status: Kp={sr['kp']:.2f}, GaiaCharge={sr['charge']:.2f}x, Impact={sr['impact']}")
 
-    # 1. Pruefe Resonanz-Impact Uebergang (Kritische Warnung sobald ELEVATED / HIGH TENSION)
+    # 1. Check resonance impact transition (Critical alert when ELEVATED / HIGH TENSION)
     res_state = load_resonance_state()
     current_impact = sr["impact"]
     last_impact = res_state.get("last_impact", "Normal")
     last_alert_time = res_state.get("last_alert_time", 0)
     now = time.time()
 
-    # Sende kritische Warnung wenn neu in ELEVATED / HIGH TENSION oder alle 6h bei dauerhaftem Hochstand
+    # Send critical alert if newly ELEVATED / HIGH TENSION or every 6h if prolonged elevated state
     if current_impact in ["Elevated", "High Tension"]:
         if last_impact == "Normal" or (now - last_alert_time > 21600):
-            log(f"🚨 Ausloesen einer KRITISCHEN RESONANZ-WARNUNG! Status: {current_impact}")
+            log(f"🚨 Triggering CRITICAL RESONANCE ALERT! Status: {current_impact}")
             x_msg = format_resonance_alert_x(sr)
             fb_msg = format_resonance_alert_fb(sr)
             push_to_queue(X_QUEUE_FILE, {"type": "ResonanceAlert", "message": x_msg, "created_at": now})
@@ -341,22 +341,22 @@ def check_and_publish():
     res_state["last_impact"] = current_impact
     save_resonance_state(res_state)
 
-    # 2. Pruefe Erdbeben M5.0+
+    # 2. Check earthquakes M5.0+
     posted_ids = load_posted_ids()
     quakes = fetch_live_earthquakes()
-    log(f"Gefundene M5.0+ Erdbeben in letzten 24h: {len(quakes)}")
+    log(f"Detected M5.0+ earthquakes in last 24h: {len(quakes)}")
 
     new_posts = 0
-    # Bei Erstinitialisierung nur das allerneueste Beben posten um Spam zu vermeiden
+    # On initial startup, only post the latest quake to avoid spam
     unposted_quakes = [q for q in quakes if q["id"] not in posted_ids]
     if len(posted_ids) == 0 and len(unposted_quakes) > 1:
-        # Markiere aeltere bereits als gesehen
+        # Mark older ones as already seen
         for q in unposted_quakes[1:]:
             posted_ids.add(q["id"])
         unposted_quakes = unposted_quakes[:1]
 
     for q in unposted_quakes:
-        log(f"Neues M5.0+ Erdbeben detektiert: M{q['mag']} - {q['place']} ({q['id']})")
+        log(f"New M5.0+ earthquake detected: M{q['mag']} - {q['place']} ({q['id']})")
         x_post = format_earthquake_post_x(q, sr)
         fb_post = format_earthquake_post_fb(q, sr)
 
@@ -368,12 +368,12 @@ def check_and_publish():
 
     save_posted_ids(posted_ids)
     if new_posts > 0:
-        log(f"{new_posts} neue Erdbeben-Meldungen in X- & FB-Live-Queues eingereiht.")
+        log(f"{new_posts} new earthquake alerts enqueued into X and FB live queues.")
 
 def main():
-    log("=== AION EARTHQUAKE & RESONANCE MONITOR GESTARTET ===")
-    log(f"Ueberwachende App: {APP_URL}")
-    log("Schwellenwert: M5.0 bis M9.9+ | Kritische Resonanz: Elevated / High Tension")
+    log("=== AION EARTHQUAKE & RESONANCE MONITOR STARTED ===")
+    log(f"Monitored app: {APP_URL}")
+    log("Threshold: M5.0 to M9.9+ | Critical Resonance: Elevated / High Tension")
 
     if "--once" in sys.argv:
         check_and_publish()
@@ -384,7 +384,7 @@ def main():
         try:
             check_and_publish()
         except Exception as e:
-            log(f"Unerwarteter Fehler im Monitor-Zyklus: {e}")
+            log(f"Unexpected error in monitor cycle: {e}")
         time.sleep(interval)
 
 if __name__ == "__main__":

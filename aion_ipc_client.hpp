@@ -51,7 +51,7 @@ public:
 #endif
     }
 
-    // Verbindet wahlweise per Unix Domain Socket (Linux) oder TCP (Cross-Platform)
+    // Connects via either Unix Domain Socket (Linux) or TCP (Cross-Platform)
     bool connectUnix(const std::string& socketPath = "/tmp/aion_nexus.sock") {
 #ifndef _WIN32
         disconnect();
@@ -74,7 +74,7 @@ public:
         fcntl(sock, F_SETFL, flags | O_NONBLOCK);
 
         connected = true;
-        std::cout << "[AION IPC] Erfolgreich via Unix Domain Socket verbunden: " << socketPath << std::endl;
+        std::cout << "[AION IPC] Successfully connected via Unix Domain Socket: " << socketPath << std::endl;
         return true;
 #else
         return connectTCP("127.0.0.1", 9099);
@@ -107,7 +107,7 @@ public:
 #endif
 
         connected = true;
-        std::cout << "[AION IPC] Erfolgreich via TCP verbunden: " << host << ":" << port << std::endl;
+        std::cout << "[AION IPC] Successfully connected via TCP: " << host << ":" << port << std::endl;
         return true;
     }
 
@@ -123,7 +123,7 @@ public:
         return connected;
     }
 
-    // Sendet einen JSON-Befehl an die Python Evolution Engine
+    // Sends a JSON command to the Python Evolution Engine
     bool sendCommand(const nlohmann::json& cmd) {
         if (!connected || sock == INVALID_SOCKET) return false;
         std::string payload = cmd.dump() + "\n";
@@ -131,7 +131,7 @@ public:
         return sent != SOCKET_ERROR;
     }
 
-    // Fragt Events ab (Non-blocking für 60 FPS Game Loop)
+    // Polls events (Non-blocking for 60 FPS game loop)
     void pollEvents(std::function<void(const std::string& eventType, const nlohmann::json& data)> onEvent) {
         if (!connected || sock == INVALID_SOCKET) return;
 

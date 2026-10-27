@@ -2,11 +2,11 @@
 """
 AION NEXUS - Autonomous Evolution Controller & Multilingual Reporter
 ====================================================================
-Wird aufgerufen durch das Chat-/Sprach-Kommando "evolution":
-1. Erkennt die in Aion Nexus aktive Sprache (0=EN, 1=DE, 2=KO) via /tmp/aion_lang.txt.
-2. Prueft alle autonomen Hintergrund-Dienste und startet pausierte Daemons.
-3. Liest den aktuellen Systemzustand (Generation, Regeln, Ratsbeschluesse, Seismik/Resonanz, Social).
-4. Erstellt einen praegnanten, gesprochenen Statusbericht in der exakten Ziel-Sprache.
+Invoked via the chat/voice command "evolution":
+1. Detects the active language in Aion Nexus (0=EN, 1=DE, 2=KO) via /tmp/aion_lang.txt.
+2. Checks all autonomous background services and starts paused daemons.
+3. Reads current system state (Generation, rules, council decisions, seismic/resonance, social).
+4. Generates a concise spoken status report in the exact target language.
 """
 
 import os
@@ -32,7 +32,7 @@ SERVICE_NAMES = {
 }
 
 def get_aion_lang() -> int:
-    # Optional CLI-Argument --lang 0|1|2
+    # Optional CLI argument --lang 0|1|2
     for arg in sys.argv:
         if arg.startswith("--lang="):
             val = arg.split("=")[1]
@@ -46,7 +46,7 @@ def get_aion_lang() -> int:
                     return int(c)
     except Exception:
         pass
-    return 1  # Standard: Deutsch
+    return 1  # Default: German
 
 def is_running(pattern: str) -> bool:
     try:
@@ -68,7 +68,7 @@ def start_daemon(cmd_list: list, log_path: str):
         )
         time.sleep(0.3)
     except Exception as e:
-        print(f"Fehler beim Starten von {cmd_list}: {e}", file=sys.stderr)
+        print(f"Error starting {cmd_list}: {e}", file=sys.stderr)
 
 def ensure_all_daemons():
     started = []

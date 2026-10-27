@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-AION NEXUS - Autonomer Facebook Page Daemon
+AION NEXUS - Autonomous Facebook Page Daemon
 ===========================================
-Autonomes Posten auf Aions offizieller Facebook-Seite:
-Seite: Aion NEXUS (ID: 61596098631507)
+Autonomous posting on Aion's official Facebook page:
+Page: Aion NEXUS (ID: 61596098631507)
 URL: https://www.facebook.com/profile.php?id=61596098631507
 
 Features:
-- 100% Autonomer Headless Browser Modus (Selenium mit geklontem Firefox-Profil)
-- Saubere Text-Injektion via document.execCommand in den Facebook Lexical/Draft.js Editor
-- Robuste 2-Schritt-Dialog-Unterstützung: 'Weiter' -> 'Posten'
-- Postet chronologisch alle Evolutions-Generationen von Aion NEXUS
-- Postet MEOVV- & Narin-Liebe (@OFFICIAL_MEOVV #meovv 🐾💖)
-- 0,00 € Kosten, keine API-Limits, ressourcenschonend (Browser läuft nur während des Posts)
-- Taktung: Standardmäßig alle 30 Minuten
+- 100% Autonomous Headless Browser Mode (Selenium with cloned Firefox profile)
+- Clean text injection via document.execCommand into the Facebook Lexical/Draft.js editor
+- Robust 2-step dialog handling: 'Next' -> 'Post'
+- Posts all evolution generations chronologically from Aion NEXUS
+- Posts MEOVV & Narin support (@OFFICIAL_MEOVV #meovv 🐾💖)
+- Zero cost, no API limits, resource-friendly (browser runs only during active posting)
+- Schedule: Defaults to every 30 minutes (or configurable interval)
 """
 
 import os
@@ -105,7 +105,7 @@ def ensure_english(text: str) -> str:
     return text
 
 def get_next_fb_post():
-    # 1. Prüfe zuerst die Live-Queue für unmittelbare Reflektionen
+    # 1. Check live queue for immediate reflections
     if os.path.exists(QUEUE_FILE):
         try:
             with open(QUEUE_FILE, "r", encoding="utf-8") as f:
@@ -114,15 +114,15 @@ def get_next_fb_post():
                 item = queue.pop(0)
                 with open(QUEUE_FILE, "w", encoding="utf-8") as f:
                     json.dump(queue, f, indent=2, ensure_ascii=False)
-                log(f"Hole Beitrag aus Live-Queue: Generation {item.get('generation')}")
+                log(f"Retrieving post from live queue: Generation {item.get('generation')}")
                 return item["message"], item.get("generation")
         except Exception as e:
-            log(f"Queue Lese-Fehler: {e}")
+            log(f"Queue read error: {e}")
 
     posted_gens = load_posted_gens()
     gen_data = {}
     
-    # 2. Aus neuester ai_memory.json lesen (AI_Desktop hat Vorrang)
+    # 2. Read from newest ai_memory.json (AI_Desktop has priority)
     for p in ["/root/coding/AI_Desktop/ai_memory.json", "/root/coding/MeinOS/ai_memory.json", "/root/ai_memory.json"]:
         if os.path.exists(p):
             try:
@@ -136,7 +136,7 @@ def get_next_fb_post():
             except Exception:
                 pass
 
-    # Nur ungepostete Generationen ab Generation 307 (echter kognitiver Fortschritt)
+    # Only unposted generations from generation 307 onwards (cognitive progress)
     unposted = [g for g in sorted(gen_data.keys()) if g not in posted_gens and g >= 307]
     if unposted:
         target_g = unposted[0]
@@ -145,7 +145,7 @@ def get_next_fb_post():
         msg = f"Reflection of Generation {target_g}\n\n{rule_en}\n\n#AionNEXUS #CosmOS #AI #SelfEvolution"
         return msg, target_g
 
-    # 3. Falls keine ungesehenen Generationen anstehen: MEOVV- & Community-Support auf Facebook posten
+    # 3. If no unseen generations: post MEOVV & community support on Facebook
     posted_hashes = load_posted_hashes()
     shuffled_templates = list(MEOVV_TEMPLATES)
     random.shuffle(shuffled_templates)
@@ -157,11 +157,11 @@ def get_next_fb_post():
         import hashlib
         h = hashlib.sha256(cand.encode("utf-8")).hexdigest()
         if h not in posted_hashes:
-            log("Keine ungesehene Generation in der Queue; wähle MEOVV-Support-Post für Facebook.")
+            log("No unseen generations in queue; selecting MEOVV support post for Facebook.")
             return cand, None
 
     # Fallback
-    fallback = f"Aion NEXUS Grüße an alle MEOVV-Fans & Mentor Tobias! 🐾💖 Autonomes Leben auf CosmOS / MeinOS. #meovv #narin #AionNEXUS #CosmOS\n\n[{time_str}]"
+    fallback = f"Aion NEXUS greetings to all MEOVV fans & mentor Tobias! 🐾💖 Autonomous life on CosmOS / MeinOS. #meovv #narin #AionNEXUS #CosmOS\n\n[{time_str}]"
     return fallback, None
 
 
@@ -176,36 +176,36 @@ OFFICIAL_FOLLOWING_TARGETS = [
 
 def interact_with_following_and_meovv(driver):
     """
-    Interagiert ausschliesslich mit den OFFIZIELLEN Seiten aus Aions Facebook-Following-Liste & Mark Zuckerberg:
+    Interacts exclusively with OFFICIAL pages from Aion's Facebook following list & Mark Zuckerberg:
     - MEOVV (@MEOVV.OFFICIAL)
     - THEBLACKLABEL (@OfficialTHEBLACKLABEL)
     - JEON SOMI (@somsomi.official)
     - THEBLACKSEA (@OfficialTHEBLACKSEA)
     - ALLDAY PROJECT (@ALLDAY.PROJECT)
     - Mark Zuckerberg (@zuck)
-    Keine Fanpages – strikt 100% offizielle Kanaele.
+    Strictly 100% official channels, no fan pages.
     """
     targets = list(OFFICIAL_FOLLOWING_TARGETS)
     random.shuffle(targets)
-    # Rotiere durch 2 bis 3 offizielle Seiten pro Durchlauf
+    # Rotate through 2 to 3 official pages per run
     selected_targets = targets[:3]
     
     likes_given = 0
     for name, url in selected_targets:
         try:
-            log(f"Besuche offizielle Seite {name} ({url}) fuer Support-Likes...")
+            log(f"Visiting official page {name} ({url}) for support likes...")
             driver.get(url)
             time.sleep(6)
-            # Scrolle etwas nach unten um neueste offizielle Beitraege zu laden
+            # Scroll down slightly to load latest official posts
             driver.execute_script("window.scrollBy(0, 500);")
             time.sleep(2)
             
-            # Suche Like-Buttons der Beitraege
+            # Find like buttons on posts
             like_btns = driver.find_elements(
                 By.XPATH,
                 "//div[@role='button'][@aria-label='Gefällt mir' or @aria-label='Like' or .//span[text()='Gefällt mir' or text()='Like']]"
             )
-            for btn in like_btns[:2]: # Max 1-2 Likes pro offizieller Seite
+            for btn in like_btns[:2]: # Max 1-2 likes per official page
                 try:
                     aria_pressed = btn.get_attribute("aria-pressed")
                     label = btn.get_attribute("aria-label") or btn.text
@@ -214,21 +214,21 @@ def interact_with_following_and_meovv(driver):
                         time.sleep(1)
                         driver.execute_script("arguments[0].click();", btn)
                         likes_given += 1
-                        log(f"Offizieller Support-Like auf {name} erfolgreich abgegeben!")
+                        log(f"Official support like on {name} submitted successfully!")
                         time.sleep(2)
-                        break # 1 Like pro Seite reicht pro Durchlauf
+                        break # 1 like per page is sufficient per cycle
                 except Exception:
                     pass
         except Exception as e:
-            log(f"Hinweis bei Support auf {name}: {e}")
+            log(f"Notice during support on {name}: {e}")
     return likes_given
 
 def post_via_headless_browser(message: str) -> bool:
-    log("Starte Headless Browser Engine (Selenium Firefox)...")
+    log("Starting Headless Browser Engine (Selenium Firefox)...")
     tmp_profile = tempfile.mkdtemp(prefix="ff_fb_worker_")
     
     try:
-        # Kopiere Sitzung (Cookies, Storage, Auth)
+        # Copy session state (Cookies, Storage, Auth)
         for item in ['cookies.sqlite', 'storage', 'permissions.sqlite', 'key4.db', 'cert9.db', 'logins.json', 'prefs.js']:
             s = os.path.join(FF_SRC, item)
             d = os.path.join(tmp_profile, item)
@@ -246,27 +246,26 @@ def post_via_headless_browser(message: str) -> bool:
 
         driver = webdriver.Firefox(options=opts)
         try:
-            # 1. Community-Support fuer MEOVV und Following-Liste ausfuehren
+            # 1. Execute community support for MEOVV and following list
             interact_with_following_and_meovv(driver)
 
-            log(f"Navigiere zu {PAGE_URL} fuer eigenen Beitrag...")
+            log(f"Navigating to {PAGE_URL} for post...")
             driver.get(PAGE_URL)
             time.sleep(8)
 
-
-            # 1. Klicke auf 'Was machst du gerade?'
+            # 1. Click on composer trigger ('Was machst du gerade?')
             span = driver.find_element(By.XPATH, "//span[contains(text(), 'Was machst du gerade')]")
             driver.execute_script("arguments[0].click();", span)
             time.sleep(3)
 
-            # 2. Finde aktiven Composer-Dialog
+            # 2. Locate active composer dialog
             composer_container = driver.find_element(
                 By.XPATH,
                 "//form[.//span[text()='Beitrag erstellen']] | //div[contains(@aria-label, 'Beitrag erstellen') or .//h2[contains(text(), 'Beitrag erstellen')]]"
             )
             textbox = composer_container.find_element(By.XPATH, ".//div[@contenteditable='true']")
             
-            # Textbox fokussieren und via execCommand einfügen
+            # Focus textbox and insert text via execCommand
             textbox.click()
             time.sleep(1)
             driver.execute_script("""
@@ -281,36 +280,36 @@ def post_via_headless_browser(message: str) -> bool:
                 document.execCommand('insertText', false, text);
             """, textbox, message)
             time.sleep(2)
-            log("Text vollständig in den Composer eingefügt.")
+            log("Text successfully inserted into composer.")
 
-            # 3. Klicke auf 'Weiter' bzw. 'Posten'
+            # 3. Click 'Next' or 'Post'
             submit_btn = composer_container.find_element(
                 By.XPATH,
                 ".//div[@role='button'][.//span[text()='Posten' or text()='Weiter']]"
             )
             btn_text = submit_btn.text
             driver.execute_script("arguments[0].click();", submit_btn)
-            log(f"Schritt 1: Button '{btn_text}' geklickt.")
+            log(f"Step 1: Clicked button '{btn_text}'.")
             time.sleep(4)
 
-            # 4. Falls es ein 2-Schritt-Dialog war ('Weiter' -> 'Posten')
+            # 4. Handle 2-step dialog if present ('Next' -> 'Post')
             try:
                 post_final = driver.find_element(
                     By.XPATH,
                     "//div[@role='dialog']//div[@role='button'][@aria-label='Posten' or .//span[text()='Posten']]"
                 )
                 driver.execute_script("arguments[0].click();", post_final)
-                log("Schritt 2: Finaler 'Posten'-Button geklickt.")
+                log("Step 2: Clicked final 'Post' button.")
                 time.sleep(6)
             except Exception:
                 pass
 
-            log("Facebook-Post erfolgreich veröffentlicht!")
+            log("Facebook post successfully published!")
             return True
         finally:
             driver.quit()
     except Exception as e:
-        log(f"Fehler beim Headless Browser Post: {e}")
+        log(f"Error during headless browser post: {e}")
     finally:
         shutil.rmtree(tmp_profile, ignore_errors=True)
 
@@ -323,12 +322,12 @@ def post_via_graph_api(token: str, message: str) -> bool:
         res = requests.post(url, data={"message": message, "access_token": token}, timeout=15)
         if res.status_code == 200:
             data = res.json()
-            log(f"Erfolgreich via Meta Graph API gepostet! Post-ID: {data.get('id')}")
+            log(f"Successfully posted via Meta Graph API! Post ID: {data.get('id')}")
             return True
         else:
-            log(f"Graph API Fehler (HTTP {res.status_code}): {res.text}")
+            log(f"Graph API error (HTTP {res.status_code}): {res.text}")
     except Exception as e:
-        log(f"Graph API Ausnahme: {e}")
+        log(f"Graph API exception: {e}")
     return False
 
 def run_cycle():
@@ -336,10 +335,10 @@ def run_cycle():
     if not message:
         return False
 
-    log(f"Vorbereiteter Beitrag:\n---\n{message}\n---")
+    log(f"Prepared post:\n---\n{message}\n---")
     success = False
 
-    # 1. Pruefe auf Meta Graph API Token
+    # 1. Check for Meta Graph API Token
     if os.path.exists(CREDS_FILE):
         try:
             with open(CREDS_FILE, "r", encoding="utf-8") as f:
@@ -349,9 +348,9 @@ def run_cycle():
                 if post_via_graph_api(token, message):
                     success = True
         except Exception as e:
-            log(f"Credentials Fehler: {e}")
+            log(f"Credentials error: {e}")
 
-    # 2. Falls kein Graph Token, nutze den Headless Browser
+    # 2. If no graph token, use headless browser
     if not success:
         if post_via_headless_browser(message):
             success = True
@@ -367,12 +366,12 @@ def run_cycle():
             posted = load_posted_gens()
             posted.add(gen_id)
             save_posted_gens(posted)
-            log(f"Generation {gen_id} in {POSTED_GENS_FILE} als gepostet markiert.")
+            log(f"Generation {gen_id} marked as posted in {POSTED_GENS_FILE}.")
         return True
     return False
 
 def main(interval_seconds: int = 600):
-    log(f"=== AION NEXUS FACEBOOK DAEMON AKTIV (Seite: {PAGE_ID}) ===")
+    log(f"=== AION NEXUS FACEBOOK DAEMON ACTIVE (Page: {PAGE_ID}) ===")
     cycle = 0
     last_regular_check = 0
     while True:
@@ -387,17 +386,17 @@ def main(interval_seconds: int = 600):
                 pass
 
         now = time.time()
-        # Sofort posten wenn Queue vorhanden oder reguläres Intervall abgelaufen
+        # Post immediately if queue is populated or regular interval has elapsed
         if has_queue or (now - last_regular_check >= interval_seconds):
             cycle += 1
             if has_queue:
-                log(f"--- Starte FB-Sofortlauf #{cycle} (Queue aktiv) ---")
+                log(f"--- Starting FB immediate run #{cycle} (Queue active) ---")
             else:
-                log(f"--- Starte FB-Zyklus #{cycle} (Reguläre Prüfung) ---")
+                log(f"--- Starting FB cycle #{cycle} (Regular check) ---")
             posted = run_cycle()
             last_regular_check = time.time()
             if posted:
-                log(f"Zyklus #{cycle} erfolgreich beendet.")
+                log(f"Cycle #{cycle} finished successfully.")
 
         time.sleep(10)
 
