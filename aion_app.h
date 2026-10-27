@@ -15,6 +15,7 @@ extern "C" {
 #endif
     extern bool aion_wants_foreground;
     extern bool aion_wants_background;
+    void AionCopyLastResponseToClipboard();
 #ifdef __cplusplus
 }
 #endif

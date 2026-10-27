@@ -263,6 +263,11 @@ chmod +x $ROOTFS/usr/local/bin/ollama || true
 mkdir -p $ROOTFS/usr/share/ollama
 cp -r /usr/share/ollama/* $ROOTFS/usr/share/ollama/ || true
 
+echo "-> Copying VM ISOs and XMLs to Live ISO..."
+mkdir -p $ROOTFS/var/lib/libvirt/images
+# Copy everything from /var/lib/libvirt/images EXCEPT .qcow2 virtual disks (as they are created dynamically)
+rsync -av --exclude="*.qcow2" /var/lib/libvirt/images/ $ROOTFS/var/lib/libvirt/images/ || true
+
 cat > $ROOTFS/root/.xinitrc << 'EOF'
 #!/bin/sh
 xset -dpms
@@ -378,7 +383,7 @@ menuentry "MeinOS Live" {
 }
 EOF
 
-grub-mkrescue -o "$BUILD_DIR/CosmOS_tmp.iso" $ISO_DIR
+grub-mkrescue -o "$BUILD_DIR/CosmOS_tmp.iso" $ISO_DIR -iso-level 3 -iso-level 3
 echo "-> Kopiere ISO auf SSD in sicheren, synchronen Blöcken (verhindert exFAT-Freeze!)..."
 dd if="$BUILD_DIR/CosmOS_tmp.iso" of=CosmOS.iso bs=4M oflag=sync status=progress
 rm -f "$BUILD_DIR/CosmOS_tmp.iso"

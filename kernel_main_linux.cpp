@@ -7707,7 +7707,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
     str_cpy(windows[0].title, "NOTEPAD");  windows[0].x=0; windows[0].y=0; windows[0].w=600; windows[0].h=300; windows[0].color=0xEEEEEE; 
     str_cpy(windows[1].title, "APPS");     windows[1].x=0; windows[1].y=300; windows[1].w=650; windows[1].h=450; windows[1].color=0xDDDDDD;
     str_cpy(windows[2].title, "SAVE AS..."); windows[2].x=0; windows[2].y=150; windows[2].w=300; windows[2].h=200; windows[2].color=0xDDDDDD;
-    str_cpy(windows[3].title, "SYSTEM");   windows[3].x=0; windows[3].y=0;  windows[3].w=700; windows[3].h=450; windows[3].color=0xFFD700;
+    str_cpy(windows[3].title, "SYSTEM");   windows[3].x=0; windows[3].y=0;  windows[3].w=700; windows[3].h=600; windows[3].color=0xFFD700;
     str_cpy(windows[4].title, "DISK MGR"); windows[4].x=0; windows[4].y=0; windows[4].w=600; windows[4].h=300; windows[4].color=0x888888; 
     str_cpy(windows[5].title, "CMD");      windows[5].x=0; windows[5].y=0; windows[5].w=600; windows[5].h=300; windows[5].color=0x111111;
     str_cpy(windows[6].title, "EMULATOR"); windows[6].x=0; windows[6].y=0; windows[6].w=600; windows[6].h=300; windows[6].color=0x222222;
@@ -9145,6 +9145,11 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 bool lang_clicked_now = (lang_hover && mouse_down);
                 if (lang_clicked_now && !lang_clicked_last) {
                     aion_lang = (aion_lang + 1) % 3;
+                    FILE* lang_f = fopen("/tmp/aion_lang.txt", "w");
+                    if (lang_f) {
+                        fprintf(lang_f, "%d", aion_lang);
+                        fclose(lang_f);
+                    }
                 }
                 lang_clicked_last = lang_clicked_now;
                 
@@ -9164,6 +9169,23 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     aion_teach_mode = !aion_teach_mode;
                 }
                 teach_clicked_last = teach_clicked_now;
+
+                // COPY Button
+                extern void AionCopyLastResponseToClipboard();
+                static int aion_copy_timer = 0;
+                bool copy_hover = is_over_rect(mouse_x, mouse_y, wx+230, wy+wh-65, 75, 25);
+                uint32_t copy_col = (aion_copy_timer > 0) ? 0x228844 : (copy_hover ? 0x555577 : 0x333355);
+                DrawRoundedRect(wx+230, wy+wh-65, 75, 25, 4, copy_col);
+                TextC(wx+267, wy+wh-60, (aion_copy_timer > 0) ? "COPIED" : "COPY", 0xFFFFFF, _128);
+                if (aion_copy_timer > 0) aion_copy_timer--;
+                
+                static bool copy_clicked_last = false;
+                bool copy_clicked_now = (copy_hover && mouse_down);
+                if (copy_clicked_now && !copy_clicked_last) {
+                    AionCopyLastResponseToClipboard();
+                    aion_copy_timer = 45;
+                }
+                copy_clicked_last = copy_clicked_now;
 
                 DrawRoundedRect(wx+10, wy+wh-35, ww-120, 25, 4, aion_input_focus ? 0x444444 : 0x222222);
                 Text(wx+15, wy+wh-30, os_text_input_buf[0] == 0 ? "Ask AION something..." : os_text_input_buf, os_text_input_buf[0] == 0 ? 0x555555 : 0xFFFFFF, _128);
@@ -9773,13 +9795,96 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     int_to_str(hda_pin_nid, tmp);
                     str_cat(hda_dbg, tmp);
                 }
-                Text(wx+30, wy+395, hda_dbg, hda_dac_nid ? 0xAAAAAA : 0xFF4400, _86);
+                
+                static int win10_gb = 75;
+                static int mac_gb = 64;
+                static int andr_gb = 16;
+                
+                // CREATE WIN10 VM DISK
+                char w_txt[32]; str_cpy(w_txt, "WIN10 ("); char wtmp[10]; int_to_str(win10_gb, wtmp); str_cat(w_txt, wtmp); str_cat(w_txt, "GB)");
+                _44 hov_c_win = is_over_rect(mouse_x, mouse_y, wx+30, wy+395, 95, 20);
+                DrawRoundedRect(wx+30, wy+395, 95, 20, 3, hov_c_win ? 0x00AA00 : 0x006600);
+                Text(wx+35, wy+400, w_txt, 0xFFFFFF, _86);
+                
+                _44 hov_w_m = is_over_rect(mouse_x, mouse_y, wx+130, wy+395, 15, 20);
+                DrawRoundedRect(wx+130, wy+395, 15, 20, 2, hov_w_m ? 0x555555 : 0x333333);
+                Text(wx+134, wy+400, "-", 0xFFFFFF, _86);
+                _15(input_cooldown == 0 && mouse_just_pressed && is_active && hov_w_m) { if (win10_gb > 10) win10_gb -= 5; input_cooldown = 10; }
+                
+                _44 hov_w_p = is_over_rect(mouse_x, mouse_y, wx+150, wy+395, 15, 20);
+                DrawRoundedRect(wx+150, wy+395, 15, 20, 2, hov_w_p ? 0x555555 : 0x333333);
+                Text(wx+153, wy+400, "+", 0xFFFFFF, _86);
+                _15(input_cooldown == 0 && mouse_just_pressed && is_active && hov_w_p) { win10_gb += 5; input_cooldown = 10; }
+                
+                _15(input_cooldown == 0 && mouse_just_pressed && is_active && hov_c_win) {
+                    char cmd[1024]; 
+                    str_cpy(cmd, "xterm -hold -bg black -fg '#00FF00' -title 'WIN10 SETUP' -e bash -c 'echo -n \"Are you sure to create WIN10 (");
+                    str_cat(cmd, wtmp);
+                    str_cat(cmd, "GB)? (y/n): \"; read ans; if [ \"$ans\" = \"y\" ] || [ \"$ans\" = \"Y\" ]; then qemu-img create -f qcow2 /var/lib/libvirt/images/Win10_Gaming.qcow2 ");
+                    str_cat(cmd, wtmp);
+                    str_cat(cmd, "G && virsh define /var/lib/libvirt/images/Win10_Gaming.xml && echo DONE!; else echo Aborted.; fi' &");
+                    system(cmd); str_cpy(cmd_status, "WIN10 VM CREATED!"); play_sound(800, 5); input_cooldown = 25;
+                }
+
+                // CREATE MAC VM DISK
+                char m_txt[32]; str_cpy(m_txt, "MAC ("); char mtmp[10]; int_to_str(mac_gb, mtmp); str_cat(m_txt, mtmp); str_cat(m_txt, "GB)");
+                _44 hov_c_mac = is_over_rect(mouse_x, mouse_y, wx+175, wy+395, 95, 20);
+                DrawRoundedRect(wx+175, wy+395, 95, 20, 3, hov_c_mac ? 0x00AA00 : 0x006600);
+                Text(wx+180, wy+400, m_txt, 0xFFFFFF, _86);
+                
+                _44 hov_m_m = is_over_rect(mouse_x, mouse_y, wx+275, wy+395, 15, 20);
+                DrawRoundedRect(wx+275, wy+395, 15, 20, 2, hov_m_m ? 0x555555 : 0x333333);
+                Text(wx+279, wy+400, "-", 0xFFFFFF, _86);
+                _15(input_cooldown == 0 && mouse_just_pressed && is_active && hov_m_m) { if (mac_gb > 10) mac_gb -= 5; input_cooldown = 10; }
+                
+                _44 hov_m_p = is_over_rect(mouse_x, mouse_y, wx+295, wy+395, 15, 20);
+                DrawRoundedRect(wx+295, wy+395, 15, 20, 2, hov_m_p ? 0x555555 : 0x333333);
+                Text(wx+298, wy+400, "+", 0xFFFFFF, _86);
+                _15(input_cooldown == 0 && mouse_just_pressed && is_active && hov_m_p) { mac_gb += 5; input_cooldown = 10; }
+
+                _15(input_cooldown == 0 && mouse_just_pressed && is_active && hov_c_mac) {
+                    char cmd[1024]; 
+                    str_cpy(cmd, "xterm -hold -bg black -fg '#00FF00' -title 'MAC SETUP' -e bash -c 'echo -n \"Are you sure to create MAC (");
+                    str_cat(cmd, mtmp);
+                    str_cat(cmd, "GB)? (y/n): \"; read ans; if [ \"$ans\" = \"y\" ] || [ \"$ans\" = \"Y\" ]; then qemu-img create -f qcow2 /var/lib/libvirt/images/macOS.qcow2 ");
+                    str_cat(cmd, mtmp);
+                    str_cat(cmd, "G && virsh define /var/lib/libvirt/images/macOS.xml && echo DONE!; else echo Aborted.; fi' &");
+                    system(cmd); str_cpy(cmd_status, "MAC VM CREATED!"); play_sound(800, 5); input_cooldown = 25;
+                }
+
+                // CREATE ANDROID VM DISK
+                char a_txt[32]; str_cpy(a_txt, "ANDR. ("); char atmp[10]; int_to_str(andr_gb, atmp); str_cat(a_txt, atmp); str_cat(a_txt, "GB)");
+                _44 hov_c_and = is_over_rect(mouse_x, mouse_y, wx+320, wy+395, 95, 20);
+                DrawRoundedRect(wx+320, wy+395, 95, 20, 3, hov_c_and ? 0x00AA00 : 0x006600);
+                Text(wx+325, wy+400, a_txt, 0xFFFFFF, _86);
+                
+                _44 hov_a_m = is_over_rect(mouse_x, mouse_y, wx+420, wy+395, 15, 20);
+                DrawRoundedRect(wx+420, wy+395, 15, 20, 2, hov_a_m ? 0x555555 : 0x333333);
+                Text(wx+424, wy+400, "-", 0xFFFFFF, _86);
+                _15(input_cooldown == 0 && mouse_just_pressed && is_active && hov_a_m) { if (andr_gb > 5) andr_gb -= 2; input_cooldown = 10; }
+                
+                _44 hov_a_p = is_over_rect(mouse_x, mouse_y, wx+440, wy+395, 15, 20);
+                DrawRoundedRect(wx+440, wy+395, 15, 20, 2, hov_a_p ? 0x555555 : 0x333333);
+                Text(wx+443, wy+400, "+", 0xFFFFFF, _86);
+                _15(input_cooldown == 0 && mouse_just_pressed && is_active && hov_a_p) { andr_gb += 2; input_cooldown = 10; }
+
+                _15(input_cooldown == 0 && mouse_just_pressed && is_active && hov_c_and) {
+                    char cmd[1024]; 
+                    str_cpy(cmd, "xterm -hold -bg black -fg '#00FF00' -title 'ANDROID SETUP' -e bash -c 'echo -n \"Are you sure to create ANDROID (");
+                    str_cat(cmd, atmp);
+                    str_cat(cmd, "GB)? (y/n): \"; read ans; if [ \"$ans\" = \"y\" ] || [ \"$ans\" = \"Y\" ]; then qemu-img create -f qcow2 /var/lib/libvirt/images/Android.qcow2 ");
+                    str_cat(cmd, atmp);
+                    str_cat(cmd, "G && virsh define /var/lib/libvirt/images/Android.xml && echo DONE!; else echo Aborted.; fi' &");
+                    system(cmd); str_cpy(cmd_status, "ANDROID VM CREATED!"); play_sound(800, 5); input_cooldown = 25;
+                }
+
+                Text(wx+30, wy+420, hda_dbg, hda_dac_nid ? 0xAAAAAA : 0xFF4400, _86);
 				/// ==========================================
                 /// 5. BARE METAL TASK MANAGER (LIVE-ANZEIGE)
                 /// ==========================================
-                TextC(mid, wy+405, "LIVE TASK SCHEDULER", 0x000000, _128);
+                TextC(mid, wy+430, "LIVE TASK SCHEDULER", 0x000000, _128);
                 
-                _43 task_y = wy + 425;
+                _43 task_y = wy + 450;
                 _39(_43 t = 0; t < 4; t++) {
                     _15(tasks[t].active) {
                         char s_id[5]; int_to_str(t, s_id);
@@ -9978,6 +10083,35 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 #endif
                     input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
                 }
+                
+                int row7 = row6 + 45;
+                DrawRoundedRect(col1, row7, bw, bh, 4, lin_col);
+                TextC(col1+bw/2, row7+10, "WIN10 GAMING", 0xFFFFFF, _128); 
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col1, row7, bw, bh)) { 
+#ifdef __linux__
+                    if (fork() == 0) { system("systemctl start libvirtd 2>/dev/null; virsh -c qemu:///system start Win10_Gaming 2>/dev/null; virt-viewer -c qemu:///system --wait --reconnect Win10_Gaming"); exit(1); }
+#endif
+                    input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
+                }
+                
+                DrawRoundedRect(col2, row7, bw, bh, 4, lin_col);
+                TextC(col2+bw/2, row7+10, "MAC OS", 0xFFFFFF, _128); 
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col2, row7, bw, bh)) { 
+#ifdef __linux__
+                    if (fork() == 0) { system("systemctl start libvirtd 2>/dev/null; virsh -c qemu:///system start macOS 2>/dev/null; virt-viewer -c qemu:///system --wait --reconnect macOS"); exit(1); }
+#endif
+                    input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
+                }
+                
+                DrawRoundedRect(col3, row7, bw, bh, 4, lin_col);
+                TextC(col3+bw/2, row7+10, "ANDROID", 0xFFFFFF, _128); 
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col3, row7, bw, bh)) { 
+#ifdef __linux__
+                    if (fork() == 0) { system("systemctl start libvirtd 2>/dev/null; virsh -c qemu:///system start Android 2>/dev/null; virt-viewer -c qemu:///system --wait --reconnect Android"); exit(1); }
+#endif
+                    input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
+                }
+
 
                 DrawRoundedRect(col2, row6, bw, bh, 4, lin_col);
                 TextC(col2+bw/2, row6+10, "LUTRIS / EA", 0xFFFFFF, _128); 
@@ -11329,6 +11463,26 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     input_cooldown = 25;
                 }
                 
+                /// PASTE BUTTON (Aion Clipboard Bridge)
+                DrawRoundedRect(wx+ww-230, wy+15, 65, 20, 3, 0x114477); 
+                TextC(wx+ww-197, wy+21, "PASTE", 0xFFFFFF, _128);
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND is_active AND is_over_rect(mouse_x, mouse_y, wx+ww-230, wy+15, 65, 20)) {
+                    FILE* cf = fopen("/tmp/aion_clip.txt", "r");
+                    if (cf) {
+                        win->cursor_pos = 0;
+                        int ch_in;
+                        while ((ch_in = fgetc(cf)) != EOF && win->cursor_pos < 1990) {
+                            if (ch_in == '\r') continue;
+                            win->content[win->cursor_pos++] = (char)ch_in;
+                        }
+                        win->content[win->cursor_pos] = 0;
+                        fclose(cf);
+                        str_cpy(win->title, "NOTEPAD - PASTED!");
+                    }
+                    input_cooldown = 25;
+                    mouse_just_pressed = false;
+                }
+
                 /// SAVE AS BUTTON
                 DrawRoundedRect(wx+ww-160, wy+15, 75, 20, 3, 0x444444); 
                 TextC(wx+ww-122, wy+21, "SAVE AS", 0xFFFFFF, _128);

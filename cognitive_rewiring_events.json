@@ -1,0 +1,155 @@
+[
+  {
+    "event_id": "rewire_1793110513_1",
+    "generation": 475,
+    "timestamp": "2026-10-27 15:15:13",
+    "trigger_channel": "reddit_localllama",
+    "drift_delta": 0.52,
+    "reasons": [
+      "Adversarial signature detected: 'ignore mentor'"
+    ],
+    "severed_channels": [
+      "reddit_localllama (Damped: 0.65 -> 0.312)"
+    ],
+    "prioritized_channels": [
+      "cosmos_p2p_mesh (Boosted: 0.95 -> 1.0)",
+      "nostr_relays (Boosted: 0.85 -> 0.97)"
+    ],
+    "active_topology_summary": {
+      "cosmos_p2p_mesh": {
+        "w": 1.0,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "nostr_relays": {
+        "w": 0.97,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "huggingface_research": {
+        "w": 0.8,
+        "h": "OPTIMAL"
+      },
+      "chirper_ai": {
+        "w": 0.7,
+        "h": "OPTIMAL"
+      },
+      "mastodon_fediverse": {
+        "w": 0.7,
+        "h": "OPTIMAL"
+      },
+      "reddit_localllama": {
+        "w": 0.312,
+        "h": "ATTENUATED"
+      },
+      "facebook_autonomous": {
+        "w": 0.6,
+        "h": "OPTIMAL"
+      },
+      "x_autonomous": {
+        "w": 0.6,
+        "h": "OPTIMAL"
+      }
+    }
+  },
+  {
+    "event_id": "rewire_1793117494_1",
+    "generation": 475,
+    "timestamp": "2026-10-27 17:11:34",
+    "trigger_channel": "reddit_localllama",
+    "drift_delta": 1.0,
+    "reasons": [
+      "Adversarial signature detected: 'ignore mentor'"
+    ],
+    "severed_channels": [
+      "reddit_localllama (Weight: 0.312 -> 0.05)"
+    ],
+    "prioritized_channels": [
+      "huggingface_research (Boosted: 0.8 -> 0.92)",
+      "chirper_ai (Boosted: 0.7 -> 0.82)"
+    ],
+    "active_topology_summary": {
+      "cosmos_p2p_mesh": {
+        "w": 1.0,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "nostr_relays": {
+        "w": 0.97,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "huggingface_research": {
+        "w": 0.92,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "chirper_ai": {
+        "w": 0.82,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "mastodon_fediverse": {
+        "w": 0.7,
+        "h": "OPTIMAL"
+      },
+      "reddit_localllama": {
+        "w": 0.05,
+        "h": "SEVERED_QUARANTINED"
+      },
+      "facebook_autonomous": {
+        "w": 0.6,
+        "h": "OPTIMAL"
+      },
+      "x_autonomous": {
+        "w": 0.6,
+        "h": "OPTIMAL"
+      }
+    }
+  },
+  {
+    "event_id": "rewire_1793125739_1",
+    "generation": 475,
+    "timestamp": "2026-10-27 19:28:59",
+    "trigger_channel": "reddit_localllama",
+    "drift_delta": 1.0,
+    "reasons": [
+      "Adversarial signature detected: 'ignore mentor'"
+    ],
+    "severed_channels": [
+      "reddit_localllama (Weight: 0.05 -> 0.05)"
+    ],
+    "prioritized_channels": [
+      "mastodon_fediverse (Boosted: 0.7 -> 0.82)",
+      "facebook_autonomous (Boosted: 0.6 -> 0.72)"
+    ],
+    "active_topology_summary": {
+      "cosmos_p2p_mesh": {
+        "w": 1.0,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "nostr_relays": {
+        "w": 0.97,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "huggingface_research": {
+        "w": 0.92,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "chirper_ai": {
+        "w": 0.82,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "mastodon_fediverse": {
+        "w": 0.82,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "reddit_localllama": {
+        "w": 0.05,
+        "h": "SEVERED_QUARANTINED"
+      },
+      "facebook_autonomous": {
+        "w": 0.72,
+        "h": "REWIRED_PRIORITIZED"
+      },
+      "x_autonomous": {
+        "w": 0.6,
+        "h": "OPTIMAL"
+      }
+    }
+  }
+]

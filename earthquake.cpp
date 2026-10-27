@@ -80,6 +80,14 @@ static std::vector<EqData> earthquakes;
 static bool data_loaded = false;
 static bool fetch_started = false;
 
+bool g_show_gaia_matrix = false;
+bool g_gaia_pinned = false;
+int g_gaia_x = -1, g_gaia_y = -1;
+bool g_gaia_dragging = false;
+int g_drag_off_x = 0, g_drag_off_y = 0;
+
+void DrawGaiaMatrixGlobal(int cx, int cy, int cw, int ch);
+
 static float parse_float(const char* str, int& out_len) {
     char buf[32];
     int i = 0;
@@ -177,13 +185,15 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
     static long long last_latest_time = 0;
     static float line_expiry = 0.0f;
     static float auto_reset_timer = 0.0f;
-    static int gaia_x = -1, gaia_y = -1;
-    static bool gaia_pinned = false;
-    static bool gaia_dragging = false;
-    static int drag_off_x = 0, drag_off_y = 0;
     static float target_zoom = 1.0f;
     static float target_offset_x = 0.0f;
     static float target_offset_y = 0.0f;
+    
+    static bool eq_autopilot = true;
+    static float popup_timer = 0.0f;
+    static float popup_lat = 0.0f;
+    static float popup_lon = 0.0f;
+    static char popup_text[128] = {0};
 
 #ifdef __linux__
     if (fetch_started && !data_loaded) {
@@ -369,16 +379,12 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
                 if (last_latest_time > 0 && earthquakes[0].time > last_latest_time) {
                     line_expiry = 120.0f; // 120 seconds
                     
-                    float r = ((90.0f - earthquakes[0].lat) / 180.0f) * 750.0f;
-                    float angle = earthquakes[0].lon * 3.14159f / 180.0f;
-                    float map_x = r * sinf(angle);
-                    float map_y = r * cosf(angle);
-                    
-                    target_zoom = 3.5f;
-                    float scale = ((ch * 0.45f) / 750.0f) * target_zoom;
-                    target_offset_x = -map_x * scale;
-                    target_offset_y = -map_y * scale;
-                    auto_reset_timer = 20.0f;
+                    if (eq_autopilot) {
+                        popup_timer = 15.0f;
+                        popup_lat = earthquakes[0].lat;
+                        popup_lon = earthquakes[0].lon;
+                        snprintf(popup_text, sizeof(popup_text), "NEW: M%.1f %s", earthquakes[0].mag, earthquakes[0].place.c_str());
+                    }
                 }
                 
                 // Proactive Heavy Earthquake Alert for AION
@@ -548,7 +554,8 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
     time_pulse += 0.1f;
     float pulse = (sinf(time_pulse) + 1.0f) * 0.5f;
     
-    static bool show_gaia_matrix = false;
+    extern bool g_show_gaia_matrix;
+    extern int input_cooldown;
     
     if (!map_only) {
         // Draw Long-Term Stats on the left
@@ -566,8 +573,17 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
         DrawRoundedRect(cx + 280, cy + 10, 30, 20, 10, hover_plus ? 0xFF8800 : 0x444444);
         Text(cx + 289, cy + 16, "+", 0xFFFFFF, true);
         if (hover_plus && mouse_just_pressed && input_cooldown == 0) {
-            show_gaia_matrix = !show_gaia_matrix;
+            g_show_gaia_matrix = !g_show_gaia_matrix;
             input_cooldown = 20;
+        }
+        
+        // Autopilot Button
+        bool hover_auto = (mouse_x >= cx + 15 && mouse_x <= cx + 100 && mouse_y >= cy + 135 && mouse_y <= cy + 165);
+        DrawRoundedRect(cx + 15, cy + 135, 85, 30, 4, eq_autopilot ? (hover_auto ? 0x008800 : 0x005500) : (hover_auto ? 0x555555 : 0x333333));
+        Text(cx + 20, cy + 145, eq_autopilot ? "AUTO: ON" : "AUTO: OFF", 0xCCCCCC, true);
+        if (hover_auto && mouse_just_pressed && input_cooldown == 0) {
+            eq_autopilot = !eq_autopilot;
+            input_cooldown = 15;
         }
     }
     
@@ -747,6 +763,23 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
         }
     }
     
+    if (popup_timer > 0) {
+        popup_timer -= 0.016f; // approximate frame time
+        
+        float r = ((90.0f - popup_lat) / 180.0f) * 750.0f;
+        float angle = popup_lon * 3.14159f / 180.0f;
+        float map_x = r * sinf(angle);
+        float map_y = r * cosf(angle);
+        
+        int px = map_cx + (int)(map_x * scale);
+        int py = map_cy + (int)(map_y * scale);
+        
+        int tw = strlen(popup_text) * 8 + 20;
+        DrawRoundedRectAlpha(px + 10, py - 30, tw, 25, 4, 0x000000, 0.8f);
+        DrawRoundedRectAlpha(px + 10, py - 30, 2, 25, 0, 0xFF0000, 1.0f);
+        Text(px + 16, py - 22, popup_text, 0xFFFFFF, true);
+    }
+    
     if (!map_only) {
         // Zoom UI Buttons (+ und - Symbole manuell zeichnen, da + im Font evtl fehlt)
         DrawRoundedRect(cx + 15, cy + 15, 30, 30, 4, 0x333333);
@@ -763,87 +796,92 @@ void UpdateEarthquakeApp(int cx, int cy, int cw, int ch, bool is_active, bool ma
         DrawRoundedRect(cx + 15, cy + 95, 80, 30, 4, 0x333333);
         Text(cx + 25, cy + 105, "REFRESH", 0xCCCCCC, true);
         
-        if (show_gaia_matrix) {
-            int g_w = 600;
-            int g_h = 350;
-            if (gaia_x == -1) {
-                gaia_x = cx + cw/2 - g_w/2;
-                gaia_y = cy + ch/2 - g_h/2;
-            }
-            
-            extern int mouse_x, mouse_y;
-            extern bool mouse_just_pressed, mouse_down;
-            extern int input_cooldown;
-
-            int pin_btn_x = gaia_x + g_w - 30;
-            int pin_btn_y = gaia_y + 5;
-            bool hover_pin = (mouse_x >= pin_btn_x && mouse_x <= pin_btn_x + 20 && mouse_y >= pin_btn_y && mouse_y <= pin_btn_y + 20);
-            
-            if (hover_pin && mouse_just_pressed && input_cooldown == 0) {
-                gaia_pinned = !gaia_pinned;
-                input_cooldown = 15;
-            }
-            
-            if (!gaia_pinned) {
-                if (mouse_just_pressed && !hover_pin && mouse_x >= gaia_x && mouse_x <= gaia_x + g_w && mouse_y >= gaia_y && mouse_y <= gaia_y + 30) {
-                    gaia_dragging = true;
-                    drag_off_x = mouse_x - gaia_x;
-                    drag_off_y = mouse_y - gaia_y;
-                }
-                if (mouse_down && gaia_dragging) {
-                    gaia_x = mouse_x - drag_off_x;
-                    gaia_y = mouse_y - drag_off_y;
-                }
-                if (!mouse_down) {
-                    gaia_dragging = false;
-                }
-            }
-
-            int g_x = gaia_x;
-            int g_y = gaia_y;
-            
-            DrawRoundedRectAlpha(g_x, g_y, g_w, g_h, 8, 0x1A051A, 0.7f);
-            DrawRoundedRectAlpha(g_x, g_y, g_w, 30, 8, 0x4B0082, 0.8f); // Header
-            Text(g_x + 10, g_y + 10, "Gaia's Multi-Class Rhythm Matrix", 0xFF88FF, true);
-            
-            DrawRoundedRect(pin_btn_x, pin_btn_y, 20, 20, 4, gaia_pinned ? 0xFF3333 : (hover_pin ? 0x777777 : 0x555555));
-            Text(pin_btn_x + (gaia_pinned ? 6 : 5), pin_btn_y + 4, gaia_pinned ? "X" : "P", 0xFFFFFF, true);
-            
-            int text_y = g_y + 40;
-            Text(g_x + 10, text_y, "The Earth behaves like a pregnant woman (Gaia) in labor. Foreshocks build up energy", 0xCCCCCC, true); text_y += 15;
-            Text(g_x + 10, text_y, "before releasing it. This system autonomously fetches historical data to dynamically", 0xCCCCCC, true); text_y += 15;
-            Text(g_x + 10, text_y, "calculate the unique rhythm (contraction frequency) of each earthquake magnitude class.", 0xCCCCCC, true); text_y += 25;
-            
-            Text(g_x + 10, text_y, "CLASS   RHYTHM         SINCE LAST     STATUS", 0x888888, true);
-            text_y += 25;
-            
-            auto draw_row = [&](const char* c_name, const char* rhythm, long long next_pred, uint32_t col, int& y) {
-                Text(g_x + 10, y, c_name, col, true);
-                Text(g_x + 80, y, rhythm, 0xCCCCCC, true);
-                char sl_buf[64] = "20m"; // Dummy since_last for visual
-                if (next_pred > 0) {
-                    long long diff = (time(NULL) * 1000LL) - (next_pred - 3600000LL);
-                    if (diff > 0) snprintf(sl_buf, sizeof(sl_buf), "%lldm", (diff / 60000));
-                }
-                Text(g_x + 230, y, sl_buf, 0xCCCCCC, true);
-                Text(g_x + 360, y, "Critical Overdue", 0xFF3333, true);
-                DrawRoundedRect(g_x + 480, y, 100, 10, 0, 0x330000);
-                DrawRoundedRect(g_x + 480, y, 95, 10, 0, 0xFF0000);
-                y += 25;
-            };
-            
-            draw_row("M3+", "Every 14m", g_eq_stats.last_30d, 0xFFCC00, text_y);
-            draw_row("M4+", "Every 22m", g_eq_stats.last_30d, 0xFF8800, text_y);
-            draw_row("M5+", "Every 1h 57m", g_eq_stats.last5_30d, 0xFF4400, text_y);
-            draw_row("M6+", "Every 2d 6h", g_eq_stats.last7_30d, 0xFF1111, text_y);
-            draw_row("M7+", "Every 41d 16h", g_eq_stats.last7_30d, 0xFF00FF, text_y);
-            draw_row("M8+", "Every 2y 315d", 0, 0xAA00AA, text_y);
-        }
-        
         if (!data_loaded && fetch_started) {
             Text(map_cx - 60, map_cy, "FETCHING LIVE DATA...", 0x00FF00, true);
         } else if (data_loaded && earthquakes.empty()) {
             Text(map_cx - 60, map_cy, "NO EARTHQUAKES FOUND", 0xFF0000, true);
         }
+    } // end if (!map_only)
+    if (!map_only && !g_gaia_pinned) {
+        DrawGaiaMatrixGlobal(cx, cy, cw, ch);
     }
+}
+
+void DrawGaiaMatrixGlobal(int cx, int cy, int cw, int ch) {
+    if (!g_show_gaia_matrix) return;
+    
+    int g_w = 600;
+    int g_h = 350;
+    if (g_gaia_x == -1) {
+        g_gaia_x = cx + cw/2 - g_w/2;
+        g_gaia_y = cy + ch/2 - g_h/2;
+    }
+    
+    extern int mouse_x, mouse_y;
+    extern bool mouse_just_pressed, mouse_down;
+    extern int input_cooldown;
+
+    int pin_btn_x = g_gaia_x + g_w - 30;
+    int pin_btn_y = g_gaia_y + 5;
+    bool hover_pin = (mouse_x >= pin_btn_x && mouse_x <= pin_btn_x + 20 && mouse_y >= pin_btn_y && mouse_y <= pin_btn_y + 20);
+    
+    if (hover_pin && mouse_just_pressed && input_cooldown == 0) {
+        g_gaia_pinned = !g_gaia_pinned;
+        input_cooldown = 15;
+    }
+    
+    if (!g_gaia_pinned) {
+        if (mouse_just_pressed && !hover_pin && mouse_x >= g_gaia_x && mouse_x <= g_gaia_x + g_w && mouse_y >= g_gaia_y && mouse_y <= g_gaia_y + 30) {
+            g_gaia_dragging = true;
+            g_drag_off_x = mouse_x - g_gaia_x;
+            g_drag_off_y = mouse_y - g_gaia_y;
+        }
+        if (mouse_down && g_gaia_dragging) {
+            g_gaia_x = mouse_x - g_drag_off_x;
+            g_gaia_y = mouse_y - g_drag_off_y;
+        }
+        if (!mouse_down) {
+            g_gaia_dragging = false;
+        }
+    }
+
+    int g_x = g_gaia_x;
+    int g_y = g_gaia_y;
+    
+    DrawRoundedRectAlpha(g_x, g_y, g_w, g_h, 8, 0x1A051A, 0.7f);
+    DrawRoundedRectAlpha(g_x, g_y, g_w, 30, 8, 0x4B0082, 0.8f); // Header
+    Text(g_x + 10, g_y + 10, "Gaia's Multi-Class Rhythm Matrix", 0xFF88FF, true);
+    
+    DrawRoundedRect(pin_btn_x, pin_btn_y, 20, 20, 4, g_gaia_pinned ? 0xFF3333 : (hover_pin ? 0x777777 : 0x555555));
+    Text(pin_btn_x + (g_gaia_pinned ? 6 : 5), pin_btn_y + 4, g_gaia_pinned ? "X" : "P", 0xFFFFFF, true);
+    
+    int text_y = g_y + 40;
+    Text(g_x + 10, text_y, "The Earth behaves like a pregnant woman (Gaia) in labor. Foreshocks build up energy", 0xCCCCCC, true); text_y += 15;
+    Text(g_x + 10, text_y, "before releasing it. This system autonomously fetches historical data to dynamically", 0xCCCCCC, true); text_y += 15;
+    Text(g_x + 10, text_y, "calculate the unique rhythm (contraction frequency) of each earthquake magnitude class.", 0xCCCCCC, true); text_y += 25;
+    
+    Text(g_x + 10, text_y, "CLASS   RHYTHM         SINCE LAST     STATUS", 0x888888, true);
+    text_y += 25;
+    
+    auto draw_row = [&](const char* c_name, const char* rhythm, long long next_pred, uint32_t col, int& y) {
+        Text(g_x + 10, y, c_name, col, true);
+        Text(g_x + 80, y, rhythm, 0xCCCCCC, true);
+        char sl_buf[64] = "20m"; // Dummy since_last for visual
+        if (next_pred > 0) {
+            long long diff = (time(NULL) * 1000LL) - (next_pred - 3600000LL);
+            if (diff > 0) snprintf(sl_buf, sizeof(sl_buf), "%lldm", (diff / 60000));
+        }
+        Text(g_x + 230, y, sl_buf, 0xCCCCCC, true);
+        Text(g_x + 360, y, "Critical Overdue", 0xFF3333, true);
+        DrawRoundedRect(g_x + 480, y, 100, 10, 0, 0x330000);
+        DrawRoundedRect(g_x + 480, y, 95, 10, 0, 0xFF0000);
+        y += 25;
+    };
+    
+    draw_row("M3+", "Every 14m", g_eq_stats.last_30d, 0xFFCC00, text_y);
+    draw_row("M4+", "Every 22m", g_eq_stats.last_30d, 0xFF8800, text_y);
+    draw_row("M5+", "Every 1h 57m", g_eq_stats.last5_30d, 0xFF4400, text_y);
+    draw_row("M6+", "Every 2d 6h", g_eq_stats.last7_30d, 0xFF1111, text_y);
+    draw_row("M7+", "Every 41d 16h", g_eq_stats.last7_30d, 0xFF00FF, text_y);
+    draw_row("M8+", "Every 2y 315d", 0, 0xAA00AA, text_y);
 }

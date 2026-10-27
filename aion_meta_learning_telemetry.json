@@ -1,0 +1,23 @@
+{
+  "meta_learning_active": true,
+  "current_learning_rate": 0.093,
+  "exploration_temperature": 0.62,
+  "plasticity_factor": 0.83,
+  "consecutive_successes": 1,
+  "consecutive_drifts": 0,
+  "evaluation_history": [
+    {
+      "generation": 532,
+      "timestamp": "2026-10-27 17:29:38",
+      "learning_rate": 0.093,
+      "exploration_temperature": 0.62,
+      "plasticity_factor": 0.83,
+      "grounding_score": 0.5,
+      "adjustments": [
+        "Stabilität hoch -> Explorations-Temperatur gesteigert",
+        "1 Hypothesen validiert -> Lernrate dynamisch beschleunigt",
+        "Hardware-Grounding niedrig -> Kognitive Schonung aktiv"
+      ]
+    }
+  ]
+}

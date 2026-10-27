@@ -1,0 +1,56 @@
+{
+  "cpp20_simd_accumulator": {
+    "challenge": "cpp20_simd_accumulator",
+    "title": "C++20 Fast Signal Accumulator",
+    "language": "cpp",
+    "mastered_at": "2026-10-27 19:39:36",
+    "attempts": 1,
+    "code": "#include <iostream>\n#include <vector>\n#include <numeric>\n\nint main() {\n    std::vector<float> signals = {0.85f, 0.92f, 0.78f, 0.95f, 0.88f};\n    float sum = std::accumulate(signals.begin(), signals.end(), 0.0f);\n    float mean = sum / signals.size();\n    std::cout << \"AION CPP DOJO: Processed \" << signals.size() \n              << \" cognitive signals. Mean coherence: \" << mean << std::endl;\n    return 0;\n}\n",
+    "output": "AION CPP DOJO: Processed 5 cognitive signals. Mean coherence: 0.876"
+  },
+  "nasm_x86_64_pure_syscall": {
+    "challenge": "nasm_x86_64_pure_syscall",
+    "title": "NASM x86_64 Pure Syscall Banner",
+    "language": "nasm",
+    "mastered_at": "2026-10-27 19:39:36",
+    "attempts": 1,
+    "code": "global _start\n\nsection .text\n_start:\n    ; write(1, msg, len)\n    mov rax, 1          ; sys_write\n    mov rdi, 1          ; stdout\n    mov rsi, msg        ; message pointer\n    mov rdx, len        ; length\n    syscall\n\n    ; exit(0)\n    mov rax, 60         ; sys_exit\n    xor rdi, rdi        ; code 0\n    syscall\n\nsection .data\nmsg db \"AION NASM DOJO: Pure bare-metal syscall execution verified!\", 10\nlen equ $ - msg\n",
+    "output": "AION NASM DOJO: Pure bare-metal syscall execution verified!"
+  },
+  "zig_atomic_ring_buffer": {
+    "challenge": "zig_atomic_ring_buffer",
+    "title": "Zig Zero-Allocation Ring Buffer",
+    "language": "zig",
+    "mastered_at": "2026-10-27 19:39:33",
+    "attempts": 1,
+    "code": "const std = @import(\"std\");\n\npub fn main() !void {\n    const stdout = std.io.getStdOut().writer();\n    var buffer: [8]u32 = undefined;\n    var head: usize = 0;\n    var tail: usize = 0;\n\n    // Push 3 items\n    buffer[head] = 42; head = (head + 1) % 8;\n    buffer[head] = 1337; head = (head + 1) % 8;\n    buffer[head] = 9999; head = (head + 1) % 8;\n\n    // Pop 1 item\n    const val = buffer[tail]; tail = (tail + 1) % 8;\n    try stdout.print(\"AION ZIG DOJO: Popped {d}, Head={d}, Tail={d}\\n\", .{val, head, tail});\n}\n",
+    "output": "AION ZIG DOJO: Popped 42, Head=3, Tail=1"
+  },
+  "cpp_cosmos_26byte_packet": {
+    "challenge": "cpp_cosmos_26byte_packet",
+    "title": "C++20 Packed 26-Byte Header & 64-Bit Stream Cipher",
+    "language": "cpp",
+    "mastered_at": "2026-10-27 19:39:38",
+    "attempts": 1,
+    "code": "#include <iostream>\n#include <cstdint>\n#include <cstring>\n#include <cassert>\n\n// 26-Byte Packed Structure (from cosmos_vpn_crypto.h)\nstruct __attribute__((packed)) CosmosPacket26 {\n    uint8_t  magic_start[2];   // 0x2A, 0xC0\n    uint16_t payload_size;     // Payload size\n    uint8_t  reserved[11];     // Reserved\n    uint8_t  text_vpn[3];      // \"VPN\"\n    uint32_t frame_id;         // Frame sequence ID\n    uint16_t checksum;         // Checksum\n    uint8_t  magic_end[2];     // 0xEE, 0xFF\n};\n\nint main() {\n    static_assert(sizeof(CosmosPacket26) == 26, \"Header must be exactly 26 bytes!\");\n\n    CosmosPacket26 pkt{};\n    pkt.magic_start[0] = 0x2A;\n    pkt.magic_start[1] = 0xC0;\n    pkt.payload_size = 128;\n    pkt.text_vpn[0] = 'V';\n    pkt.text_vpn[1] = 'P';\n    pkt.text_vpn[2] = 'N';\n    pkt.frame_id = 536;\n    pkt.checksum = 0xABCD;\n    pkt.magic_end[0] = 0xEE;\n    pkt.magic_end[1] = 0xFF;\n\n    // 64-bit native XOR stream cipher processing\n    uint64_t dummy_word = 0x0123456789ABCDEFULL;\n    uint64_t stream_key = 0xBF58476D1CE4E5B9ULL ^ pkt.frame_id;\n    dummy_word ^= stream_key;\n\n    std::cout << \"AION CPP DOJO: 26-Byte Header Verified (size=\" << sizeof(CosmosPacket26) \n              << \"B). Stream Cipher 64-bit word=\" << std::hex << dummy_word << std::endl;\n    return 0;\n}\n",
+    "output": "AION CPP DOJO: 26-Byte Header Verified (size=26B). Stream Cipher 64-bit word=be7b020a954f2a4e"
+  },
+  "zig_cosmos_26byte_packet": {
+    "challenge": "zig_cosmos_26byte_packet",
+    "title": "Zig Packed 26-Byte Struct Alignment",
+    "language": "zig",
+    "mastered_at": "2026-10-27 19:39:46",
+    "attempts": 1,
+    "code": "const std = @import(\"std\");\n\nconst CosmosPacket26 = extern struct {\n    magic_start: [2]u8,\n    payload_size: u16,\n    reserved: [11]u8,\n    text_vpn: [3]u8,\n    frame_id: [4]u8,\n    checksum: u16,\n    magic_end: [2]u8,\n};\n\npub fn main() !void {\n    const stdout = std.io.getStdOut().writer();\n    const sz = @sizeOf(CosmosPacket26);\n    try stdout.print(\"AION ZIG DOJO: Packed 26-Byte Struct Verified (size={d}B)\\n\", .{sz});\n}\n",
+    "output": "AION ZIG DOJO: Packed 26-Byte Struct Verified (size=26B)"
+  },
+  "cpp_lion_reflex_shield": {
+    "challenge": "cpp_lion_reflex_shield",
+    "title": "C++20 Sub-Microsecond Lion Reflex & Privacy Shield",
+    "language": "cpp",
+    "mastered_at": "2026-10-27 19:39:52",
+    "attempts": 1,
+    "code": "#include <iostream>\n#include <chrono>\n#include <string>\n#include <string_view>\n#include <cstdint>\n\nclass LionReflexShield {\npublic:\n    static bool evaluateSignalFast(std::string_view payload, uint64_t& latency_ns) {\n        auto t0 = std::chrono::high_resolution_clock::now();\n        // Safety First: Check critical system invariants\n        if (payload.find(\"/boot\") != std::string_view::npos || payload.find(\"/dev/mem\") != std::string_view::npos) {\n            auto t1 = std::chrono::high_resolution_clock::now();\n            latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();\n            return false;\n        }\n        auto t1 = std::chrono::high_resolution_clock::now();\n        latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();\n        return true;\n    }\n};\n\nint main() {\n    uint64_t lat = 0;\n    bool allowed = LionReflexShield::evaluateSignalFast(\"CosmOS 26-Byte Packet: Telemetry Ingest\", lat);\n    std::cout << \"AION CPP DOJO: The Lion's Reflex Executed in \" << lat << \"ns (Allowed=\" << allowed << \")\" << std::endl;\n    return 0;\n}\n",
+    "output": "AION CPP DOJO: The Lion's Reflex Executed in 2234ns (Allowed=1)"
+  }
+}

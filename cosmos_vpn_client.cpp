@@ -15,9 +15,13 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <poll.h>
+#include <netinet/ip.h>
 
 #define VPN_PORT 4242
-#define MTU 1280
+// MTU 1400: Optimaler Kompromiss – mehr Payload als 1280, aber sicher unter
+// der 1500-Grenze bei Mobilfunk (1400 + 8 UDP + 20 IP + 26 CosmOS = 1454 on wire)
+// MTU 1500 verursacht Fragmentierung auf Android/LTE wegen GTP-Tunnel-Overhead!
+#define MTU 1400
 #define HEADER_SIZE 26
 
 // Maximale UDP-Payload: Header + komprimierter Batch
@@ -31,6 +35,7 @@ static volatile int vpn_active = 0;
 static struct sockaddr_in server_addr;
 static pthread_t vpn_thread;
 static char current_tun_name[IFNAMSIZ] = "";
+static char vpn_server_ip[64] = "";
 
 static uint8_t session_key[8];
 static int session_established = 0;
@@ -75,7 +80,7 @@ static void* vpn_thread_func(void* arg) {
     VpnBatchBuffer batch;
     batch.reset();
     
-    // --- Handshake Phase ---
+    // --- Handshake Phase (mit Retry-Logik) ---
     uint32_t c_nonce = (uint32_t)rand();
     cosmos_hs_packet hs_req;
     memset(&hs_req, 0, sizeof(hs_req));
@@ -84,38 +89,58 @@ static void* vpn_thread_func(void* arg) {
     hs_req.client_nonce = c_nonce;
     hs_req.magic_end[0] = 0xEE; hs_req.magic_end[1] = 0xFF;
     
-    sendto(udp_fd, &hs_req, sizeof(hs_req), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
-    hs_add_log("VPN: Sent Handshake INIT...");
-    
-    struct timeval tv_hs;
-    tv_hs.tv_sec = 2; // 2 seconds timeout for handshake
-    tv_hs.tv_usec = 0;
-    fd_set hs_fds;
-    FD_ZERO(&hs_fds);
-    FD_SET(udp_fd, &hs_fds);
-    
-    if (select(udp_fd + 1, &hs_fds, NULL, NULL, &tv_hs) > 0) {
-        struct sockaddr_in sender_addr;
-        socklen_t sender_len = sizeof(sender_addr);
-        int nread = recvfrom(udp_fd, recv_buf, sizeof(recv_buf), 0, (struct sockaddr*)&sender_addr, &sender_len);
-        if (nread >= (int)sizeof(cosmos_hs_packet)) {
-            cosmos_hs_packet* reply = (cosmos_hs_packet*)recv_buf;
-            if (reply->magic_start[0] == 0x2A && reply->magic_start[1] == 0xC0 && 
-                reply->magic_end[0] == 0xEE && reply->magic_end[1] == 0xFF &&
-                reply->type_flag == FLAG_HANDSHAKE_REPLY) {
-                
-                compute_session_key(c_nonce, reply->server_nonce, session_key);
-                session_established = 1;
-                hs_add_log("VPN: SECURE Session Key Established!");
+    // 3 Versuche mit steigendem Timeout (2s, 3s, 4s)
+    for (int attempt = 0; attempt < 3 && !session_established; attempt++) {
+        sendto(udp_fd, &hs_req, sizeof(hs_req), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
+        
+        char log_buf[128];
+        snprintf(log_buf, sizeof(log_buf), "VPN: Handshake INIT Versuch %d/3...", attempt + 1);
+        hs_add_log(log_buf);
+        
+        struct timeval tv_hs;
+        tv_hs.tv_sec = 2 + attempt; // Steigendes Timeout: 2s, 3s, 4s
+        tv_hs.tv_usec = 0;
+        fd_set hs_fds;
+        FD_ZERO(&hs_fds);
+        FD_SET(udp_fd, &hs_fds);
+        
+        if (select(udp_fd + 1, &hs_fds, NULL, NULL, &tv_hs) > 0) {
+            struct sockaddr_in sender_addr;
+            socklen_t sender_len = sizeof(sender_addr);
+            int nread = recvfrom(udp_fd, recv_buf, sizeof(recv_buf), 0, (struct sockaddr*)&sender_addr, &sender_len);
+            if (nread >= (int)sizeof(cosmos_hs_packet)) {
+                cosmos_hs_packet* reply = (cosmos_hs_packet*)recv_buf;
+                if (reply->magic_start[0] == 0x2A && reply->magic_start[1] == 0xC0 && 
+                    reply->magic_end[0] == 0xEE && reply->magic_end[1] == 0xFF &&
+                    reply->type_flag == FLAG_HANDSHAKE_REPLY) {
+                    
+                    compute_session_key(c_nonce, reply->server_nonce, session_key);
+                    session_established = 1;
+                    hs_add_log("VPN: SECURE Session Key Established!");
+                }
             }
         }
     }
     
     if (!session_established) {
-        hs_add_log("VPN ERROR: Handshake failed (Timeout)!");
+        hs_add_log("VPN ERROR: Handshake failed nach 3 Versuchen!");
         vpn_active = 0;
         return NULL;
     }
+    
+    // --- Routen ERST NACH erfolgreichem Handshake setzen ---
+    // Bypass-Route für den VPN-Server selbst (damit UDP-Pakete weiter direkt gehen)
+    {
+        char route_cmd[256];
+        snprintf(route_cmd, sizeof(route_cmd),
+            "DEF=$(ip route | grep default | head -n 1 | sed 's/default //'); ip route add %s $DEF 2>/dev/null",
+            vpn_server_ip);
+        system(route_cmd);
+    }
+    // Split-Tunneling: Nur das interne VPN-Netzwerk durch den Tunnel leiten!
+    // Dadurch bleibt das restliche Internet IMMER unangetastet und schnell.
+    system("ip route add 10.0.0.0/8 via 10.42.0.1 2>/dev/null");
+    hs_add_log("VPN: Split-Tunneling activated – only 10.x.x.x through tunnel.");
     // --- End of Handshake ---
     
     // poll() statt select() – besser für Timeout-basiertes Batching
@@ -271,10 +296,24 @@ void activate_cosmos_vpn(const char* server_ip) {
         exit(1);
     }
     
-    // Socket-Buffer vergrößern (512 KB)
-    int sock_buf_size = 524288;
+    // === KERNEL-TUNING (automatisch bei VPN-Aktivierung) ===
+    system("sysctl -w net.core.rmem_max=16777216 > /dev/null 2>&1");
+    system("sysctl -w net.core.wmem_max=16777216 > /dev/null 2>&1");
+    system("sysctl -w net.core.rmem_default=1048576 > /dev/null 2>&1");
+    system("sysctl -w net.core.wmem_default=1048576 > /dev/null 2>&1");
+    system("sysctl -w net.ipv4.tcp_congestion_control=bbr > /dev/null 2>&1");
+    system("sysctl -w net.core.default_qdisc=fq > /dev/null 2>&1");
+    system("sysctl -w net.ipv4.tcp_fastopen=3 > /dev/null 2>&1");
+    system("sysctl -w net.core.netdev_max_backlog=5000 > /dev/null 2>&1");
+    
+    // Socket-Buffer vergrößern (4 MB — jetzt vom Kernel erlaubt)
+    int sock_buf_size = 4194304;
     setsockopt(udp_fd, SOL_SOCKET, SO_RCVBUF, &sock_buf_size, sizeof(sock_buf_size));
     setsockopt(udp_fd, SOL_SOCKET, SO_SNDBUF, &sock_buf_size, sizeof(sock_buf_size));
+    
+    // DSCP: Markiere VPN-Pakete als Expedited Forwarding (höchste Priorität)
+    int tos = 0xB8; // DSCP 46 = EF (Expedited Forwarding)
+    setsockopt(udp_fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
     
     // TUN non-blocking setzen für Drain-Loop
     fcntl(tun_fd, F_SETFL, O_NONBLOCK);
@@ -287,34 +326,43 @@ void activate_cosmos_vpn(const char* server_ip) {
     char cmd[256];
     sprintf(cmd, "ip link set dev %s up", current_tun_name);
     system(cmd);
-    // MTU 1280: Garantiert keine Fragmentierung, auch über Mobilfunk/PPPoE/CGNAT
+    // MTU 1400: Mehr Payload als 1280, sicher unter 1500 für Mobilfunk/CGNAT
     sprintf(cmd, "ip link set dev %s mtu %d", current_tun_name, MTU);
     system(cmd);
     sprintf(cmd, "ip addr add 10.42.0.2/24 dev %s", current_tun_name);
+    system(cmd);
+    
+    // fq_codel auf TUN-Interface: Bufferbloat-Schutz im Tunnel
+    sprintf(cmd, "tc qdisc replace dev %s root fq_codel 2>/dev/null", current_tun_name);
     system(cmd);
     
     // MSS Clamping: TCP-Segmentgröße automatisch an VPN-MTU anpassen
     sprintf(cmd, "iptables -A FORWARD -o %s -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu", current_tun_name);
     system(cmd);
 
-    // Route traffic through the VPN
-    system("DEF=$(ip route | grep default | head -n 1 | sed 's/default //'); ip route add YOUR_SERVER_IP $DEF");
-    system("ip route add 0.0.0.0/1 via 10.42.0.1");
-    system("ip route add 128.0.0.0/1 via 10.42.0.1");
+    // Routen werden jetzt im vpn_thread NACH erfolgreichem Handshake gesetzt
+    // (vorher: Routen VOR Handshake → Blackhole!)
     
     vpn_active = 1;
     session_established = 0;
+    strncpy(vpn_server_ip, server_ip, sizeof(vpn_server_ip) - 1);
+    vpn_server_ip[sizeof(vpn_server_ip) - 1] = '\0';
     pthread_create(&vpn_thread, NULL, vpn_thread_func, NULL);
     
-    hs_add_log("SYSTEM: 26-BYTE VPN ACTIVATED! (MTU=1280, LZ4, Batch, 64-Bit Crypto)");
+    hs_add_log("SYSTEM: 26-BYTE VPN ACTIVATED! (MTU=1400, ArShiva, Batch, 64-Bit Crypto, BBR, 4MB Buffer)");
 }
 
 void deactivate_cosmos_vpn() {
     if (!vpn_active) return;
     vpn_active = 0;
+    
+    // DEADLOCK FIX: Socket schließen BEVOR wir auf den Thread warten.
+    // Dadurch wird poll() im Thread sofort mit einem Fehler abbrechen.
+    if (udp_fd >= 0) close(udp_fd);
+    if (tun_fd >= 0) close(tun_fd);
+    
     pthread_join(vpn_thread, NULL);
-    close(tun_fd);
-    close(udp_fd);
+    
     tun_fd = -1;
     udp_fd = -1;
     char cmd[256];
@@ -325,10 +373,16 @@ void deactivate_cosmos_vpn() {
     sprintf(cmd, "iptables -D FORWARD -o %s -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null", current_tun_name);
     system(cmd);
     
-    // Remove routes
-    system("ip route del 0.0.0.0/1 via 10.42.0.1 2>/dev/null");
-    system("ip route del 128.0.0.0/1 via 10.42.0.1 2>/dev/null");
-    system("DEF=$(ip route | grep default | head -n 1 | sed 's/default //'); ip route del YOUR_SERVER_IP $DEF 2>/dev/null");
+    // Split-Tunneling Route entfernen
+    system("ip route del 10.0.0.0/8 via 10.42.0.1 2>/dev/null");
+    
+    {
+        char route_cmd[256];
+        snprintf(route_cmd, sizeof(route_cmd),
+            "DEF=$(ip route | grep default | head -n 1 | sed 's/default //'); ip route del %s $DEF 2>/dev/null",
+            vpn_server_ip);
+        system(route_cmd);
+    }
 
     hs_add_log("SYSTEM: 26-BYTE VPN DEACTIVATED!");
 }

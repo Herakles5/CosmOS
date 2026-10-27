@@ -609,7 +609,11 @@ void hs_add_to_radar(const char* ip_str, const char* proto) {
                 if (hs_radar[i].hits > 20 || heuristic_triggered) {
                     str_cpy(hs_radar[i].threat, "CRITICAL");
                     if (hs_auto_suppression || heuristic_triggered) {
-                        char cmd[128];
+                        char cmd[256];
+#ifdef __linux__
+                        /// Antworten auf eigene ausgehende Verbindungen (Webseiten!) NIE blocken
+                        system("iptables -C INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null");
+#endif
                         /// Standard DROP-Regel
                         sprintf(cmd, "iptables -A INPUT -s %u.%u.%u.%u -j DROP 2>/dev/null", ip1, ip2, ip3, ip4);
 #ifdef __linux__
@@ -623,7 +627,7 @@ void hs_add_to_radar(const char* ip_str, const char* proto) {
                             system(cmd);
 #endif
                             /// Connection-Limiting: Max 3 gleichzeitige Verbindungen
-                            sprintf(cmd, "iptables -I INPUT -s %u.%u.%u.%u -m connlimit --connlimit-above 3 -j REJECT 2>/dev/null", ip1, ip2, ip3, ip4);
+                            sprintf(cmd, "iptables -I INPUT -s %u.%u.%u.%u -m conntrack --ctstate NEW -m connlimit --connlimit-above 3 -j REJECT 2>/dev/null", ip1, ip2, ip3, ip4);
 #ifdef __linux__
                             system(cmd);
 #endif

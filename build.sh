@@ -81,8 +81,12 @@ g++ -I. -Ibare_metal_hobby -m64 -U__linux__ -mno-red-zone -O2 -c cosmos_smp.cpp 
 g++ -I. -Ibare_metal_hobby -m64 -U__linux__ -mno-red-zone -O2 -c cosmos_nvme.cpp -o cosmos_nvme_64.o -ffreestanding -fno-exceptions -fno-rtti -fpermissive -Wno-int-to-pointer-cast
 
 echo "------------------------------------------"
-echo "4. Linke OS2 (Die flache KERNEL.BIN)..."
-ld -m elf_x86_64 -T linker64.ld -z noexecstack --allow-multiple-definition os2_entry.o kernel_main_64.o kernel_64.o pci_64.o net_64.o cosmos_bytes_64.o cosmos_fs_64.o cosmos_tba_64.o cosmos_ahci_64.o cosmos_cfs_64.o cosmos_usb_64.o cosmos_hda_64.o arcade.o stb_wrapper.o cosmos_partition_64.o cosmos_fat32_64.o memory_64.o cosmos_tls_64.o cosmos_smp_64.o cosmos_nvme_64.o -o kernel_main.elf
+echo "4. Baue Hypervisor (Bare-Metal)..."
+bash build_hypervisor.sh baremetal
+
+echo "------------------------------------------"
+echo "5. Linke OS2 (Die flache KERNEL.BIN)..."
+ld -m elf_x86_64 -T linker64.ld -z noexecstack --allow-multiple-definition os2_entry.o kernel_main_64.o kernel_64.o pci_64.o net_64.o cosmos_bytes_64.o cosmos_fs_64.o cosmos_tba_64.o cosmos_ahci_64.o cosmos_cfs_64.o cosmos_usb_64.o cosmos_hda_64.o arcade.o stb_wrapper.o cosmos_partition_64.o cosmos_fat32_64.o memory_64.o cosmos_tls_64.o cosmos_smp_64.o cosmos_nvme_64.o hypervisor/build/cosmos_hypervisor_all.o -o kernel_main.elf
 
 objcopy -O binary kernel_main.elf isodir/KERNEL.BIN
 

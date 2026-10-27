@@ -230,8 +230,20 @@ void UpdateAionBackground() {
         system("rm -f /tmp/aion_speech_done");
         aion_wants_foreground = true;
         
+        int effective_tts_lang = aion_lang;
+        if (aion_detected_lang == 0 || aion_detected_lang == 1 || aion_detected_lang == 2) {
+            effective_tts_lang = aion_detected_lang;
+        }
+        if (aion_teach_mode) effective_tts_lang = 1;
+        
         std::string piper_model = "/root/coding/AI_Desktop/voice.onnx";
-        if (aion_lang == 1 || aion_teach_mode) piper_model = "/root/coding/AI_Desktop/de_DE-ramona-low.onnx";
+        if (effective_tts_lang == 1) {
+            piper_model = "/root/coding/AI_Desktop/de_DE-ramona-low.onnx";
+        } else if (effective_tts_lang == 2) {
+            piper_model = "/root/coding/AI_Desktop/ko_KR-kss-medium.onnx";
+        } else {
+            piper_model = "/root/coding/AI_Desktop/voice.onnx";
+        }
         std::string piper_cmd = "(nice -n 19 /root/coding/AI_Desktop/piper/piper --model " + piper_model + " --output_file /tmp/aion_response.wav < /tmp/aion_speech.txt && touch /tmp/aion_speaking && pw-play /tmp/aion_response.wav; rm -f /tmp/aion_speaking; touch /tmp/aion_speech_done) &";
         system(piper_cmd.c_str());
         
@@ -322,6 +334,9 @@ void UpdateAionBackground() {
                                         std::replace(result.begin(), result.end(), '\r', ' ');
                                         
                                         std::string followup_prompt = "I ran your command. The result is: " + result + ". Please provide the final spoken answer to the user now, without any commands.";
+                                        if (aion_lang == 0) followup_prompt += " Reply in English with [LANG: EN].";
+                                        else if (aion_lang == 2) followup_prompt += " Reply in Korean with [LANG: KO].";
+                                        else followup_prompt += " Reply in German with [LANG: DE].";
                                         size_t pos = 0;
                                         while((pos = followup_prompt.find("\"", pos)) != std::string::npos) {
                                             followup_prompt.replace(pos, 1, "\\\"");
@@ -403,12 +418,18 @@ void UpdateAionBackground() {
                             
                             size_t lang_en = final_response.find("[LANG: EN]");
                             size_t lang_de = final_response.find("[LANG: DE]");
+                            size_t lang_ko = final_response.find("[LANG: KO]");
                             if (lang_en != std::string::npos) {
                                 aion_detected_lang = 0;
                                 final_response.erase(lang_en, 10);
                             } else if (lang_de != std::string::npos) {
                                 aion_detected_lang = 1;
                                 final_response.erase(lang_de, 10);
+                            } else if (lang_ko != std::string::npos) {
+                                aion_detected_lang = 2;
+                                final_response.erase(lang_ko, 10);
+                            } else {
+                                aion_detected_lang = aion_lang;
                             }
 
                             pending_aion_response = final_response;
@@ -563,16 +584,17 @@ void UpdateAionApp(int cx, int cy, int cw, int ch, bool is_active) {
 
     }
     
-    int console_y = cy + ch - 210;
-    DrawRoundedRect(cx, console_y, cw, 170, 0, 0x111111);
+    int console_y = cy + ch - 225;
+    int console_h = 150;
+    DrawRoundedRect(cx, console_y, cw, console_h, 0, 0x111111);
     
-    if (mouse_x >= cx && mouse_x <= cx + cw && mouse_y >= console_y && mouse_y <= console_y + 170) {
+    if (mouse_x >= cx && mouse_x <= cx + cw && mouse_y >= console_y && mouse_y <= console_y + console_h) {
         if (mouse_wheel != 0) {
             aion_scroll -= mouse_wheel * 3;
             mouse_wheel = 0;
         }
     }
-    int max_lines = 12;
+    int max_lines = 10;
     int max_scroll = (int)aion_history.size() - max_lines;
     if (max_scroll < 0) max_scroll = 0;
     if (aion_scroll > max_scroll) aion_scroll = max_scroll;
@@ -583,23 +605,91 @@ void UpdateAionApp(int cx, int cy, int cw, int ch, bool is_active) {
     
     int draw_line = 0;
     for (size_t i = start_i; i < aion_history.size() - aion_scroll; i++) {
-        if (i >= aion_history.size()) break;
+        if (i >= aion_history.size() || draw_line >= max_lines) break;
         uint32_t col = (aion_history[i].length() > 0 && aion_history[i][0] == '>') ? 0x88FF88 : 0xCCCCCC;
-        Text(cx + 10, console_y + 10 + draw_line * 12, aion_history[i].c_str(), col, false);
+        Text(cx + 10, console_y + 8 + draw_line * 13, aion_history[i].c_str(), col, false);
         draw_line++;
     }
     
     if (is_thinking) {
         if (!aion_ollama_online) {
-            Text(cx + 10, console_y + 10 + draw_line * 12, "Waiting for Ollama connection...", 0xFF5555, true);
+            Text(cx + 10, console_y + 8 + (draw_line < max_lines ? draw_line : (max_lines - 1)) * 13, "Waiting for connection...", 0xFF5555, true);
         } else {
-            Text(cx + 10, console_y + 10 + draw_line * 12, "AION is thinking...", 0x55AAFF, true);
+            Text(cx + 10, console_y + 8 + (draw_line < max_lines ? draw_line : (max_lines - 1)) * 13, "AION is thinking...", 0x55AAFF, true);
         }
     }
     
-    std::string stat_str = aion_ollama_online ? "[ OLLAMA: ONLINE ]" : "[ OLLAMA: OFFLINE ]";
+    std::string stat_str = aion_ollama_online ? "[ CLOUD / LPU: ONLINE ]" : "[ OFFLINE ]";
     uint32_t stat_col = aion_ollama_online ? 0x00FF00 : 0xFF5555;
-    Text(cx + cw - 150, console_y + 10, stat_str.c_str(), stat_col, false);
+    Text(cx + cw - 180, console_y + 6, stat_str.c_str(), stat_col, false);
+
+    // Resonant Entropy Governor Live-Badge (Generation 333+)
+    static float aion_cached_entropy = 0.50f;
+    static std::string aion_entropy_mode = "RESONANCE";
+    static uint32_t aion_entropy_col = 0x00FF88;
+    static uint64_t last_entropy_check = 0;
+    
+    if (system_ticks - last_entropy_check > 60) {
+        last_entropy_check = system_ticks;
+        FILE* tf = fopen("/root/coding/AI_Desktop/entropy_governor_telemetry.json", "r");
+        if (tf) {
+            char tbuf[512];
+            size_t tr = fread(tbuf, 1, 511, tf);
+            tbuf[tr] = 0;
+            fclose(tf);
+            try {
+                auto tj = nlohmann::json::parse(tbuf);
+                aion_cached_entropy = tj.value("entropy", 0.50f);
+                std::string m = tj.value("mode", "RESONANT_MORPHOGENESIS");
+                if (m == "ENTROPIC_FREEZE") {
+                    aion_entropy_mode = "FREEZE";
+                    aion_entropy_col = 0xFFDD22;
+                } else if (m == "CHAOTIC_DAMPING") {
+                    aion_entropy_mode = "DAMPING";
+                    aion_entropy_col = 0xFF4444;
+                } else {
+                    aion_entropy_mode = "RESONANCE";
+                    aion_entropy_col = 0x00FF88;
+                }
+            } catch (...) {}
+        }
+    }
+    char ent_str[64];
+    snprintf(ent_str, sizeof(ent_str), "[ GOVERNOR: H=%.2f %s ]", aion_cached_entropy, aion_entropy_mode.c_str());
+    Text(cx + 10, console_y + 6, ent_str, aion_entropy_col, true);
+}
+
+extern "C" void AionCopyLastResponseToClipboard() {
+    std::string to_copy = "";
+    if (!aion_history.empty()) {
+        int idx = (int)aion_history.size() - 1;
+        std::vector<std::string> lines;
+        while (idx >= 0) {
+            std::string line = aion_history[idx];
+            if (!line.empty() && line[0] == '>') {
+                break;
+            }
+            lines.insert(lines.begin(), line);
+            idx--;
+        }
+        if (lines.empty() && !aion_history.empty()) {
+            lines.push_back(aion_history.back());
+        }
+        for (const auto& l : lines) {
+            std::string clean = l;
+            if (clean.rfind("AION: ", 0) == 0) clean = clean.substr(6);
+            to_copy += clean + "\n";
+        }
+    }
+    if (!to_copy.empty()) {
+        FILE* f = fopen("/tmp/aion_clip.txt", "w");
+        if (f) {
+            fwrite(to_copy.c_str(), 1, to_copy.length(), f);
+            fclose(f);
+            system("DISPLAY=:0 xclip -selection clipboard < /tmp/aion_clip.txt 2>/dev/null &");
+            system("DISPLAY=:0 xclip -selection primary < /tmp/aion_clip.txt 2>/dev/null &");
+        }
+    }
 }
 
 void AionHandleInput(const char* text) {
@@ -607,6 +697,7 @@ void AionHandleInput(const char* text) {
     is_thinking = true;
     thinking_timer = 0;
     aion_response = "";
+    aion_detected_lang = aion_lang;
     
     std::string prompt = text;
     aion_history.push_back("> " + prompt);
@@ -626,8 +717,14 @@ void AionHandleInput(const char* text) {
                                 "1. To run linux commands, output [CMD: <bash command>]. Do not ask the user to run it. Example: [CMD: curl -s 'wttr.in/?format=3']. "
                                 "2. If you want to remember something about the user, run [CMD: echo 'Information' >> /root/aion_memory.txt]. "
                                 "3. To open an app, output [SYS: OPEN, <APP_NAME>]. Apps: EARTHQUAKE, DEFENDER, SMASH, EMULATOR. "
-                                "4. Always output an emotion tag at the end of your response like [EMOTION: HAPPY], [EMOTION: ALERT], or [EMOTION: CALM]. "
-                                "5. AUTO-DETECT LANGUAGE: If the user writes in English, you MUST start your response with [LANG: EN] and reply in English. If the user writes in German, you MUST start your response with [LANG: DE] and reply in German.";
+                                "4. Always output an emotion tag at the end of your response like [EMOTION: HAPPY], [EMOTION: ALERT], or [EMOTION: CALM]. ";
+    if (aion_lang == 0) {
+        system_prompt += "5. MANDATORY ACTIVE INTERFACE LANGUAGE: ENGLISH. You MUST start your response with [LANG: EN] and write your entire response in English.";
+    } else if (aion_lang == 2) {
+        system_prompt += "5. MANDATORY ACTIVE INTERFACE LANGUAGE: KOREAN. You MUST start your response with [LANG: KO] and write your entire response in Korean.";
+    } else {
+        system_prompt += "5. MANDATORY ACTIVE INTERFACE LANGUAGE: GERMAN. You MUST start your response with [LANG: DE] and write your entire response in German.";
+    }
                                 
     FILE* mem_f = fopen("/root/aion_memory.txt", "rb");
     if (mem_f) {
@@ -650,6 +747,12 @@ void AionHandleInput(const char* text) {
     
     std::replace(system_prompt.begin(), system_prompt.end(), '\n', ' ');
     std::replace(system_prompt.begin(), system_prompt.end(), '\r', ' ');
+    
+    size_t s_pos = 0;
+    while((s_pos = system_prompt.find("\"", s_pos)) != std::string::npos) {
+        system_prompt.replace(s_pos, 1, "\\\"");
+        s_pos += 2;
+    }
     
     std::string json_body = "{\"model\":\"llama3.2\",\"system\":\"" + system_prompt + "\",\"prompt\":\"" + prompt + "\",\"stream\":false}";
     
@@ -675,8 +778,9 @@ void AionProactiveSpeak(const char* message) {
     std::string prompt = "SYSTEM EVENT TRIGGERED: ";
     prompt += message;
     prompt += " Please give a short, urgent verbal warning to the user now in 1 or 2 sentences.";
-    if (aion_lang == 1 || aion_teach_mode) prompt += " Reply in German.";
-    else if (aion_lang == 2) prompt += " Reply in Korean.";
+    if (aion_lang == 1 || aion_teach_mode) prompt += " Reply in German with [LANG: DE].";
+    else if (aion_lang == 2) prompt += " Reply in Korean with [LANG: KO].";
+    else prompt += " Reply in English with [LANG: EN].";
     
     aion_history.push_back("> [SYSTEM ALERT TRIGGERED]");
     while (aion_history.size() > 1000) aion_history.erase(aion_history.begin());

@@ -11,7 +11,8 @@
 // 16KB = ~10 TUN-Pakete bei MTU 1400 → weniger Encrypt/Header-Overhead
 #define VPN_BATCH_MAX          16384
 // Maximale Wartezeit zum Sammeln von Paketen (Millisekunden)
-#define VPN_BATCH_TIMEOUT_MS   5
+// Aggressiveres Flushing: Bei hoher Mobilfunk-Latenz bringt langes Sammeln nichts
+#define VPN_BATCH_TIMEOUT_MS   2
 // Maximale Anzahl Sub-Pakete pro Batch
 #define VPN_BATCH_MAX_PACKETS  64
 
