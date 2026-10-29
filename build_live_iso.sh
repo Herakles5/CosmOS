@@ -35,6 +35,10 @@ echo "0. Cleaning up old build artifacts..."
 
 echo "1. Cleaning up old build files..."
 rm -f CosmOS.iso
+rm -rf /media/root/500GB/build_tmp_live_iso 2>/dev/null || true
+
+# Auto-mount 500GB storage if configured
+mount /media/root/500GB 2>/dev/null || true
 
 # FIX: Remount /tmp with dev+exec permissions so debootstrap can create device nodes!
 mount -o remount,dev,exec /tmp 2>/dev/null || true
@@ -238,6 +242,10 @@ cp install_cosmos.sh $ROOTFS/opt/meinos/ || true
 chmod +x $ROOTFS/opt/meinos/install_cosmos.sh || true
 cp face.png $ROOTFS/opt/meinos/ || true
 cp -r "Antigravity IDE" $ROOTFS/opt/meinos/ || true
+echo "-> Copying Surreal 3D Engine & Live Dojo..."
+cp -r surreal_engine $ROOTFS/opt/meinos/ || true
+cp run_surreal_dojo.sh $ROOTFS/opt/meinos/ || true
+chmod +x $ROOTFS/opt/meinos/run_surreal_dojo.sh || true
 
 echo "-> Copying Dual Audio Config..."
 mkdir -p $ROOTFS/etc/pipewire/pipewire-pulse.conf.d
@@ -344,10 +352,22 @@ umount $ROOTFS/proc || true
 umount $ROOTFS/dev || true
 
 echo "6. Packaging the ISO..."
-export ISO_DIR="$BUILD_DIR/live_iso"
-rm -rf $ISO_DIR/live/filesystem.squashfs 
-mkdir -p $ISO_DIR/live
-mkdir -p $ISO_DIR/boot/grub
+# Auto-detect 500GB high-capacity storage for ISO staging and final image
+if mountpoint -q /media/root/500GB || mount /media/root/500GB 2>/dev/null; then
+    echo "-> 500GB storage detected. Staging squashfs & final ISO on /media/root/500GB to avoid filling root partition..."
+    export ISO_DIR="/media/root/500GB/build_tmp_live_iso"
+    OUTPUT_ISO_DIR="/media/root/500GB/ISOs"
+    mkdir -p "$OUTPUT_ISO_DIR"
+    FINAL_ISO="$OUTPUT_ISO_DIR/CosmOS.iso"
+else
+    echo "-> Staging ISO locally in $BUILD_DIR/live_iso..."
+    export ISO_DIR="$BUILD_DIR/live_iso"
+    FINAL_ISO="$PWD/CosmOS.iso"
+fi
+
+rm -rf "$ISO_DIR" 
+mkdir -p "$ISO_DIR/live"
+mkdir -p "$ISO_DIR/boot/grub"
 
 cp $ROOTFS/boot/vmlinuz-* $ISO_DIR/boot/vmlinuz
 cp $ROOTFS/boot/initrd.img-* $ISO_DIR/boot/initrd.img
@@ -373,11 +393,21 @@ menuentry "MeinOS Live" {
 }
 EOF
 
-grub-mkrescue -o "$BUILD_DIR/CosmOS_tmp.iso" $ISO_DIR -iso-level 3 -iso-level 3
-echo "-> Writing ISO to disk in synchronous blocks..."
-dd if="$BUILD_DIR/CosmOS_tmp.iso" of=CosmOS.iso bs=4M oflag=sync status=progress
-rm -f "$BUILD_DIR/CosmOS_tmp.iso"
+echo "-> Creating bootable hybrid ISO directly to: $FINAL_ISO ..."
+grub-mkrescue -o "$FINAL_ISO" "$ISO_DIR" -iso-level 3
+
+if [ "$FINAL_ISO" != "$PWD/CosmOS.iso" ]; then
+    ln -sf "$FINAL_ISO" "$PWD/CosmOS.iso"
+    echo "-> Created symlink: $PWD/CosmOS.iso -> $FINAL_ISO"
+fi
+
+# Reclaim temporary squashfs build folder to save disk space
+if [ "$ISO_DIR" = "/media/root/500GB/build_tmp_live_iso" ]; then
+    echo "-> Reclaiming temporary staging files..."
+    rm -rf "$ISO_DIR"
+fi
 
 echo "=========================================="
 echo "          ISO BUILT SUCCESSFULLY          "
+echo "  Location: $FINAL_ISO                    "
 echo "=========================================="
