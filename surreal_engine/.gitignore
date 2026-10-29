@@ -1,0 +1,12 @@
+# Surreal Engine build outputs
+surreal_live_dojo
+surreal-editor
+surreal-bench
+test_skin_pose
+test_texture_bake
+test_stb_load
+test_surreal_interactive
+test_texture_inspect
+test_surreal_gltf
+test_surreal_benchmark
+*.o
