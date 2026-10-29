@@ -393,7 +393,7 @@ class AutonomousEvolutionEngine:
             "temperature": temperature,
             "max_tokens": 1024
         }
-        models_to_try = [self.model, "openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+        models_to_try = [self.model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
         for mod in models_to_try:
             payload["model"] = mod
             try:
