@@ -1,13 +1,13 @@
 {
   "engine": "AION Surreal 3D Engine",
   "version": 1.0,
-  "entity_count": 3,
+  "entity_count": 4,
   "entities": [
     {
       "id": 1,
       "name": "CyberGridFloor",
       "type": "TERRAIN",
-      "position": [0, 0, 0],
+      "position": [0, -20, 0],
       "scale": [24, 0.1, 24],
       "color": [1, 1, 1],
       "metallic": 0.2,
@@ -27,11 +27,21 @@
       "id": 3,
       "name": "Seoul_City",
       "type": "TERRAIN",
-      "position": [0, 0, 0],
+      "position": [-0.8, -0.5, 0],
       "scale": [1, 1, 1],
       "color": [1, 1, 1],
       "metallic": 0.2,
       "roughness": 0.5
+    },
+    {
+      "id": 4,
+      "name": "Dancing Stormtrooper_4",
+      "type": "PLATFORM",
+      "position": [-0.575067, 7.79214e-08, 2.7374],
+      "scale": [0.544891, 0.544891, 0.544891],
+      "color": [1, 1, 1],
+      "metallic": 0.25,
+      "roughness": 0.45
     }
   ]
 }
