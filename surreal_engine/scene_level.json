@@ -1,7 +1,7 @@
 {
   "engine": "AION Surreal 3D Engine",
   "version": 1.0,
-  "entity_count": 9,
+  "entity_count": 3,
   "entities": [
     {
       "id": 1,
@@ -14,84 +14,24 @@
       "roughness": 0.55
     },
     {
-      "id": 6,
+      "id": 2,
       "name": "SurrealAvatarPrime",
       "type": "AVATAR",
-      "position": [0, 0, -0.4],
+      "position": [0, 0, 0],
       "scale": [1, 1, 1],
       "color": [1, 1, 1],
       "metallic": 0.1,
       "roughness": 0.5
     },
     {
-      "id": 2,
-      "name": "Platform_Low",
-      "type": "PLATFORM",
-      "position": [-1.8, 0.25, -1.8],
-      "scale": [1.8, 0.5, 1.8],
-      "color": [0, 0.95, 0.85],
-      "metallic": 0.35,
-      "roughness": 0.4
-    },
-    {
-      "id": 10,
-      "name": "Aion_Avatar_13_CyberCat_4",
-      "type": "PLATFORM",
-      "position": [-2.30078, 0.5, -1.80162],
-      "scale": [0.0289741, 0.0289741, 0.0289741],
-      "color": [0, 1, 0.5],
-      "metallic": 0.9,
-      "roughness": 0.2
-    },
-    {
-      "id": 11,
-      "name": "Aion_Avatar_13_CyberCat_5",
-      "type": "PLATFORM",
-      "position": [-1.91347, 0.5, -1.98526],
-      "scale": [0.0289741, 0.0289741, 0.0289741],
-      "color": [0.95, 0.2, 0.2],
-      "metallic": 0.5,
-      "roughness": 0.35
-    },
-    {
-      "id": 14,
-      "name": "Aion_Avatar_13_CyberCat_6",
-      "type": "PLATFORM",
-      "position": [-1.48061, 0.5, -1.76322],
-      "scale": [0.0289741, 0.0289741, 0.0289741],
-      "color": [0.2, 0.22, 0.28],
-      "metallic": 0.9,
-      "roughness": 0.2
-    },
-    {
-      "id": 16,
-      "name": "Aion_Avatar_13_CyberCat_8",
-      "type": "PLATFORM",
-      "position": [-1.09277, 0.5, -1.67255],
-      "scale": [0.0289741, 0.0289741, 0.0289741],
-      "color": [0.3, 0.65, 1],
-      "metallic": 0.1,
-      "roughness": 0.6
-    },
-    {
-      "id": 20,
-      "name": "Aion_Avatar_10_Lioness_10",
-      "type": "PLATFORM",
-      "position": [-2.06009, -7.7634e-08, 0.219024],
-      "scale": [0.00821844, 0.00821844, 0.00821844],
-      "color": [1, 0.15, 0.65],
-      "metallic": 0.5,
-      "roughness": 0.35
-    },
-    {
-      "id": 23,
-      "name": "Aion_Avatar_11_Lion_9",
-      "type": "PLATFORM",
-      "position": [-1.49292, 5.95554e-08, 0.275845],
-      "scale": [0.405116, 0.405116, 0.405116],
-      "color": [0.95, 0.95, 0.95],
-      "metallic": 0.5,
-      "roughness": 0.35
+      "id": 3,
+      "name": "Seoul_City",
+      "type": "TERRAIN",
+      "position": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "color": [1, 1, 1],
+      "metallic": 0.2,
+      "roughness": 0.5
     }
   ]
 }
