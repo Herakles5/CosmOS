@@ -10039,6 +10039,18 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     windows[19].open = _128; windows[19].minimized = _86; str_cpy(windows[19].title, "RADIO COSMOS"); windows[19].x = 100; windows[19].y = 100; windows[19].w = 500; windows[19].h = 480; windows[19].color = 0x1A1A2A; focus_window(19);
                     input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
                 }
+
+                DrawRoundedRect(col3, row4, bw, bh, 4, 0x00A88F);
+                TextC(col3+bw/2, row4+10, "SURREAL 3D", 0xFFFFFF, _128); 
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col3, row4, bw, bh)) { 
+#ifdef __linux__
+                    if (fork() == 0) {
+                        system("/root/coding/MeinOS/run_surreal_dojo.sh >/dev/null 2>&1 &");
+                        exit(0);
+                    }
+#endif
+                    input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
+                }
                 
                 // ==========================================
                 // LINUX HYBRID APPS
@@ -10080,6 +10092,18 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col1, row6, bw, bh)) { 
 #ifdef __linux__
                     if (fork() == 0) { execlp("steam", "steam", NULL); exit(1); }
+#endif
+                    input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
+                }
+
+                DrawRoundedRect(col2, row6, bw, bh, 4, lin_col);
+                TextC(col2+bw/2, row6+10, "SURREAL EDITOR", 0xFFFFFF, _128); 
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col2, row6, bw, bh)) { 
+#ifdef __linux__
+                    if (fork() == 0) {
+                        system("/root/coding/MeinOS/run_surreal_dojo.sh --editor >/dev/null 2>&1 &");
+                        exit(0);
+                    }
 #endif
                     input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
                 }

@@ -20,9 +20,12 @@
 
 int main(int argc, char* argv[]) {
     bool headless = false;
+    bool startInEditor = false;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--benchmark-headless") {
             headless = true;
+        } else if (std::string(argv[i]) == "--editor") {
+            startInEditor = true;
         }
     }
 
@@ -183,6 +186,10 @@ int main(int argc, char* argv[]) {
     playCamera.pitch = 0.28f;
     playCamera.yaw = 0.0f;
     playCamera.SetTarget(Surreal::Vec3(0, 1.25f, 0));
+
+    if (startInEditor) {
+        editor.ToggleMode(playCamera.GetPosition(), playCamera.pitch, playCamera.yaw);
+    }
 
     // Setup Atmospheric PBR Lighting
     engine.world.sunLight.direction = Surreal::Vec3(0.55f, 0.75f, 0.45f).Normalized();
