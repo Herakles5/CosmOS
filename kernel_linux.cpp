@@ -745,8 +745,8 @@ _30 get_ascii(_184 sc) {
 }
 _44 is_over_rect(_43 mx, _43 my, _43 x, _43 y, _43 w, _43 h) { _43 m = touch_mode ? 30 : 0; _96 (mx >= x-m AND mx <= x+w+m AND my >= y-m AND my <= y+h+m); }
 _44 is_over(_43 mx, _43 my, _43 ox, _43 oy, _43 r) { _43 m = touch_mode ? 20 : 0; _96 (mx-ox)*(mx-ox) + (my-oy)*(my-oy) < (r+m)*(r+m); }
-_50 Put(_43 x, _43 y, _89 c) { _15(x<0 OR (uint32_t)x>=screen_w OR y<0 OR (uint32_t)y>=screen_h) _96; bb[y*screen_w+x]=c; }
-_50 PutAlpha(_43 x, _43 y, _89 c) { _15(x<0 OR (uint32_t)x>=screen_w OR y<0 OR (uint32_t)y>=screen_h) _96; _89 bg = bb[y*screen_w+x]; _89 s1 = ((c & 0xFEFEFE) >> 1) + ((bg & 0xFEFEFE) >> 1); bb[y*screen_w+x] = ((s1 & 0xFEFEFE) >> 1) + ((bg & 0xFEFEFE) >> 1); }
+_50 Put(_43 x, _43 y, _89 c) { _15(x<0 OR (uint32_t)x>=screen_w OR y<0 OR (uint32_t)y>=screen_h) _96; bb[y*screen_w+x]=c | 0xFF000000; }
+_50 PutAlpha(_43 x, _43 y, _89 c) { _15(x<0 OR (uint32_t)x>=screen_w OR y<0 OR (uint32_t)y>=screen_h) _96; _89 bg = bb[y*screen_w+x]; _89 s1 = ((c & 0xFEFEFE) >> 1) + ((bg & 0xFEFEFE) >> 1); bb[y*screen_w+x] = 0xFF000000 | (((s1 & 0xFEFEFE) >> 1) + ((bg & 0xFEFEFE) >> 1)); }
 _50 Clear() { _39(_43 i=0; i<screen_w*screen_h; i++) bb[i] = 0; }
 /// BARE METAL SHADER: Dichte Galaxie & Orbital-Staub
 _50 DrawDenseGalaxy(_43 cx, _43 cy, _43 exp) {
@@ -1042,7 +1042,7 @@ _50 DrawGlassRect(_43 x, _43 y, _43 rw, _43 rh, _43 r, _89 c) {
                     _43 f_r = (bg_r + cr) >> 1;
                     _43 f_g = (bg_g + cg) >> 1;
                     _43 f_b = (bg_b + cb) >> 1;
-                    bb[sy * screen_w + sx] = (f_r << 16) | (f_g << 8) | f_b;
+                    bb[sy * screen_w + sx] = 0xE0000000 | (f_r << 16) | (f_g << 8) | f_b;
                 }
             }
         }

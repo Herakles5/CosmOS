@@ -59,10 +59,10 @@ struct Drop { float y; float speed; };
 static std::vector<std::vector<Drop>> columnDrops;
 static std::vector<std::vector<char>> gridChars;
 
-// Original Settings
+// Optimized Settings for high-FPS 1080p rendering
 const unsigned int FaceW = 640;
 const unsigned int FaceH = 480;
-const float FONT_SIZE = 1.0f;
+const float FONT_SIZE = 2.0f;
 static const int COLS = (int)(FaceW / FONT_SIZE);
 static const int ROWS = (int)(FaceH / FONT_SIZE);
 static const std::string symbols = ".o00´";
@@ -95,7 +95,7 @@ void InitAionApp() {
 void UpdateAionBackground() {
     static int ollama_ping_timer = 0;
     ollama_ping_timer++;
-    if (ollama_ping_timer > 60) {
+    if (ollama_ping_timer > 600) {
         ollama_ping_timer = 0;
         system("(curl -s --max-time 1 http://127.0.0.1:11434/ > /dev/null && echo 1 > /tmp/ollama_online.tmp || echo 0 > /tmp/ollama_online.tmp) &");
         
@@ -183,7 +183,7 @@ void UpdateAionBackground() {
             
             is_thinking = false;
             thinking_timer = 0;
-            aion_wants_foreground = true;
+            // Background evolution reflection updates bottom-right toast without stealing desktop focus
             delete[] buf;
         }
         fclose(direct_f);

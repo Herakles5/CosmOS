@@ -1,0 +1,127 @@
+{
+  "engine": "AION Surreal 3D Engine",
+  "version": 1.0,
+  "entity_count": 12,
+  "entities": [
+    {
+      "id": 2,
+      "name": "SurrealAvatarPrime",
+      "type": "AVATAR",
+      "position": [-4, 0, -10.4],
+      "scale": [0.311331, 0.311331, 0.311331],
+      "color": [1, 1, 1],
+      "metallic": 0.1,
+      "roughness": 0.5
+    },
+    {
+      "id": 79,
+      "name": "MetropolisGroundFloor",
+      "type": "PLATFORM",
+      "position": [0, -0.005, 0],
+      "scale": [220, 0.1, 220],
+      "color": [1, 1, 1],
+      "metallic": 0.15,
+      "roughness": 0.65
+    },
+    {
+      "id": 80,
+      "name": "Seoul_Downtown_Main",
+      "type": "PLATFORM",
+      "position": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "color": [1, 1, 1],
+      "metallic": 0.2,
+      "roughness": 0.5
+    },
+    {
+      "id": 81,
+      "name": "Seoul_Avenue_South",
+      "type": "PLATFORM",
+      "position": [-9.3, 0, 9.8],
+      "scale": [1, 1, 1],
+      "color": [1, 1, 1],
+      "metallic": 0.2,
+      "roughness": 0.5
+    },
+    {
+      "id": 82,
+      "name": "Seoul_East_District",
+      "type": "PLATFORM",
+      "position": [18.2, 0, 0],
+      "scale": [1, 1, 1],
+      "color": [1, 1, 1],
+      "metallic": 0.2,
+      "roughness": 0.5
+    },
+    {
+      "id": 83,
+      "name": "Seoul_West_District",
+      "type": "PLATFORM",
+      "position": [-18.2, 0, 0],
+      "scale": [1, 1, 1],
+      "color": [1, 1, 1],
+      "metallic": 0.2,
+      "roughness": 0.5
+    },
+    {
+      "id": 84,
+      "name": "Seoul_SouthEast_Arcade",
+      "type": "PLATFORM",
+      "position": [8.9, 0, 9.8],
+      "scale": [1, 1, 1],
+      "color": [1, 1, 1],
+      "metallic": 0.2,
+      "roughness": 0.5
+    },
+    {
+      "id": 85,
+      "name": "Seoul_SouthWest_Arcade",
+      "type": "PLATFORM",
+      "position": [-27.5, 0, 9.8],
+      "scale": [1, 1, 1],
+      "color": [1, 1, 1],
+      "metallic": 0.2,
+      "roughness": 0.5
+    },
+    {
+      "id": 86,
+      "name": "CyberTower_NorthEast",
+      "type": "PLATFORM",
+      "position": [55, 12, -40],
+      "scale": [8, 24, 8],
+      "color": [0.12, 0.45, 0.65],
+      "metallic": 0.65,
+      "roughness": 0.25
+    },
+    {
+      "id": 87,
+      "name": "CyberTower_NorthWest",
+      "type": "PLATFORM",
+      "position": [-55, 15, -40],
+      "scale": [9, 30, 9],
+      "color": [0.65, 0.15, 0.45],
+      "metallic": 0.65,
+      "roughness": 0.25
+    },
+    {
+      "id": 88,
+      "name": "CyberTower_SouthEast",
+      "type": "PLATFORM",
+      "position": [55, 14, 50],
+      "scale": [8.5, 28, 8.5],
+      "color": [0.15, 0.65, 0.55],
+      "metallic": 0.65,
+      "roughness": 0.25
+    },
+    {
+      "id": 89,
+      "name": "CyberTower_SouthWest",
+      "type": "PLATFORM",
+      "position": [-55, 18, 49.6],
+      "scale": [10, 36, 10],
+      "color": [0.85, 0.55, 0.15],
+      "metallic": 0.65,
+      "roughness": 0.25
+    }
+  ]
+}

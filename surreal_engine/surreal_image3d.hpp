@@ -39,7 +39,7 @@
 namespace Surreal {
 
 struct Image3DOptions {
-    int   maxRes           = 280;   // grid cells along the longest picture side
+    int   maxRes           = 320;   // high-density grid cells along the longest picture side
     float heightMeters     = 2.20f; // world height of the resulting model
     float depth            = 0.45f; // half thickness relative to the inflate radius
     float relief           = 0.35f; // strength of luminance detail on the front
@@ -49,7 +49,7 @@ struct Image3DOptions {
     bool  generateBackside = true;  // 360° volumetric backside synthesis (hair, skull, spine, clothes)
     bool  anatomicalSmooth = true;  // Organic body volume without luminance spikes
     float bodyVolume       = 1.0f;  // Protrusion multiplier for foreground subjects
-    int   ironingPasses    = 120;   // Multi-pass geometric smoothing ("buegeln") & texture inpainting ("malen") (mindestens 120x)
+    int   ironingPasses    = 1440;  // Multi-pass geometric smoothing ("buegeln") & 360° texture painting ("malen") (up to 1,440x)
 };
 
 struct Image3DInfo {
@@ -629,17 +629,20 @@ public:
             }
         }
 
-        // ---- 4b. Multi-Pass Geometric Smoothing Relaxation (120x "drueber buegeln") ----
+        // ---- 4b. Multi-Pass Geometric Smoothing Relaxation (Up to 1,440x "drueber buegeln") ----
         // Eliminates polygon faceting, steppings and spiky noise across front & back surfaces
-        int numIronPasses = std::max(120, std::min(300, opt.ironingPasses));
+        int numIronPasses = std::max(120, std::min(1440, opt.ironingPasses));
         std::vector<float> zfSmooth = zf;
         std::vector<float> zbSmooth = zb;
+        std::vector<float> nextZf(N, 0.0f);
+        std::vector<float> nextZb(N, 0.0f);
+        const float invTwoSigmaSq = 1.0f / (2.0f * (Hmax * 0.15f) * (Hmax * 0.15f) + 1e-5f);
+        // Scale per-pass relaxation step so 1,440 passes converge ultra-smoothly without over-flattening volume
+        const float relaxStep = std::min(0.35f, 45.0f / static_cast<float>(numIronPasses));
 
         for (int pass = 0; pass < numIronPasses; ++pass) {
-            std::vector<float> nextZf = zfSmooth;
-            std::vector<float> nextZb = zbSmooth;
-
-            for (int y = 1; y + 1 < gh; ++y) {
+            #pragma omp parallel for schedule(static)
+            for (int y = 1; y < gh - 1; ++y) {
                 for (int x = 1; x + 1 < gw; ++x) {
                     int i = y * gw + x;
                     if (!fg[i]) continue;
@@ -650,32 +653,28 @@ public:
                     int nbs[4] = { i - 1, i + 1, i - gw, i + gw };
                     for (int nb : nbs) {
                         if (!fg[nb]) continue;
-                        float diff = std::abs(zfSmooth[nb] - curZf);
-                        float w = std::exp(-(diff * diff) / (2.0f * (Hmax * 0.15f) * (Hmax * 0.15f) + 1e-5f));
+                        float diff = zfSmooth[nb] - curZf;
+                        float w = 1.0f / (1.0f + diff * diff * invTwoSigmaSq);
                         sumZf += zfSmooth[nb] * w;
                         sumWf += w;
                     }
-                    if (sumWf > 0.01f) {
-                        nextZf[i] = curZf + 0.35f * (sumZf / sumWf - curZf);
-                    }
+                    nextZf[i] = (sumWf > 0.01f) ? (curZf + relaxStep * (sumZf / sumWf - curZf)) : curZf;
 
                     // Backside Bilateral Smoothing Relaxation
                     float curZb = zbSmooth[i];
                     float sumZb = 0.0f, sumWb = 0.0f;
                     for (int nb : nbs) {
                         if (!fg[nb]) continue;
-                        float diff = std::abs(zbSmooth[nb] - curZb);
-                        float w = std::exp(-(diff * diff) / (2.0f * (Hmax * 0.15f) * (Hmax * 0.15f) + 1e-5f));
+                        float diff = zbSmooth[nb] - curZb;
+                        float w = 1.0f / (1.0f + diff * diff * invTwoSigmaSq);
                         sumZb += zbSmooth[nb] * w;
                         sumWb += w;
                     }
-                    if (sumWb > 0.01f) {
-                        nextZb[i] = curZb + 0.35f * (sumZb / sumWb - curZb);
-                    }
+                    nextZb[i] = (sumWb > 0.01f) ? (curZb + relaxStep * (sumZb / sumWb - curZb)) : curZb;
                 }
             }
-            zfSmooth = std::move(nextZf);
-            zbSmooth = std::move(nextZb);
+            std::swap(zfSmooth, nextZf);
+            std::swap(zbSmooth, nextZb);
         }
         zf = std::move(zfSmooth);
         zb = std::move(zbSmooth);
@@ -746,11 +745,13 @@ public:
             }
         }
 
-        // Apply gentle bilateral smoothing (4 passes) to blend away front zippers/buttons
-        // while preserving 100% of the authentic garment colors and boundaries
-        for (int pass = 0; pass < 4; ++pass) {
+        // Apply multi-pass bilateral painting (scaled up with opt.ironingPasses, up to 48 passes at 1440)
+        // to blend away front zippers/buttons while preserving 100% of authentic garment colors and boundaries
+        int paintPasses = std::max(12, std::min(48, opt.ironingPasses / 30));
+        for (int pass = 0; pass < paintPasses; ++pass) {
             std::vector<float> nextR = backR, nextG = backG, nextB = backB;
-            for (int y = 1; y + 1 < gh; ++y) {
+            #pragma omp parallel for schedule(static)
+            for (int y = 1; y < gh - 1; ++y) {
                 float yRel = static_cast<float>(y) / static_cast<float>(gh);
                 if (yRel <= 0.16f) continue; // Keep hair crisp
 
@@ -771,9 +772,9 @@ public:
                         wsum += w;
                     }
                     if (wsum > 0.01f) {
-                        nextR[i] = cr + 0.40f * (avgR / wsum - cr);
-                        nextG[i] = cg + 0.40f * (avgG / wsum - cg);
-                        nextB[i] = cb + 0.40f * (avgB / wsum - cb);
+                        nextR[i] = cr + 0.35f * (avgR / wsum - cr);
+                        nextG[i] = cg + 0.35f * (avgG / wsum - cg);
+                        nextB[i] = cb + 0.35f * (avgB / wsum - cb);
                     }
                 }
             }
@@ -794,13 +795,52 @@ public:
         if (bboxW * s > 3.0f * opt.heightMeters) s = 3.0f * opt.heightMeters / bboxW;
         float cx = 0.5f * (minx + maxx);
 
-        // ---- 6. Colors & Vertices: Front real picture, Back 360° synthesized ----
+        // ---- 6. Colors, Unsharp-Mask Clarity Filter & High-Res Dual-Hemisphere GPU Texture Atlas ----
         float avR = 0, avG = 0, avB = 0;
         for (int i = 0; i < N; ++i) if (fg[i]) { avR += R[i]; avG += G[i]; avB += B[i]; }
         avR /= fgCount; avG /= fgCount; avB /= fgCount;
         std::vector<float> bR = BoxBlurMasked(R, fg, gw, gh, 5);
         std::vector<float> bG = BoxBlurMasked(G, fg, gw, gh, 5);
         std::vector<float> bB = BoxBlurMasked(B, fg, gw, gh, 5);
+
+        // Unsharp-Mask micro-contrast enhancement on front photograph (eyes, lips, hair, fabric details)
+        std::vector<float> fineBlurR = BoxBlurMasked(R, fg, gw, gh, 1);
+        std::vector<float> fineBlurG = BoxBlurMasked(G, fg, gw, gh, 1);
+        std::vector<float> fineBlurB = BoxBlurMasked(B, fg, gw, gh, 1);
+        for (int i = 0; i < N; ++i) {
+            if (!fg[i]) continue;
+            R[i] = std::max(0.0f, std::min(255.0f, R[i] + 0.42f * (R[i] - fineBlurR[i])));
+            G[i] = std::max(0.0f, std::min(255.0f, G[i] + 0.42f * (G[i] - fineBlurG[i])));
+            B[i] = std::max(0.0f, std::min(255.0f, B[i] + 0.42f * (B[i] - fineBlurB[i])));
+        }
+
+        // Build Dual-Hemisphere RGBA GPU Texture Atlas:
+        // Left half [0..gw-1] = Unsharp-Masked Front Photo (U in [0.0, 0.5])
+        // Right half [gw..2*gw-1] = 1,440-Pass Painted 360 Backside (U in [0.5, 1.0])
+        const int atlasW = gw * 2;
+        const int atlasH = gh;
+        std::vector<uint8_t> atlasRGBA(static_cast<size_t>(atlasW) * atlasH * 4, 255);
+        for (int y = 0; y < gh; ++y) {
+            for (int x = 0; x < gw; ++x) {
+                int i = y * gw + x;
+                float rf = R[i], gf = G[i], bf = B[i];
+                float rb = (opt.generateBackside ? backR[i] : bR[i]) * opt.backDarken;
+                float gb = (opt.generateBackside ? backG[i] : bG[i]) * opt.backDarken;
+                float bb = (opt.generateBackside ? backB[i] : bB[i]) * opt.backDarken;
+
+                size_t idxFront = (static_cast<size_t>(y) * atlasW + x) * 4;
+                atlasRGBA[idxFront + 0] = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, rf + 0.5f)));
+                atlasRGBA[idxFront + 1] = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, gf + 0.5f)));
+                atlasRGBA[idxFront + 2] = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, bf + 0.5f)));
+                atlasRGBA[idxFront + 3] = 255;
+
+                size_t idxBack = (static_cast<size_t>(y) * atlasW + (gw + x)) * 4;
+                atlasRGBA[idxBack + 0] = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, rb + 0.5f)));
+                atlasRGBA[idxBack + 1] = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, gb + 0.5f)));
+                atlasRGBA[idxBack + 2] = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, bb + 0.5f)));
+                atlasRGBA[idxBack + 3] = 255;
+            }
+        }
 
         auto HH = [&](const std::vector<float>& f, int x, int y) { return isFg(x, y) ? f[y * gw + x] : 0.0f; };
 
@@ -813,7 +853,9 @@ public:
             if (!fg[i]) continue;
             float px = (x - cx) * s;
             float py = (maxy - y) * s;
-            float u = (x + 0.5f) / gw, v = (y + 0.5f) / gh;
+            float uNorm = (x + 0.5f) / gw, vNorm = (y + 0.5f) / gh;
+            float uFront = 0.5f * uNorm;
+            float uBack  = 0.5f + 0.5f * uNorm;
 
             // Front vertex
             float fx = (HH(zf, x + 1, y) - HH(zf, x - 1, y)) * 0.5f;
@@ -821,7 +863,7 @@ public:
             Vec3 nF = Vec3(-fx, fyw, 1.0f).Normalized();
             Vec4 cF(R[i] / 255.0f, G[i] / 255.0f, B[i] / 255.0f, 1.0f);
             idxF[i] = static_cast<int>(mesh->vertices.size());
-            mesh->vertices.push_back(Vertex3D(Vec3(px, py, zf[i] * s), nF, u, v, cF));
+            mesh->vertices.push_back(Vertex3D(Vec3(px, py, zf[i] * s), nF, uFront, vNorm, cF));
 
             // Backside vertex: 360° Material & Color Synthesis
             float bx = (HH(zb, x + 1, y) - HH(zb, x - 1, y)) * 0.5f;
@@ -840,7 +882,7 @@ public:
             cb = std::max(0.0f, std::min(1.0f, cb));
 
             idxB[i] = static_cast<int>(mesh->vertices.size());
-            mesh->vertices.push_back(Vertex3D(Vec3(px, py, zb[i] * s), nB, 1.0f - u, v, Vec4(cr, cg, cb, 1.0f)));
+            mesh->vertices.push_back(Vertex3D(Vec3(px, py, zb[i] * s), nB, uBack, vNorm, Vec4(cr, cg, cb, 1.0f)));
         }
 
         // ---- 7. Triangles: front quad + back quad + watertight rim walls ----
@@ -889,14 +931,17 @@ public:
             Vec4 cB1(backR[cell1] / 255.0f * ao * bDark, backG[cell1] / 255.0f * ao * bDark, backB[cell1] / 255.0f * ao * bDark, 1.0f);
             Vec4 cB2(backR[cell2] / 255.0f * ao * bDark, backG[cell2] / 255.0f * ao * bDark, backB[cell2] / 255.0f * ao * bDark, 1.0f);
 
+            float u1Norm = (x1 + 0.5f) / gw, v1Norm = (y1 + 0.5f) / gh;
+            float u2Norm = (x2 + 0.5f) / gw, v2Norm = (y2 + 0.5f) / gh;
+
             uint32_t vF1 = static_cast<uint32_t>(mesh->vertices.size());
-            mesh->vertices.push_back(Vertex3D(pF1, nOut, (x1 + 0.5f) / gw, (y1 + 0.5f) / gh, cF1));
+            mesh->vertices.push_back(Vertex3D(pF1, nOut, 0.5f * u1Norm, v1Norm, cF1));
             uint32_t vF2 = static_cast<uint32_t>(mesh->vertices.size());
-            mesh->vertices.push_back(Vertex3D(pF2, nOut, (x2 + 0.5f) / gw, (y2 + 0.5f) / gh, cF2));
+            mesh->vertices.push_back(Vertex3D(pF2, nOut, 0.5f * u2Norm, v2Norm, cF2));
             uint32_t vB2 = static_cast<uint32_t>(mesh->vertices.size());
-            mesh->vertices.push_back(Vertex3D(pB2, nOut, 1.0f - (x2 + 0.5f) / gw, (y2 + 0.5f) / gh, cB2));
+            mesh->vertices.push_back(Vertex3D(pB2, nOut, 0.5f + 0.5f * u2Norm, v2Norm, cB2));
             uint32_t vB1 = static_cast<uint32_t>(mesh->vertices.size());
-            mesh->vertices.push_back(Vertex3D(pB1, nOut, 1.0f - (x1 + 0.5f) / gw, (y1 + 0.5f) / gh, cB1));
+            mesh->vertices.push_back(Vertex3D(pB1, nOut, 0.5f + 0.5f * u1Norm, v1Norm, cB1));
 
             // True outward CCW winding:
             // Triangle 1: vF1 -> vF2 -> vB2
@@ -986,6 +1031,18 @@ public:
                 mesh->vertices[v].normal = n;
             }
         }
+
+        // Attach High-Resolution Dual-Hemisphere RGBA GPU Texture Atlas SubMesh
+        SubMesh sub;
+        sub.indexOffset = 0;
+        sub.indexCount = static_cast<uint32_t>(mesh->indices.size());
+        sub.albedo = ColorRGB(1.0f, 1.0f, 1.0f);
+        sub.roughness = 0.65f;
+        sub.metallic = 0.05f;
+        sub.texWidth = atlasW;
+        sub.texHeight = atlasH;
+        sub.texRGBA = std::make_shared<std::vector<uint8_t>>(std::move(atlasRGBA));
+        mesh->submeshes.push_back(std::move(sub));
 
         mesh->CalculateBounds();
         mesh->BuildClusters();

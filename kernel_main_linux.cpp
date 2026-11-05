@@ -1756,12 +1756,12 @@ struct Control {
 struct Window { _43 id; _30 title[16]; _43 x, y, w, h; _44 open, minimized, fullscreen; _89 color; _30 content[2048]; _43 cursor_pos; uint32_t* pixels; int pixel_w; int pixel_h; uint64_t wndproc; _44 needs_paint; Control controls[32]; int num_controls; uint64_t user_data; uint32_t msg_msg; uint64_t msg_wparam; uint64_t msg_lparam; };
 
 // --- AION 3D AVATAR HOST INTEGRATION ---
-extern "C" uint32_t aion_window_x = 0;
-extern "C" uint32_t aion_window_y = 0;
-extern "C" uint32_t aion_window_w = 0;
-extern "C" uint32_t aion_window_h = 0;
-extern "C" uint8_t  aion_window_open = 0;
-extern "C" uint8_t  aion_use_3d_avatar = 0;
+extern "C" uint32_t aion_window_x = 1450;
+extern "C" uint32_t aion_window_y = 28;
+extern "C" uint32_t aion_window_w = 450;
+extern "C" uint32_t aion_window_h = 500;
+extern "C" uint8_t  aion_window_open = 1;
+extern "C" uint8_t  aion_use_3d_avatar = 1;
 
 struct Planet { _43 ang; _43 dist; _30 name[8]; float cur_x, cur_y; float real_ang; }; 
 struct Star { _43 x, y, z, type, speed; };
@@ -1811,7 +1811,7 @@ Planet planets[6];
 Star stars[200];
 _44 cfg_planets_on = _128;
 _44 cfg_galaxy_on = _86;
-int cfg_bg_mode = 1; // 0: Cosmos, 1: Firmament, 2: Earthquake
+int cfg_bg_mode = 0; // 0: Cosmos (3D GLB Solar System), 1: Firmament, 2: Earthquake
 _44 cfg_stars_on = _128;
 _43 cfg_star_count = 100;
 _43 cfg_speed = 1;
@@ -2405,7 +2405,7 @@ int last_mouse_y = 300; // Startwert (Mitte)
 void PutPixel(uint32_t x, uint32_t y, uint32_t color) {
     if (x >= screen_w || y >= screen_h) return; 
     uint8_t* pixel_addr = (uint8_t*)bb + (y * screen_pitch) + (x * 4);
-    *(uint32_t*)pixel_addr = color;
+    *(uint32_t*)pixel_addr = color | 0xFF000000;
 }
 
 void PutPixelAlpha(uint32_t x, uint32_t y, uint32_t color, float alpha) {
@@ -2414,13 +2414,17 @@ void PutPixelAlpha(uint32_t x, uint32_t y, uint32_t color, float alpha) {
     uint32_t bg = *(uint32_t*)pixel_addr;
     
     uint32_t a_val = (uint32_t)(alpha * 255.0f);
+    if (a_val > 255) a_val = 255;
     uint32_t inv_a = 255 - a_val;
+    uint32_t bg_a = (bg >> 24) & 0xFF;
+    uint32_t out_a = a_val + ((bg_a * inv_a) >> 8);
+    if (out_a > 255) out_a = 255;
     
     uint32_t r = (((color >> 16) & 0xFF) * a_val + ((bg >> 16) & 0xFF) * inv_a) >> 8;
     uint32_t g = (((color >> 8) & 0xFF) * a_val + ((bg >> 8) & 0xFF) * inv_a) >> 8;
     uint32_t b = ((color & 0xFF) * a_val + (bg & 0xFF) * inv_a) >> 8;
     
-    *(uint32_t*)pixel_addr = (r << 16) | (g << 8) | b;
+    *(uint32_t*)pixel_addr = (out_a << 24) | (r << 16) | (g << 8) | b;
 }
 
 // 4. PROJEKTION (3D Welt -> 2D Monitor)
@@ -2483,7 +2487,7 @@ void DrawTriangle(Vec2 v0, Vec2 v1, Vec2 v2, uint32_t color) {
             
             // Rasterize pixel if barycentric coordinates fall within triangle
             if ((w0 >= 0 && w1 >= 0 && w2 >= 0) || (w0 <= 0 && w1 <= 0 && w2 <= 0)) {
-                row_ptr[x] = color;
+                row_ptr[x] = color | 0xFF000000;
             }
         }
     }
@@ -2550,23 +2554,13 @@ _43 clip_min_y = 0;
 _43 clip_max_x = 4000;
 _43 clip_max_y = 4000;
 
-_50 Put(_43 x, _43 y, _89 c) { _15(x<clip_min_x OR x>=clip_max_x OR y<clip_min_y OR y>=clip_max_y OR x<0 OR x>=screen_w OR y<0 OR y>=screen_h) _96; bb[y*screen_w+x]=c; }
-_50 PutAlpha(_43 x, _43 y, _89 c) { _15(x<clip_min_x OR x>=clip_max_x OR y<clip_min_y OR y>=clip_max_y OR x<0 OR x>=screen_w OR y<0 OR y>=screen_h) _96; _89 bg = bb[y*screen_w+x]; _89 s1 = ((c & 0xFEFEFE) >> 1) + ((bg & 0xFEFEFE) >> 1); bb[y*screen_w+x] = ((s1 & 0xFEFEFE) >> 1) + ((bg & 0xFEFEFE) >> 1); }
+extern "C" volatile bool fb_dirty = false;
+_50 Put(_43 x, _43 y, _89 c) { _15(x<clip_min_x OR x>=clip_max_x OR y<clip_min_y OR y>=clip_max_y OR x<0 OR x>=screen_w OR y<0 OR y>=screen_h) _96; bb[y*screen_w+x]=c | 0xFF000000; }
+_50 PutAlpha(_43 x, _43 y, _89 c) { _15(x<clip_min_x OR x>=clip_max_x OR y<clip_min_y OR y>=clip_max_y OR x<0 OR x>=screen_w OR y<0 OR y>=screen_h) _96; _89 bg = bb[y*screen_w+x]; _89 s1 = ((c & 0xFEFEFE) >> 1) + ((bg & 0xFEFEFE) >> 1); bb[y*screen_w+x] = 0xFF000000 | (((s1 & 0xFEFEFE) >> 1) + ((bg & 0xFEFEFE) >> 1)); }
 _50 Swap() {
-    // ==========================================
-    // BARE METAL TURBO: 64-BIT MEMORY COPY
-    // Kopiert 8 Bytes pro Taktzyklus statt nur 1 Byte!
-    // ==========================================
     if (!fb || !bb) return;
-    uint64_t* dst = (uint64_t*)fb;
-    uint64_t* src = (uint64_t*)bb;
-    
-    // Calculate total 64-bit QWORD block count
-    uint32_t total_blocks = (screen_h * screen_pitch) / 8;
-    
-    for (uint32_t i = 0; i < total_blocks; i++) {
-        dst[i] = src[i];
-    }
+    memcpy(fb, bb, (size_t)screen_h * (size_t)screen_pitch);
+    fb_dirty = true;
 }
 _50 DrawRoundedRect(_43 x, _43 y, _43 rw, _43 rh, _43 r, _89 c) { _39(_43 iy=0;iy<rh;iy++)_39(_43 ix=0;ix<rw;ix++){ _44 corn=_86; _15(ix<r AND iy<r AND (r-ix)*(r-ix)+(r-iy)*(r-iy)>r*r) corn=_128; _15(ix>rw-r AND iy<r AND (ix-(rw-r))*(ix-(rw-r))+(r-iy)*(r-iy)>r*r) corn=_128; _15(ix<r AND iy>rh-r AND (r-ix)*(r-ix)+(iy-(rh-r))*(iy-(rh-r))>r*r) corn=_128; _15(ix>rw-r AND iy>rh-r AND (ix-(rw-r))*(ix-(rw-r))+(iy-(rh-r))*(iy-(rh-r))>r*r) corn=_128; _15(!corn) Put(x+ix,y+iy,c); } }
 _50 DrawGlassRect(_43 x, _43 y, _43 rw, _43 rh, _43 r, _89 c) { 
@@ -2584,7 +2578,7 @@ _50 DrawGlassRect(_43 x, _43 y, _43 rw, _43 rh, _43 r, _89 c) {
                     _89 bg = bb[sy * screen_w + sx];
                     _43 bg_r = (bg >> 16) & 0xFF; _43 bg_g = (bg >> 8) & 0xFF; _43 bg_b = bg & 0xFF;
                     _43 f_r = (bg_r + cr) >> 1; _43 f_g = (bg_g + cg) >> 1; _43 f_b = (bg_b + cb) >> 1;
-                    bb[sy * screen_w + sx] = (f_r << 16) | (f_g << 8) | f_b;
+                    bb[sy * screen_w + sx] = 0xE0000000 | (f_r << 16) | (f_g << 8) | f_b;
                 }
             }
         }
@@ -2646,13 +2640,16 @@ _50 Text(_43 x, _43 y, _71 _30* s, _89 col, _44 bold) {
                 uint8_t alpha = font_pixels[c - 32][fy][fx];
                 if (alpha > 0 && (y + fy >= 0) && (y + fy < screen_h) && (x + fx >= 0) && (x + fx < screen_w)) {
                     uint32_t bg = bb[(y + fy) * screen_w + (x + fx)];
+                    int bg_a = (bg >> 24) & 0xFF;
+                    int out_a = alpha + ((bg_a * (255 - alpha)) / 255);
+                    if (out_a > 255) out_a = 255;
                     int br = (bg >> 16) & 0xFF;
                     int bg_g = (bg >> 8) & 0xFF;
                     int bb_b = bg & 0xFF;
                     int out_r = (cr * alpha + br * (255 - alpha)) / 255;
                     int out_g = (cg * alpha + bg_g * (255 - alpha)) / 255;
                     int out_b = (cb * alpha + bb_b * (255 - alpha)) / 255;
-                    bb[(y + fy) * screen_w + (x + fx)] = (out_r << 16) | (out_g << 8) | out_b;
+                    bb[(y + fy) * screen_w + (x + fx)] = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
                 }
             }
         }
@@ -2695,7 +2692,7 @@ _50 DrawDenseGalaxy(_43 cx, _43 cy, _43 exp) {
         _43 intensity = 255 - (int_sqrt(rand_val2*rand_val2) * 8); _15(intensity < 0) intensity = 0; intensity = (intensity * intensity_mod) / 2;
         _15(i % 100 EQ 0) { r = 255; g = 255; b = 255; intensity = 255; }
         _43 f_r = bg_r + (r * intensity / 256); _15(f_r > 255) f_r = 255; _43 f_g = bg_g + (g * intensity / 256); _15(f_g > 255) f_g = 255; _43 f_b = bg_b + (b * intensity / 256); _15(f_b > 255) f_b = 255;
-        bb[py * screen_w + px] = (f_r << 16) | (f_g << 8) | f_b;
+        bb[py * screen_w + px] = 0xFF000000 | (f_r << 16) | (f_g << 8) | f_b;
     }
 }
 _50 DrawActiveSun(_43 cx, _43 cy, _43 radius) {
@@ -2981,13 +2978,15 @@ _50 DrawOrganicPlanet(_43 cx, _43 cy, _43 radius, _89 base_col) {
                 _43 rim = (edge_dist * edge_dist) / 255; r += (rim * base_r) / 512; g += (rim * base_g) / 512; b += (rim * base_b) / 512;
                 r = (r * (220 + noise + banding)) / 256; g = (g * (220 + noise + banding)) / 256; b = (b * (220 + noise + banding)) / 256;
                 _15(r > 255) r = 255; _15(g > 255) g = 255; _15(b > 255) b = 255;
-                bb[screen_y * screen_w + screen_x] = (r << 16) | (g << 8) | b;
+                bb[screen_y * screen_w + screen_x] = 0xFF000000 | (r << 16) | (g << 8) | b;
             } _41 _15 (dist_sq <= glow_r2 AND dist_sq > r2) {
                 _43 alpha = 255 - ((int_sqrt(dist_sq) - radius) * 255 / (glow_radius - radius)); alpha = (alpha * alpha) / 255;
                 _15(alpha > 0) {
                     _89 bg = bb[screen_y * screen_w + screen_x];
+                    _43 bg_a = (bg >> 24) & 0xFF;
+                    _43 out_a = alpha + ((bg_a * (255 - alpha)) / 255); _15(out_a > 255) out_a = 255;
                     _43 final_r = (base_r * alpha + ((bg >> 16) & 0xFF) * (255 - alpha)) / 255; _43 final_g = (base_g * alpha + ((bg >> 8) & 0xFF) * (255 - alpha)) / 255; _43 final_b = (base_b * alpha + (bg & 0xFF) * (255 - alpha)) / 255;
-                    bb[screen_y * screen_w + screen_x] = (final_r << 16) | (final_g << 8) | final_b;
+                    bb[screen_y * screen_w + screen_x] = (out_a << 24) | (final_r << 16) | (final_g << 8) | final_b;
                 }
             }
         }
@@ -7618,6 +7617,8 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 	screen_w     = boot_info->screen_width;      
     screen_h     = boot_info->screen_height;
     screen_pitch = boot_info->framebuffer_pitch; 
+    v_cx         = screen_w / 2;
+    v_cy         = screen_h / 2;
     #ifndef __linux__
     fb           = (uint32_t*)(uint64_t)boot_info->framebuffer_addr;
 #endif
@@ -7746,7 +7747,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
     _43 clock_dirs[] = {213, 0, 42, 85, 128, 170}; 
     _39(_43 i=0; i<6; i++) { 
         planets[i].ang = clock_dirs[i]; planets[i].dist = 10;
-        planets[i].cur_x = 400.0f; planets[i].cur_y = 300.0f;
+        planets[i].cur_x = (float)v_cx; planets[i].cur_y = (float)v_cy;
         planets[i].real_ang = clock_dirs[i] * (3.14159f / 128.0f);
         str_cpy(planets[i].name, (i==0?(_30*)"TXT":i==1?(_30*)"APP":i==2?(_30*)"SYS":i==3?(_30*)"DSK":i==4?(_30*)"CMD":(_30*)"DEB")); 
     }
@@ -7756,7 +7757,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
     // HYBRID KERNEL INIT: PRE-LOAD NATIVE WINDOWS COMPONENTS
     // ============================================================
     windows[15].open = _128; // Open the Hybrid window by default
-    windows[15].minimized = _86;
+    windows[15].minimized = _128; // Start minimized so 3D Solar System is unobstructed
     print_win(&windows[15], "[HYBRID] KERNEL STARTING...\n");
     print_win(&windows[15], "[HYBRID] MOUNTING /dev/sdb1 to /mnt/windows...\n");
     load_windows_dll("ntoskrnl.exe");
@@ -8320,7 +8321,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
         /// ==========================================
         /// 1. DEEP SPACE VOID RENDERING PASS
         /// ==========================================
-        _39(_43 i = 0; i < screen_w*screen_h; i++) bb[i] = 0x000000;
+        memset(bb, 0, (size_t)screen_w * (size_t)screen_h * 4);
 		app_window_active = _86; // Setzt die 3D Engine in jedem Frame standardmaessig auf AUS (_86 = false)
         if (cfg_stars_on) {
             _39(_43 i=0; i<cfg_star_count; i++) {
@@ -8748,14 +8749,17 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 }
             }
         }
-        for (int i = 0; i < 9; i++) {
-            if (system[i].type == 0) {
-                Vec2 s_2d = Project3D(system[i].pos, v_cx, v_cy);
-                if (s_2d.x != -1) {
-                    DrawActiveSun(s_2d.x, s_2d.y, system[i].radius);
+        // In cfg_bg_mode == 0 (COSMOS), the 3D Solar System is rendered via GPU OpenGL (solar_system_animation.glb)
+        if (cfg_bg_mode == 1) {
+            for (int i = 0; i < 9; i++) {
+                if (system[i].type == 0) {
+                    Vec2 s_2d = Project3D(system[i].pos, v_cx, v_cy);
+                    if (s_2d.x != -1) {
+                        DrawActiveSun(s_2d.x, s_2d.y, system[i].radius);
+                    }
+                } else {
+                    if (cfg_planets_on) DrawPlanet3D(system[i].pos, system[i].radius, system[i].color, v_cx, v_cy);
                 }
-            } else {
-                if (cfg_planets_on) DrawPlanet3D(system[i].pos, system[i].radius, system[i].color, v_cx, v_cy);
             }
         }
 
@@ -8788,14 +8792,19 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 TextC(moon2d.x, moon2d.y - 4, fps_buffer, 0x000000, _128); 
             }
         } else {
-		    TextC(screen_w/2, screen_h/2 - 40, fps_buffer, 0x000000, _128); 
+		    TextC(screen_w/2 + 1, screen_h/2 - 39, fps_buffer, 0xFFFFFF, _128);
+		    TextC(screen_w/2, screen_h/2 - 40, fps_buffer, 0x110800, _128); 
         } 
 		
         /// ==========================================
         /// REAL-TIME CLOCK (RTC HUD OVERLAY)
         /// ==========================================
-        TextC(v_cx, v_cy-15, "COSMOS", 0x000000, _128);
-        TextC(v_cx, v_cy+5,  "SYSTEM", 0x000000, _128);
+        if (cfg_bg_mode == 0) {
+            TextC(v_cx + 1, v_cy - 14, "COSMOS", 0xFFFFFF, _128);
+            TextC(v_cx + 1, v_cy + 6,  "SYSTEM", 0xFFFFFF, _128);
+        }
+        TextC(v_cx, v_cy-15, "COSMOS", 0x110800, _128);
+        TextC(v_cx, v_cy+5,  "SYSTEM", 0x110800, _128);
 
 #ifdef __linux__
         // Query system real-time clock from kernel
@@ -8823,7 +8832,8 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 TextC(sun2d.x, sun2d.y + 4, ds, 0x000000, _128);
             }
         } else {
-            TextC(v_cx, v_cy+35, ds, 0x000000, _128);
+            TextC(v_cx + 1, v_cy + 36, ds, 0xFFFFFF, _128);
+            TextC(v_cx, v_cy+35, ds, 0x110800, _128);
         }
         } // Close else for cfg_bg_mode != 2
         /// ==========================================
@@ -11971,33 +11981,32 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 		} else {
 		    os_auto_update_timer = 0;
 		}
-		// --- AION 3D Avatar Global Input & State (Runs even if window is minimized) ---
+		// --- AION 3D Avatar Global Input & State (Always Active on Desktop, even if minimized or closed) ---
 		_44 is_modal_blocked_global = (windows[2].open AND !windows[2].minimized);
-        if (windows[18].open) {
+        if (windows[18].open && !windows[18].minimized) {
             aion_window_open = 1;
             aion_window_x = windows[18].fullscreen ? 0 : windows[18].x;
             aion_window_y = windows[18].fullscreen ? 0 : windows[18].y;
             aion_window_w = windows[18].fullscreen ? screen_w : windows[18].w;
             aion_window_h = windows[18].fullscreen ? screen_h : windows[18].h;
-            
-            extern int aion_avatar_screen_x;
-            extern int aion_avatar_screen_y;
+        } else {
+            aion_window_open = 0;
+            if (aion_window_w == 0) {
+                aion_window_x = 1450;
+                aion_window_y = 28;
+                aion_window_w = 450;
+                aion_window_h = 500;
+            }
+        }
+
+        if (aion_use_3d_avatar) {
             extern float aion_avatar_zoom;
-            bool over_aion_window = !windows[18].minimized && mouse_y > aion_window_y + 30 && mouse_y < aion_window_y + aion_window_h - 220 && mouse_x > aion_window_x && mouse_x < aion_window_x + aion_window_w;
-            bool over_avatar_frame = mouse_x > aion_avatar_screen_x - 150 && mouse_x < aion_avatar_screen_x + 150 && 
-                                     mouse_y > aion_avatar_screen_y - 400 && mouse_y < aion_avatar_screen_y + 100;
-            extern bool aion_mouse_dragging;
-            
-            if (!is_modal_blocked_global && (over_aion_window || over_avatar_frame || aion_mouse_dragging)) {
-                extern bool mouse_right_down;
+            bool over_aion_window = (windows[18].open && !windows[18].minimized) &&
+                                    mouse_y > aion_window_y + 30 && mouse_y < aion_window_y + aion_window_h - 220 &&
+                                    mouse_x > aion_window_x && mouse_x < aion_window_x + aion_window_w;
+
+            if (!is_modal_blocked_global && over_aion_window) {
                 extern int mouse_wheel;
-                extern bool mouse_down;
-
-                static int last_aion_mx = mouse_x;
-                static int last_aion_my = mouse_y;
-                int mdx = mouse_x - last_aion_mx;
-                int mdy = mouse_y - last_aion_my;
-
                 if (mouse_wheel != 0) {
                     if (mouse_wheel > 0) aion_avatar_zoom *= 1.25f;
                     else aion_avatar_zoom *= 0.8f;
@@ -12005,25 +12014,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     if (aion_avatar_zoom > 1000.0f) aion_avatar_zoom = 1000.0f;
                     mouse_wheel = 0;
                 }
-
-                if (mouse_down && !mouse_right_down) {
-                    extern float aion_avatar_rot_x;
-                    extern float aion_avatar_rot_y;
-                    aion_avatar_rot_y += (float)mdx * 0.5f;
-                    aion_avatar_rot_x += (float)mdy * 0.5f;
-                }
-                else if (mouse_right_down) {
-                    extern float aion_avatar_pan_x;
-                    extern float aion_avatar_pan_y;
-                    aion_avatar_pan_x += (float)mdx * 0.03f;
-                    aion_avatar_pan_y -= (float)mdy * 0.03f;
-                }
-
-                last_aion_mx = mouse_x;
-                last_aion_my = mouse_y;
             }
-        } else {
-            aion_window_open = 0;
         }
 
 		DrawAeroCursor(mouse_x, mouse_y);

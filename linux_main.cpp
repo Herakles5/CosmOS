@@ -425,6 +425,11 @@ SDL_AudioDeviceID global_audio_dev = 0;
 int global_screen_w = 0;
 int global_screen_h = 0;
 #include "avatar_renderer.h"
+#include "solar_system_glb.h"
+extern "C" volatile bool fb_dirty;
+extern int cfg_speed;
+extern bool cfg_planets_on;
+SolarSystemGLB global_solar_glb;
 
 int main(int argc, char** argv) {
     setenv("TZ", "Europe/Berlin", 1);
@@ -501,11 +506,11 @@ int main(int argc, char** argv) {
     extern uint32_t drive_count;
     // Drive setup is now properly handled in ahci_mount_drive()
 
-    // Boot Cosmos OS in a background thread!
+    // Boot Cosmos OS in a background thread! (1080p native resolution)
     BootInfo boot_info = {0};
-    boot_info.screen_width = 800;
-    boot_info.screen_height = 600;
-    boot_info.framebuffer_pitch = 800 * 4;
+    boot_info.screen_width = 1920;
+    boot_info.screen_height = 1080;
+    boot_info.framebuffer_pitch = 1920 * 4;
     
     std::thread cosmos_thread(cosmos_main, &boot_info);
     cosmos_thread.detach();
@@ -528,7 +533,14 @@ int main(int argc, char** argv) {
         aion_total_models = 1;
     }
     ::system("/root/coding/MeinOS/poll_radio.sh &");
-    load_a3d("/opt/meinos/model_0.glb");
+    aion_current_avatar_idx = 12; // Model 13/13 (Tuxedo Cat) as AION's default main system character
+    load_a3d("/opt/meinos/model_12.glb");
+    aion_load_config(12);
+    if (!global_solar_glb.load("/opt/meinos/solar_system_animation.glb")) {
+        if (!global_solar_glb.load("/root/coding/MeinOS/solar_system_animation.glb")) {
+            global_solar_glb.load("/root/coding/MeinOS/surreal_engine/assets/models/solar_system_animation.glb");
+        }
+    }
 
     while (running) {
         extern bool os_vsync_enabled;
@@ -621,34 +633,49 @@ int main(int argc, char** argv) {
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Upload the Cosmos OS Framebuffer to the texture
+        // ========== GPU-ACCELERATED 3D SOLAR SYSTEM (solar_system_animation.glb) ==========
+        if (cfg_bg_mode == 0 && global_solar_glb.loaded) {
+            float spd = (cfg_speed > 0) ? (float)cfg_speed : 1.0f;
+            global_solar_glb.update(0.016f * spd);
+            global_solar_glb.render(w, h, camera_fov, camera_z_offset, global_cam_rot_x, global_cam_rot_y, cfg_planets_on);
+        }
+
+        // Upload the Cosmos OS Framebuffer to the texture (only when dirty or resized)
         if (fb != nullptr) {
             glViewport(0, 0, w, h);
             glEnable(GL_TEXTURE_2D);
             glBindTexture(GL_TEXTURE_2D, texture_id);
             static uint32_t tex_w = 0;
             static uint32_t tex_h = 0;
+            bool tex_resized = false;
             if (tex_w != boot_info.screen_width || tex_h != boot_info.screen_height) {
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, boot_info.screen_width, boot_info.screen_height, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
                 tex_w = boot_info.screen_width;
                 tex_h = boot_info.screen_height;
+                tex_resized = true;
             }
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, boot_info.screen_width, boot_info.screen_height, GL_BGRA, GL_UNSIGNED_BYTE, fb);
+            if (fb_dirty || tex_resized) {
+                fb_dirty = false;
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, boot_info.screen_width, boot_info.screen_height, GL_BGRA, GL_UNSIGNED_BYTE, fb);
+            }
 
             glDisable(GL_DEPTH_TEST);
             glDisable(GL_LIGHTING);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glMatrixMode(GL_PROJECTION);
             glLoadIdentity();
             glMatrixMode(GL_MODELVIEW);
             glLoadIdentity();
 
-            glColor3f(1.0f, 1.0f, 1.0f);
+            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
             glBegin(GL_QUADS);
             glTexCoord2f(0.0f, 0.0f); glVertex2f(-1.0f, 1.0f);
             glTexCoord2f(1.0f, 0.0f); glVertex2f(1.0f, 1.0f);
             glTexCoord2f(1.0f, 1.0f); glVertex2f(1.0f, -1.0f);
             glTexCoord2f(0.0f, 1.0f); glVertex2f(-1.0f, -1.0f);
             glEnd();
+            glDisable(GL_BLEND);
             glDisable(GL_TEXTURE_2D);
             
             // ========== GPU-ACCELERATED FOG RING (Terra Infinita) ==========
