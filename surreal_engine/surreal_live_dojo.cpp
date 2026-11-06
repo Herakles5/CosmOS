@@ -57,7 +57,13 @@ static void TriggerNativeImagePicker() {
                 res.pop_back();
             }
             if (code == 0 && !res.empty()) {
-                std::string genCmd = "DISPLAY=:0 python3 /root/coding/MeinOS/surreal_engine/scripts/surreal_generator_gui.py \"" + res + "\" 2>/dev/null";
+                std::string escaped = "'";
+                for (char c : res) {
+                    if (c == '\'') escaped += "'\\''";
+                    else escaped += c;
+                }
+                escaped += "'";
+                std::string genCmd = "DISPLAY=:0 python3 /root/coding/MeinOS/surreal_engine/scripts/surreal_generator_gui.py " + escaped + " 2>/dev/null";
                 int ret = system(genCmd.c_str());
                 (void)ret;
             }
@@ -381,6 +387,14 @@ int main(int argc, char* argv[]) {
     Surreal::SurrealHybridRenderer hybridRenderer;
 
     if (!headless) {
+        // Automatically enable NVIDIA PRIME Render Offload (Zero-Cable-Swap via Onboard HDMI)
+        // when the GTX 1060 6GB (0000:01:00.0) is bound to the host nvidia driver
+        if (access("/dev/nvidia0", R_OK) == 0 && access("/sys/bus/pci/drivers/nvidia/0000:01:00.0", F_OK) == 0) {
+            setenv("__NV_PRIME_RENDER_OFFLOAD", "1", 0);
+            setenv("__NV_PRIME_RENDER_OFFLOAD_PROVIDER", "NVIDIA-G0", 0);
+            setenv("__GLX_VENDOR_LIBRARY_NAME", "nvidia", 0);
+            setenv("__VK_LAYER_NV_optimus", "NVIDIA_only", 0);
+        }
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
             std::cerr << "[-] SDL_Init failed: " << SDL_GetError() << "\n";
             headless = true;
@@ -1446,7 +1460,14 @@ int main(int argc, char* argv[]) {
                                 editor.CancelPlacement();
                             }
                         } else {
-                            if (ev.button.button == SDL_BUTTON_LEFT) camInput.isLeftMouseDown = true;
+                            if (ev.button.button == SDL_BUTTON_LEFT) {
+                                editor.PickEntityAtScreenPos(
+                                    ev.button.x, ev.button.y, winW, winH,
+                                    engine.cameraPos, engine.cameraTarget, engine.cameraUp,
+                                    engine.cameraFov, engine.world
+                                );
+                                camInput.isLeftMouseDown = true;
+                            }
                             if (ev.button.button == SDL_BUTTON_RIGHT) camInput.isRightMouseDown = true;
                         }
                     } else {
@@ -1653,6 +1674,39 @@ int main(int argc, char* argv[]) {
         if (hybridRenderer.backend == Surreal::RenderBackend::GPU_OPENGL && hybridRenderer.isGLInitialized) {
             // --- GPU HARDWARE OPENGL 4.6 PIPELINE ---
             const auto& curSky = skyProfiles[currentSkyProfile % 4];
+
+            // 1. Directional Shadow Depth Pass (2048x2048 PCF Shadow Map)
+            if (shadowsEnabled && hybridRenderer.shaderQuality >= 1) {
+                hybridRenderer.BeginShadowPass(engine.world.sunLight.direction, charPos);
+                for (auto entityID : engine.world.entities) {
+                    auto itMr = engine.world.meshRenderers.find(entityID);
+                    auto itTr = engine.world.transforms.find(entityID);
+                    if (itMr == engine.world.meshRenderers.end() || itTr == engine.world.transforms.end()) continue;
+                    const auto& mesh = itMr->second.mesh;
+                    if (!mesh || mesh->vertices.empty()) continue;
+                    // Skip flat ground plane in shadow caster pass to avoid self-shadowing acne
+                    if (entityID == floorEntity) continue;
+
+                    Surreal::Mat4 worldMat = itTr->second.GetWorldMatrix();
+                    bool isDyn = (entityID == avatarEntity) || (editor.animatedEntities.find(entityID) != editor.animatedEntities.end());
+                    bool upVBO = false;
+                    if (entityID == avatarEntity) {
+                        upVBO = character.dirtyGPUUpload;
+                        character.dirtyGPUUpload = false;
+                    } else if (isDyn) {
+                        auto itA = editor.animatedEntities.find(entityID);
+                        if (itA != editor.animatedEntities.end() && itA->second) {
+                            upVBO = itA->second->dirtyGPUUpload;
+                            itA->second->dirtyGPUUpload = false;
+                        }
+                    }
+                    hybridRenderer.RenderMeshShadow(mesh, worldMat, isDyn, upVBO);
+                }
+                hybridRenderer.EndShadowPass();
+            } else {
+                hybridRenderer.shadowMapReady = false;
+            }
+
             hybridRenderer.BeginFrame(curSky.horizonColor);
 
             std::vector<Surreal::PointLight> activePointLights;
@@ -1696,16 +1750,26 @@ int main(int argc, char* argv[]) {
 
                 Surreal::Mat4 worldMat = itTr->second.GetWorldMatrix();
 
-                // Topological Frustum Culling (skip off-screen city blocks & NPCs)
+                // Topological Frustum & Distance Culling (skip off-screen & distant city blocks in Fast/Balanced modes)
                 if (mesh->worldBounds.max.x >= mesh->worldBounds.min.x) {
                     Surreal::Vec3 localCenter = (mesh->worldBounds.min + mesh->worldBounds.max) * 0.5f;
                     Surreal::Vec3 localHalf = (mesh->worldBounds.max - mesh->worldBounds.min) * 0.5f;
                     Surreal::Vec3 worldCenter = worldMat.TransformPoint(localCenter);
                     float maxScale = std::max({std::abs(itTr->second.scale.x), std::abs(itTr->second.scale.y), std::abs(itTr->second.scale.z)});
-                    float worldRadius = localHalf.Length() * maxScale + 2.0f;
+                    float worldRadius = localHalf.Length() * maxScale + 1.0f;
                     if (!camFrustum.IsSphereVisible(worldCenter, worldRadius)) {
                         engine.culledMeshlets += std::max<uint32_t>(1u, static_cast<uint32_t>(mesh->meshlets.size()));
                         continue;
+                    }
+                    // Adaptive City-Block Distance Culling for high-FPS target (Fast & Balanced modes)
+                    if (entityID != floorEntity && entityID != avatarEntity && mesh->vertices.size() > 15000 &&
+                        editor.animatedEntities.find(entityID) == editor.animatedEntities.end()) {
+                        float blockDist = (itTr->second.position - engine.cameraPos).Length();
+                        float cullDist = (hybridRenderer.shaderQuality == 0) ? 16.5f : ((hybridRenderer.shaderQuality == 1) ? 26.0f : 60.0f);
+                        if (blockDist > cullDist) {
+                            engine.culledMeshlets += std::max<uint32_t>(1u, static_cast<uint32_t>(mesh->meshlets.size()));
+                            continue;
+                        }
                     }
                 }
                 engine.renderedMeshlets += std::max<uint32_t>(1u, static_cast<uint32_t>(mesh->meshlets.size()));
@@ -1785,152 +1849,159 @@ int main(int argc, char* argv[]) {
             // Render 3D Game Master Beacons & Energy Cores
             gameMaster.Render3D(hybridRenderer, vpMat, engine.world.sunLight.direction);
 
-            // Draw HUD into transparent buffer
-            std::fill(hudFramebuffer.begin(), hudFramebuffer.end(), 0x00000000);
-            std::string clipName = character.clips.empty() ? "None" : character.clips[0].name;
-            int benchProgress = isBenchmarkRunning ? ((benchmarkFrameCount * 100) / TOTAL_BENCHMARK_FRAMES) : 0;
+            // Draw HUD into transparent buffer (cached at ~20 Hz in Play Mode to eliminate 8.3 MB/frame CPU clear + PCIe upload bottleneck)
+            bool refreshHudPixels = (totalFramesRendered % 3 == 0) ||
+                                    (editor.mode == Surreal::EditorMode::EDIT_MODE) ||
+                                    showSkeletonDebug ||
+                                    (isBenchmarkRunning && ((benchmarkFrameCount & 3) == 0 || benchmarkFrameCount >= TOTAL_BENCHMARK_FRAMES - 1));
 
-            if (editor.mode == Surreal::EditorMode::PLAY_MODE) {
-                Surreal::SurrealHUD::RenderHUD(
-                    hudFramebuffer.data(), winW, winH,
-                    currentFps, engine.lastFrameTimeMs + lastSkinningMs, lastSkinningMs,
-                    engine.renderedMeshlets, engine.culledMeshlets,
-                    character.bindVertices.size(), character.activeDeformedMesh->indices.size() / 3,
-                    clipName, character.currentTime,
-                    playCamera.distance, playCamera.pitch, playCamera.yaw,
-                    isBenchmarkRunning, benchProgress,
-                    benchResults.isCompleted ? &benchResults : nullptr,
-                    aionLink.generation, aionLink.connected
-                );
-            }
+            if (refreshHudPixels) {
+                std::fill(hudFramebuffer.begin(), hudFramebuffer.end(), 0x00000000);
+                std::string clipName = character.clips.empty() ? "None" : character.clips[0].name;
+                int benchProgress = isBenchmarkRunning ? ((benchmarkFrameCount * 100) / TOTAL_BENCHMARK_FRAMES) : 0;
 
-            // 3D Floating Hologram Speech Bubble above Player Avatar
-            Surreal::Vec4 headClip = vpMat.TransformVec4(Surreal::Vec4(charPos.x, charPos.y + 2.05f, charPos.z, 1.0f));
-            if (headClip.w > 0.1f) {
-                float ndcX = headClip.x / headClip.w;
-                float ndcY = headClip.y / headClip.w;
-                if (ndcX >= -0.95f && ndcX <= 0.95f && ndcY >= -0.95f && ndcY <= 0.95f) {
-                    int sx = static_cast<int>((ndcX * 0.5f + 0.5f) * winW);
-                    int sy = static_cast<int>((1.0f - (ndcY * 0.5f + 0.5f)) * winH);
-
-                    // Check nearest dancer for duet prompt
-                    std::string nearDancer;
-                    for (const auto& ed : editor.entities) {
-                        if (editor.animatedEntities.count(ed.id) > 0 && (ed.position - charPos).Length() < 2.8f) {
-                            nearDancer = ed.name;
-                            break;
-                        }
-                    }
-
-                    if (!nearDancer.empty()) {
-                        char duetBuf[128];
-                        std::snprintf(duetBuf, sizeof(duetBuf), "[E] Dance Duet with %s!", nearDancer.c_str());
-                        int dw = 260, dh = 24;
-                        int dx = std::max(10, std::min((int)winW - dw - 10, sx - dw / 2));
-                        int dy = std::max(30, std::min((int)winH - dh - 10, sy - 34));
-                        Surreal::SurrealHUD::DrawPanel(hudFramebuffer.data(), winW, winH, dx, dy, dw, dh, 0x0D1B2A, 0.92f);
-                        Surreal::SurrealHUD::DrawString(hudFramebuffer.data(), winW, winH, dx + 10, dy + 7, duetBuf, 0xFFFF0077, 1);
-                    } else {
-                        // Hologram status badge
-                        int hw = 230, hh = 26;
-                        int hx = std::max(10, std::min((int)winW - hw - 10, sx - hw / 2));
-                        int hy = std::max(30, std::min((int)winH - hh - 10, sy - 32));
-                        Surreal::SurrealHUD::DrawPanel(hudFramebuffer.data(), winW, winH, hx, hy, hw, hh, 0x050E18, 0.85f);
-                        Surreal::SurrealHUD::DrawString(hudFramebuffer.data(), winW, winH, hx + 8, hy + 8, "[AION] Seoul Metropolis", 0xFF00FFFF, 1);
-                    }
+                if (editor.mode == Surreal::EditorMode::PLAY_MODE) {
+                    Surreal::SurrealHUD::RenderHUD(
+                        hudFramebuffer.data(), winW, winH,
+                        currentFps, engine.lastFrameTimeMs + lastSkinningMs, lastSkinningMs,
+                        engine.renderedMeshlets, engine.culledMeshlets,
+                        character.bindVertices.size(), character.activeDeformedMesh->indices.size() / 3,
+                        clipName, character.currentTime,
+                        playCamera.distance, playCamera.pitch, playCamera.yaw,
+                        isBenchmarkRunning, benchProgress,
+                        benchResults.isCompleted ? &benchResults : nullptr,
+                        aionLink.generation, aionLink.connected
+                    );
                 }
-            }
 
-            // Render Template Humanoid Skeleton ("Muster-Skelett") Debug Overlay
-            if (showSkeletonDebug) {
-                for (const auto& pair : editor.animatedEntities) {
-                    Surreal::EntityID entId = pair.first;
-                    const auto& skel = pair.second;
-                    if (!skel) continue;
-                    auto itTr = engine.world.transforms.find(entId);
-                    if (itTr == engine.world.transforms.end()) continue;
-                    Surreal::Mat4 worldM = itTr->second.GetWorldMatrix();
+                // 3D Floating Hologram Speech Bubble above Player Avatar
+                Surreal::Vec4 headClip = vpMat.TransformVec4(Surreal::Vec4(charPos.x, charPos.y + 2.05f, charPos.z, 1.0f));
+                if (headClip.w > 0.1f) {
+                    float ndcX = headClip.x / headClip.w;
+                    float ndcY = headClip.y / headClip.w;
+                    if (ndcX >= -0.95f && ndcX <= 0.95f && ndcY >= -0.95f && ndcY <= 0.95f) {
+                        int sx = static_cast<int>((ndcX * 0.5f + 0.5f) * winW);
+                        int sy = static_cast<int>((1.0f - (ndcY * 0.5f + 0.5f)) * winH);
 
-                    // Precompute screen positions for all joints
-                    std::vector<int> screenX(skel->joints.size(), -1);
-                    std::vector<int> screenY(skel->joints.size(), -1);
-                    std::vector<bool> onScreen(skel->joints.size(), false);
-
-                    for (size_t j = 0; j < skel->joints.size(); ++j) {
-                        const auto& joint = skel->joints[j];
-                        Surreal::Vec3 jointWorld = worldM.TransformPoint(joint.globalMatrix.TransformPoint(Surreal::Vec3(0,0,0)));
-                        int sx = 0, sy = 0;
-                        if (Surreal::SurrealHUD::WorldToScreen(jointWorld, vpMat, winW, winH, sx, sy)) {
-                            screenX[j] = sx;
-                            screenY[j] = sy;
-                            onScreen[j] = true;
-                        }
-                    }
-
-                    auto drawBoneLine = [&](int jA, int jB, uint32_t col) {
-                        if (jA >= 0 && jA < static_cast<int>(skel->joints.size()) &&
-                            jB >= 0 && jB < static_cast<int>(skel->joints.size())) {
-                            if (onScreen[jA] && onScreen[jB]) {
-                                // Draw crisp dual-pixel line for high visibility
-                                Surreal::SurrealHUD::DrawLine(hudFramebuffer.data(), winW, winH, screenX[jA], screenY[jA], screenX[jB], screenY[jB], col);
-                                Surreal::SurrealHUD::DrawLine(hudFramebuffer.data(), winW, winH, screenX[jA] + 1, screenY[jA], screenX[jB] + 1, screenY[jB], col);
+                        // Check nearest dancer for duet prompt
+                        std::string nearDancer;
+                        for (const auto& ed : editor.entities) {
+                            if (editor.animatedEntities.count(ed.id) > 0 && (ed.position - charPos).Length() < 2.8f) {
+                                nearDancer = ed.name;
+                                break;
                             }
                         }
-                    };
 
-                    // Draw anatomical hierarchical bone lines
-                    for (size_t j = 1; j < skel->joints.size(); ++j) {
-                        const auto& joint = skel->joints[j];
-                        // Skip ground Root (0) to Pelvis (1) line to avoid artificial crotch-to-floor tripod line
-                        if (joint.parentIndex > 0) {
-                            drawBoneLine(static_cast<int>(j), joint.parentIndex, 0xFF00FFCC);
-                        }
-                    }
-
-                    // Draw anatomical crossbars:
-                    // 1. Clavicle / Shoulder crossbar: Shoulder_L (6) <-> Shoulder_R (10)
-                    drawBoneLine(6, 10, 0xFF00FFCC);
-                    // 2. Pelvic girdle crossbar: UpLeg_L (14) <-> UpLeg_R (17)
-                    drawBoneLine(14, 17, 0xFF00FFCC);
-
-                    // Draw joint nodes (spheres)
-                    for (size_t j = 0; j < skel->joints.size(); ++j) {
-                        if (!onScreen[j]) continue;
-                        int sx = screenX[j];
-                        int sy = screenY[j];
-
-                        if (j == 0) continue; // Skip ground Root node
-
-                        if (j == 5) {
-                            // Head node: bright gold cranial sphere
-                            Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 4, 0xFFFFDD00);
-                        } else if (j == 1) {
-                            // Pelvis node: core amber center
-                            Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 4, 0xFFFFBB00);
-                        } else if (j == 3 || j == 4) {
-                            // Chest / Neck: golden yellow
-                            Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 3, 0xFFFFEE33);
-                        } else if (j == 6 || j == 10) {
-                            // Shoulders: neon yellow
-                            Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 3, 0xFFFFEE33);
-                        } else if (j == 9 || j == 13) {
-                            // Hands: neon cyan-gold
-                            Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 3, 0xFF55FFFF);
-                        } else if (j == 16 || j == 19) {
-                            // Feet: lime-cyan
-                            Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 3, 0xFF66FF88);
+                        if (!nearDancer.empty()) {
+                            char duetBuf[128];
+                            std::snprintf(duetBuf, sizeof(duetBuf), "[E] Dance Duet with %s!", nearDancer.c_str());
+                            int dw = 260, dh = 24;
+                            int dx = std::max(10, std::min((int)winW - dw - 10, sx - dw / 2));
+                            int dy = std::max(30, std::min((int)winH - dh - 10, sy - 34));
+                            Surreal::SurrealHUD::DrawPanel(hudFramebuffer.data(), winW, winH, dx, dy, dw, dh, 0x0D1B2A, 0.92f);
+                            Surreal::SurrealHUD::DrawString(hudFramebuffer.data(), winW, winH, dx + 10, dy + 7, duetBuf, 0xFFFF0077, 1);
                         } else {
-                            // General joint nodes
-                            Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 3, 0xFFFFCC00);
+                            // Hologram status badge
+                            int hw = 230, hh = 26;
+                            int hx = std::max(10, std::min((int)winW - hw - 10, sx - hw / 2));
+                            int hy = std::max(30, std::min((int)winH - hh - 10, sy - 32));
+                            Surreal::SurrealHUD::DrawPanel(hudFramebuffer.data(), winW, winH, hx, hy, hw, hh, 0x050E18, 0.85f);
+                            Surreal::SurrealHUD::DrawString(hudFramebuffer.data(), winW, winH, hx + 8, hy + 8, "[AION] Seoul Metropolis", 0xFF00FFFF, 1);
                         }
                     }
                 }
-            }
 
-            editor.RenderEditorHUD(hudFramebuffer.data(), winW, winH, currentFps, engine.lastFrameTimeMs, hybridRenderer.GetBackendName());
-            aionLink.RenderHUD(hudFramebuffer.data(), winW, winH);
-            gameMaster.RenderHUD(hudFramebuffer.data(), winW, winH, vpMat);
-            hybridRenderer.BlitHUDOverlay(hudFramebuffer.data(), winW, winH);
+                // Render Template Humanoid Skeleton ("Muster-Skelett") Debug Overlay
+                if (showSkeletonDebug) {
+                    for (const auto& pair : editor.animatedEntities) {
+                        Surreal::EntityID entId = pair.first;
+                        const auto& skel = pair.second;
+                        if (!skel) continue;
+                        auto itTr = engine.world.transforms.find(entId);
+                        if (itTr == engine.world.transforms.end()) continue;
+                        Surreal::Mat4 worldM = itTr->second.GetWorldMatrix();
+
+                        // Precompute screen positions for all joints
+                        std::vector<int> screenX(skel->joints.size(), -1);
+                        std::vector<int> screenY(skel->joints.size(), -1);
+                        std::vector<bool> onScreen(skel->joints.size(), false);
+
+                        for (size_t j = 0; j < skel->joints.size(); ++j) {
+                            const auto& joint = skel->joints[j];
+                            Surreal::Vec3 jointWorld = worldM.TransformPoint(joint.globalMatrix.TransformPoint(Surreal::Vec3(0,0,0)));
+                            int sx = 0, sy = 0;
+                            if (Surreal::SurrealHUD::WorldToScreen(jointWorld, vpMat, winW, winH, sx, sy)) {
+                                screenX[j] = sx;
+                                screenY[j] = sy;
+                                onScreen[j] = true;
+                            }
+                        }
+
+                        auto drawBoneLine = [&](int jA, int jB, uint32_t col) {
+                            if (jA >= 0 && jA < static_cast<int>(skel->joints.size()) &&
+                                jB >= 0 && jB < static_cast<int>(skel->joints.size())) {
+                                if (onScreen[jA] && onScreen[jB]) {
+                                    // Draw crisp dual-pixel line for high visibility
+                                    Surreal::SurrealHUD::DrawLine(hudFramebuffer.data(), winW, winH, screenX[jA], screenY[jA], screenX[jB], screenY[jB], col);
+                                    Surreal::SurrealHUD::DrawLine(hudFramebuffer.data(), winW, winH, screenX[jA] + 1, screenY[jA], screenX[jB] + 1, screenY[jB], col);
+                                }
+                            }
+                        };
+
+                        // Draw anatomical hierarchical bone lines
+                        for (size_t j = 1; j < skel->joints.size(); ++j) {
+                            const auto& joint = skel->joints[j];
+                            // Skip ground Root (0) to Pelvis (1) line to avoid artificial crotch-to-floor tripod line
+                            if (joint.parentIndex > 0) {
+                                drawBoneLine(static_cast<int>(j), joint.parentIndex, 0xFF00FFCC);
+                            }
+                        }
+
+                        // Draw anatomical crossbars:
+                        // 1. Clavicle / Shoulder crossbar: Shoulder_L (6) <-> Shoulder_R (10)
+                        drawBoneLine(6, 10, 0xFF00FFCC);
+                        // 2. Pelvic girdle crossbar: UpLeg_L (14) <-> UpLeg_R (17)
+                        drawBoneLine(14, 17, 0xFF00FFCC);
+
+                        // Draw joint nodes (spheres)
+                        for (size_t j = 0; j < skel->joints.size(); ++j) {
+                            if (!onScreen[j]) continue;
+                            int sx = screenX[j];
+                            int sy = screenY[j];
+
+                            if (j == 0) continue; // Skip ground Root node
+
+                            if (j == 5) {
+                                // Head node: bright gold cranial sphere
+                                Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 4, 0xFFFFDD00);
+                            } else if (j == 1) {
+                                // Pelvis node: core amber center
+                                Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 4, 0xFFFFBB00);
+                            } else if (j == 3 || j == 4) {
+                                // Chest / Neck: golden yellow
+                                Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 3, 0xFFFFEE33);
+                            } else if (j == 6 || j == 10) {
+                                // Shoulders: neon yellow
+                                Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 3, 0xFFFFEE33);
+                            } else if (j == 9 || j == 13) {
+                                // Hands: neon cyan-gold
+                                Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 3, 0xFF55FFFF);
+                            } else if (j == 16 || j == 19) {
+                                // Feet: lime-cyan
+                                Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 3, 0xFF66FF88);
+                            } else {
+                                // General joint nodes
+                                Surreal::SurrealHUD::DrawCircle(hudFramebuffer.data(), winW, winH, sx, sy, 3, 0xFFFFCC00);
+                            }
+                        }
+                    }
+                }
+
+                editor.RenderEditorHUD(hudFramebuffer.data(), winW, winH, currentFps, engine.lastFrameTimeMs, hybridRenderer.GetBackendName());
+                aionLink.RenderHUD(hudFramebuffer.data(), winW, winH);
+                gameMaster.RenderHUD(hudFramebuffer.data(), winW, winH, vpMat);
+            }
+            hybridRenderer.BlitHUDOverlay(hudFramebuffer.data(), winW, winH, refreshHudPixels);
             hybridRenderer.Present();
 
         } else {
@@ -2107,8 +2178,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Clean up OpenGL buffers, shaders, and GL context BEFORE destroying the SDL window!
+    hybridRenderer.Cleanup();
+
     if (window) {
         SDL_DestroyWindow(window);
+        window = nullptr;
     }
     if (!headless) SDL_Quit();
 

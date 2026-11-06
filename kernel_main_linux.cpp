@@ -10101,7 +10101,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 TextC(col1+bw/2, row6+10, "STEAM", 0xFFFFFF, _128); 
                 _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col1, row6, bw, bh)) { 
 #ifdef __linux__
-                    if (fork() == 0) { execlp("steam", "steam", NULL); exit(1); }
+                    if (fork() == 0) { execlp("prime-run", "prime-run", "steam", NULL); exit(1); }
 #endif
                     input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
                 }
@@ -10151,7 +10151,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 TextC(col2+bw/2, row6+10, "LUTRIS / EA", 0xFFFFFF, _128); 
                 _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col2, row6, bw, bh)) { 
 #ifdef __linux__
-                    if (fork() == 0) { execlp("lutris", "lutris", NULL); exit(1); }
+                    if (fork() == 0) { execlp("prime-run", "prime-run", "lutris", NULL); exit(1); }
 #endif
                     input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
                 }

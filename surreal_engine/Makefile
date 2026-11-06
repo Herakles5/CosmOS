@@ -3,7 +3,7 @@
 # ==============================================================================
 
 CXX ?= g++
-CXXFLAGS ?= -O3 -mavx2 -mfma -fopenmp -pthread -std=c++17 -Wall -Wextra -Wno-unused-parameter
+CXXFLAGS ?= -O2 -mavx2 -mfma -fopenmp -pthread -std=c++20 -Wall -Wextra -Wno-unused-parameter
 LDFLAGS ?= -lGL -lSDL2 -ldl -lm -fopenmp
 
 TARGET_STUDIO = surreal-editor
@@ -16,7 +16,7 @@ SRCS_PHOTO = photo3d_preview.cpp
 
 all: $(TARGET_STUDIO) $(TARGET_BENCH) $(TARGET_PHOTO)
 
-$(TARGET_STUDIO): $(SRCS_STUDIO)
+$(TARGET_STUDIO): $(SRCS_STUDIO) *.hpp
 	@echo "[BUILD] Compiling Surreal 3D Studio..."
 	$(CXX) $(CXXFLAGS) $(SRCS_STUDIO) $(LDFLAGS) -o $(TARGET_STUDIO)
 	@echo "[✓] $(TARGET_STUDIO) built successfully."
