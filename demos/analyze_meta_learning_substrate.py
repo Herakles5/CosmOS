@@ -1,66 +1,67 @@
-import re
 import json
+import re
 from typing import List, Dict, Any
 
 def analyze_meta_learning_substrate(requirement: str, learned_rules: int) -> Dict[str, Any]:
     """
-    Analyze the requirement for developing a self-evolving meta-learning substrate.
+    Analyze the given requirement for a self-modifying, entropy-aware meta-learning substrate.
     
     Args:
-        requirement: The requirement description.
+        requirement: The requirement string to analyze.
         learned_rules: The number of learned rules to consider.
-    
+        
     Returns:
         A dictionary containing the analysis results.
     """
     # Extract key components from the requirement
     key_components = [
-        "self-evolving",
+        "self-modifying",
+        "entropy-aware",
         "meta-learning",
-        "substrate",
-        "abstracts",
-        "operational patterns",
-        "higher-order representations",
-        "autonomously generate",
-        "validate",
-        "integrate",
-        "novel cognitive architectures",
-        "without external supervision"
+        "energy-optimal",
+        "cognitive architectures",
+        "quantum-classical nodes",
+        "free-energy gradients",
+        "systemic resilience",
+        "information integrity"
     ]
     
     # Check which components are present in the requirement
-    present_components = [comp for comp in key_components if comp.lower() in requirement.lower()]
+    present_components = [comp for comp in key_components if comp in requirement.lower()]
     
-    # Analyze the requirement based on the number of learned rules
-    if learned_rules < 50:
-        complexity_level = "low"
-        recommended_approach = "Start with basic pattern recognition and simple abstraction layers."
-    elif learned_rules < 100:
-        complexity_level = "medium"
-        recommended_approach = "Implement intermediate abstraction mechanisms and validation protocols."
+    # Calculate complexity score based on number of components and learned rules
+    complexity_score = len(present_components) * 10 + learned_rules // 10
+    
+    # Determine risk level based on complexity
+    if complexity_score > 100:
+        risk_level = "high"
+    elif complexity_score > 50:
+        risk_level = "medium"
     else:
-        complexity_level = "high"
-        recommended_approach = "Deploy advanced meta-learning frameworks with multi-level abstraction and autonomous validation."
+        risk_level = "low"
     
     # Generate recommendations based on the analysis
-    recommendations = [
-        "Implement a hierarchical abstraction layer to capture operational patterns.",
-        "Develop a validation mechanism to ensure the integrity of generated cognitive architectures.",
-        "Create an integration framework for seamlessly incorporating new architectures.",
-        "Establish a feedback loop for continuous self-improvement."
-    ]
+    recommendations = []
+    if "self-modifying" in present_components:
+        recommendations.append("Implement strict version control and rollback mechanisms for self-modification.")
+    if "entropy-aware" in present_components:
+        recommendations.append("Develop entropy monitoring and mitigation strategies.")
+    if "energy-optimal" in present_components:
+        recommendations.append("Optimize energy consumption through adaptive resource allocation.")
+    if "quantum-classical nodes" in present_components:
+        recommendations.append("Ensure compatibility and efficient communication between quantum and classical nodes.")
+    if "free-energy gradients" in present_components:
+        recommendations.append("Implement continuous calibration of free-energy gradients for stability.")
+    if "systemic resilience" in present_components:
+        recommendations.append("Design fault-tolerant architectures to maintain systemic resilience.")
+    if "information integrity" in present_components:
+        recommendations.append("Implement robust data validation and integrity checks.")
     
     return {
         "requirement": requirement,
         "learned_rules": learned_rules,
         "present_components": present_components,
-        "complexity_level": complexity_level,
-        "recommended_approach": recommended_approach,
+        "complexity_score": complexity_score,
+        "risk_level": risk_level,
         "recommendations": recommendations
     }
-
-if __name__ == "__main__":
-    requirement = "Develop a self-evolving meta-learning substrate that continuously abstracts its own operational patterns into higher-order representations, enabling AION NEXUS to autonomously generate, validate, and integrate novel cognitive architectures without external supervision."
-    learned_rules = 136
-    result = analyze_meta_learning_substrate(requirement, learned_rules)
-    print(json.dumps(result, indent=2))
