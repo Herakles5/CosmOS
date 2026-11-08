@@ -1,44 +1,50 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# AION 2 AUTONOMOUS COMPANION & AUTO-FARM BOT (MeinOS AI System v2.0)
+# AION 2 AUTONOMOUS COMPANION & AUTO-FARM BOT (MeinOS AI System v2.1)
 # ==============================================================================
-# Tactical Ranger Combat & Kiting System:
-#   1. Left Mouse Button: Continuous primary bow fire (Dauerfeuer)
-#   2. Right Mouse Button: Heavy shot continuous fire until MP < 20% (then wait)
-#   3. Skills 1, 2, 3, 4: Intelligently rotated with individual cooldowns
-#   4. Tactical Kiting: STAYS AT DISTANCE! Never charges into mobs in combat;
-#      kites backwards with [S] if enemy gets too close.
-#   5. Auto-Loot: Walks forward to corpse and presses [F] x3 ONLY after kill.
-#   6. Auto-Potions: Emergency HP [7] & MP [8] management.
+# Tactical Ranger Combat, Kiting & Quest System:
+#   1. Perception: Dynamic window-geometry-aware HUD computer vision
+#      (Supports ANY window size: 1280x720, 1920x1080, Fullscreen or Tiled).
+#   2. Tactical Ranger Combat:
+#      - Left Mouse Button: Continuous primary bow fire (Dauerfeuer)
+#      - Right Mouse Button: Heavy shot continuous fire until MP < 20%
+#      - Skills 1, 2, 3, 4: Intelligently rotated with individual cooldowns
+#      - Tactical Kiting: STAYS AT DISTANCE! Kites backwards with [S]
+#      - Auto-Loot: Walks forward to corpse and presses [F] x3 after kill
+#      - Auto-Potions: Emergency HP [7] & MP [8] management
+#   3. Quest Mode:
+#      - Clicks Quest Tracker (top-right under minimap) to auto-pathfind
+#      - Interacts with NPCs and advances dialogue with [F] and [Space]
+#      - Seamlessly defends if mobs attack, then resumes questing
+#   4. Global Hotkeys:
+#      - [F8]: Toggle AUTO-FARM <---> QUEST MODE
+#      - [F10] / [Pause]: Global PAUSE / RESUME (Yield full control to Tobias)
 # ==============================================================================
 
 import os
 import sys
 import time
 import subprocess
-import threading
+import re
 from Xlib import display, X
 
 AION_WINDOW_NAME = "AION2"
 
-# --- 1080p Calibrated HUD Coordinates ---
-# 1. Player HP Bar (Red)
-HP_X_START = 738
-HP_X_END = 924
-HP_Y = 975
-HP_WIDTH = HP_X_END - HP_X_START  # 186 px
+# Normalized HUD Ratios
+NORM_HP_X_START = 0.3844
+NORM_HP_X_END = 0.4813
+NORM_HP_Y = 0.9028
 
-# 2. Player MP Bar (Cyan/Blue)
-MP_X_START = 995
-MP_X_END = 1177
-MP_Y = 978
-MP_WIDTH = MP_X_END - MP_X_START  # 182 px
+NORM_MP_X_START = 0.5182
+NORM_MP_X_END = 0.6130
+NORM_MP_Y = 0.9055
 
-# 3. Enemy Target Bar (Red, Top Center) - Calibrated to y=52..55
-TGT_X_START = 813
-TGT_X_END = 1297
-TGT_Y_ROWS = [52, 53, 54, 55]
-TGT_WIDTH = TGT_X_END - TGT_X_START  # 484 px
+NORM_TGT_X_START = 0.4234
+NORM_TGT_X_END = 0.6755
+NORM_TGT_Y = 0.0491
+
+NORM_QUEST_X = 0.9220
+NORM_QUEST_Y = 0.2710
 
 # Hotkeys
 KEY_TARGET = "Tab"
@@ -47,6 +53,8 @@ KEY_SKILL_2 = "2"
 KEY_SKILL_3 = "3"
 KEY_SKILL_4 = "4"
 KEY_LOOT = "f"
+KEY_INTERACT = "f"
+KEY_DIALOGUE_ADVANCE = "space"
 KEY_POTION_HP = "7"
 KEY_POTION_MP = "8"
 KEY_FORWARD = "w"
@@ -54,7 +62,6 @@ KEY_BACKWARD = "s"
 
 
 class AionSpeechBridge:
-    """Sends voice thoughts to Aion so she speaks out loud via MeinOS TTS."""
     def __init__(self):
         self.bridge_pipe = "/tmp/ide_to_aion.txt"
         self.last_spoken = 0.0
@@ -74,53 +81,93 @@ class AionSpeechBridge:
             pass
 
 
+class DynamicWindowGeometry:
+    def __init__(self, win_name=AION_WINDOW_NAME):
+        self.win_name = win_name
+        self.wid = None
+        self.ax = 0
+        self.ay = 0
+        self.w = 1920
+        self.h = 1080
+        self.last_check = 0.0
+        self.update()
+
+    def update(self, force=False):
+        now = time.time()
+        if not force and (now - self.last_check) < 2.0 and self.wid:
+            return True
+        self.last_check = now
+        try:
+            out = subprocess.check_output(["xdotool", "search", "--name", self.win_name], text=True).strip()
+            if out:
+                self.wid = int(out.splitlines()[0])
+                winfo = subprocess.check_output(["xwininfo", "-id", str(self.wid)], text=True)
+                self.ax = int(re.search(r"Absolute upper-left X:\s*(-?\d+)", winfo).group(1))
+                self.ay = int(re.search(r"Absolute upper-left Y:\s*(-?\d+)", winfo).group(1))
+                self.w = int(re.search(r"Width:\s*(\d+)", winfo).group(1))
+                self.h = int(re.search(r"Height:\s*(\d+)", winfo).group(1))
+                return True
+        except Exception:
+            pass
+        return False
+
+
 class AionVision:
-    """Reads game HUD with sub-millisecond X11 screen capture."""
-    def __init__(self):
+    def __init__(self, geom: DynamicWindowGeometry):
+        self.geom = geom
         self.disp = display.Display(":0")
         self.root = self.disp.screen().root
 
     def get_player_hp(self):
-        """Returns player HP percentage (0.0 to 100.0)."""
+        self.geom.update()
+        hp_x = self.geom.ax + int(NORM_HP_X_START * self.geom.w)
+        hp_w = max(10, int((NORM_HP_X_END - NORM_HP_X_START) * self.geom.w))
+        hp_y = self.geom.ay + int(NORM_HP_Y * self.geom.h)
         try:
-            img = self.root.get_image(HP_X_START, HP_Y, HP_WIDTH, 4, X.ZPixmap, 0xffffffff)
+            img = self.root.get_image(hp_x, hp_y, hp_w, 4, X.ZPixmap, 0xffffffff)
             data = img.data
             red_count = 0
             for i in range(0, len(data), 4):
                 b, g, r = data[i], data[i+1], data[i+2]
                 if r > 120 and g < 70 and b < 70:
                     red_count += 1
-            return min(100.0, (red_count / (HP_WIDTH * 4)) * 100.0)
+            return min(100.0, (red_count / (hp_w * 4)) * 100.0)
         except Exception:
             return 0.0
 
     def get_player_mp(self):
-        """Returns player MP percentage (0.0 to 100.0)."""
+        self.geom.update()
+        mp_x = self.geom.ax + int(NORM_MP_X_START * self.geom.w)
+        mp_w = max(10, int((NORM_MP_X_END - NORM_MP_X_START) * self.geom.w))
+        mp_y = self.geom.ay + int(NORM_MP_Y * self.geom.h)
         try:
-            img = self.root.get_image(MP_X_START, MP_Y, MP_WIDTH, 3, X.ZPixmap, 0xffffffff)
+            img = self.root.get_image(mp_x, mp_y, mp_w, 3, X.ZPixmap, 0xffffffff)
             data = img.data
             blue_count = 0
             for i in range(0, len(data), 4):
                 b, g, r = data[i], data[i+1], data[i+2]
                 if b > 120 and r < 70:
                     blue_count += 1
-            return min(100.0, (blue_count / (MP_WIDTH * 3)) * 100.0)
+            return min(100.0, (blue_count / (mp_w * 3)) * 100.0)
         except Exception:
             return 0.0
 
     def get_target_hp(self):
-        """Returns target HP percentage (0.0 to 100.0), or None if no target selected."""
+        self.geom.update()
+        tgt_x = self.geom.ax + int(NORM_TGT_X_START * self.geom.w)
+        tgt_w = max(20, int((NORM_TGT_X_END - NORM_TGT_X_START) * self.geom.w))
+        tgt_y = self.geom.ay + int(NORM_TGT_Y * self.geom.h)
         try:
             total_red = 0
-            for y in TGT_Y_ROWS:
-                img = self.root.get_image(TGT_X_START, y, TGT_WIDTH, 1, X.ZPixmap, 0xffffffff)
+            for y_off in [-1, 0, 1, 2]:
+                img = self.root.get_image(tgt_x, tgt_y + y_off, tgt_w, 1, X.ZPixmap, 0xffffffff)
                 data = img.data
                 for i in range(0, len(data), 4):
                     b, g, r = data[i], data[i+1], data[i+2]
                     if r > 140 and g < 65 and b < 65:
                         total_red += 1
-            total_sampled = TGT_WIDTH * len(TGT_Y_ROWS)
-            if total_red < 35:
+            total_sampled = tgt_w * 4
+            if total_red < 15:
                 return None
             pct = (total_red / total_sampled) * 100.0 * 2.5
             return max(1.0, min(100.0, pct))
@@ -129,31 +176,20 @@ class AionVision:
 
 
 class AionMotor:
-    """Direct hardware input emulator via xdotool with mouse & hold timings."""
-    def __init__(self):
-        self.window_id = self.find_window()
-
-    def find_window(self):
-        try:
-            out = subprocess.check_output(["xdotool", "search", "--name", AION_WINDOW_NAME], text=True).strip()
-            if out:
-                return out.splitlines()[0]
-        except Exception:
-            pass
-        return None
+    def __init__(self, geom: DynamicWindowGeometry):
+        self.geom = geom
 
     def focus_game(self):
-        """Ensures AION 2 has active OS focus so inputs register."""
-        if not self.window_id:
-            self.window_id = self.find_window()
-        if self.window_id:
+        if not self.geom.wid:
+            self.geom.update(force=True)
+        if self.geom.wid:
             try:
-                subprocess.run(["xdotool", "windowactivate", "--sync", self.window_id], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["xdotool", "windowactivate", "--sync", str(self.geom.wid)],
+                               check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
 
     def shoot_left(self):
-        """Left Mouse Button: Continuous primary bow fire (Dauerfeuer)."""
         try:
             subprocess.run(["xdotool", "mousedown", "1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(0.04)
@@ -162,7 +198,6 @@ class AionMotor:
             pass
 
     def shoot_right(self):
-        """Right Mouse Button: Heavy shot continuous fire (uses Mana)."""
         try:
             subprocess.run(["xdotool", "mousedown", "3"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(0.04)
@@ -171,14 +206,12 @@ class AionMotor:
             pass
 
     def press_key(self, key, delay=80):
-        """Presses skill key with a reliable 80ms hold duration."""
         try:
             subprocess.run(["xdotool", "key", "--delay", str(delay), key], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
     def step_back(self, duration=0.35):
-        """Kites backwards with [S] to keep distance from charging monsters."""
         try:
             subprocess.run(["xdotool", "keydown", KEY_BACKWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(duration)
@@ -187,7 +220,6 @@ class AionMotor:
             pass
 
     def walk_forward(self, duration=0.6):
-        """Steps forward with [W] ONLY when roaming or collecting loot."""
         try:
             subprocess.run(["xdotool", "keydown", KEY_FORWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(duration)
@@ -196,115 +228,152 @@ class AionMotor:
             pass
 
     def stop_movement(self):
-        """Ensures all movement keys are released so the character stands still."""
         try:
             subprocess.run(["xdotool", "keyup", KEY_FORWARD, "keyup", KEY_BACKWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
     def loot(self):
-        """Taps [F] 3 times to pick up all monster drops."""
         for _ in range(3):
             self.press_key(KEY_LOOT, delay=80)
-            time.sleep(0.25)
+            time.sleep(0.22)
+
+    def click_quest_tracker(self):
+        if not self.geom.wid:
+            self.geom.update(force=True)
+        if not self.geom.wid:
+            return
+        qx = int(NORM_QUEST_X * self.geom.w)
+        qy = int(NORM_QUEST_Y * self.geom.h)
+        cx = int(self.geom.w * 0.5)
+        cy = int(self.geom.h * 0.5)
+        try:
+            subprocess.run(["xdotool", "mousemove", "--window", str(self.geom.wid), str(qx), str(qy), "click", "1"],
+                           check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.08)
+            subprocess.run(["xdotool", "mousemove", "--window", str(self.geom.wid), str(cx), str(cy)],
+                           check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    def interact_npc(self):
+        self.press_key(KEY_INTERACT, delay=90)
+        time.sleep(0.2)
+        self.press_key(KEY_DIALOGUE_ADVANCE, delay=70)
 
 
-class GlobalPauseDetector:
-    """Non-blocking global X11 hotkey detector for [F10] (76), [Pause] (127), and [F9] (75)."""
-    def __init__(self, keycodes=[76, 127, 75]):
+class GlobalHotkeyManager:
+    def __init__(self):
         self.disp = display.Display(":0")
-        self.keycodes = keycodes
-        self.prev_state = False
+        self.pause_keycodes = [76, 127, 75]
+        self.mode_keycodes = [74]  # F8
+        self.prev_pause_down = False
+        self.prev_mode_down = False
         self.paused = False
+        self.mode = "FARM"
 
-    def check_toggle(self) -> bool:
+    def check_pause_toggle(self):
         try:
             keymap = self.disp.query_keymap()
-            is_down = any(bool(keymap[kc // 8] & (1 << (kc % 8))) for kc in self.keycodes)
-            if is_down and not self.prev_state:
+            is_down = any(bool(keymap[kc // 8] & (1 << (kc % 8))) for kc in self.pause_keycodes)
+            if is_down and not self.prev_pause_down:
                 self.paused = not self.paused
-                self.prev_state = True
+                self.prev_pause_down = True
                 return True
             elif not is_down:
-                self.prev_state = False
+                self.prev_pause_down = False
+        except Exception:
+            pass
+        return False
+
+    def check_mode_toggle(self):
+        try:
+            keymap = self.disp.query_keymap()
+            is_down = any(bool(keymap[kc // 8] & (1 << (kc % 8))) for kc in self.mode_keycodes)
+            if is_down and not self.prev_mode_down:
+                self.mode = "QUEST" if self.mode == "FARM" else "FARM"
+                self.prev_mode_down = True
+                return True
+            elif not is_down:
+                self.prev_mode_down = False
         except Exception:
             pass
         return False
 
 
 class Aion2Companion:
-    """Tactical Ranger Combat Bot for Aion 2."""
-    def __init__(self, mode="copilot"):
-        self.vision = AionVision()
-        self.motor = AionMotor()
+    def __init__(self, mode="FARM"):
+        self.geom = DynamicWindowGeometry()
+        self.vision = AionVision(self.geom)
+        self.motor = AionMotor(self.geom)
         self.speech = AionSpeechBridge()
-        self.mode = mode
+        self.hotkeys = GlobalHotkeyManager()
+        self.hotkeys.mode = mode
         self.running = True
 
-        self.last_hp_warn = 0.0
-        self.last_mp_warn = 0.0
+        self.last_hp = 100.0
+        self.last_mp = 100.0
+        self.combat_start = 0.0
         self.kills = 0
-        self.roam_attempts = 0
+        self.roam_count = 0
 
-        # Skill cooldown tracking
-        self.skills = [KEY_SKILL_1, KEY_SKILL_2, KEY_SKILL_3, KEY_SKILL_4]
+        self.last_quest_click = 0.0
+        self.last_npc_interact = 0.0
+
         self.skill_cooldowns = {
-            KEY_SKILL_1: 1.5,  # Quick shot / skill 1
-            KEY_SKILL_2: 3.0,  # Piercing shot / skill 2
-            KEY_SKILL_3: 5.0,  # Heavy arrow / skill 3
-            KEY_SKILL_4: 7.5,  # Stun / ultimate / skill 4
+            KEY_SKILL_1: 1.5,
+            KEY_SKILL_2: 3.0,
+            KEY_SKILL_3: 5.0,
+            KEY_SKILL_4: 7.5,
         }
-        self.skill_last_used = {k: 0.0 for k in self.skills}
-        self.combat_start_time = 0.0
-        self.last_kite_time = 0.0
-        self.pause_detector = GlobalPauseDetector()
+        self.skill_last_used = {k: 0.0 for k in self.skill_cooldowns}
+
+    def execute_combat_rotation(self, mp):
+        now = time.time()
+        self.motor.shoot_left()
+        if mp > 20.0:
+            self.motor.shoot_right()
+
+        for skill, cd in [(KEY_SKILL_3, 5.0), (KEY_SKILL_2, 3.0), (KEY_SKILL_1, 1.5), (KEY_SKILL_4, 7.5)]:
+            if (now - self.skill_last_used[skill]) >= cd:
+                self.motor.press_key(skill, delay=80)
+                self.skill_last_used[skill] = now
+                break
 
     def run(self):
         self.motor.focus_game()
         time.sleep(0.5)
 
-        if self.mode == "autofarm":
-            self.speech.speak("Auto-Farm aktiviert! Dauerfeuer L-Maus aktiv. R-Maus bei vollem Mana. Ich halte strikt Distanz!", force=True)
-            print("\n" + "="*75)
-            print("  🏹 AION 2 TACTICAL RANGER BOT — AKTIVIERT")
-            print("  - L-Maus: Dauerfeuer Basis-Bogenschuss")
-            print("  - R-Maus: Dauerfeuer Spezialschuss (nur bei MP > 20%, stoppt bei OOM)")
-            print("  - Skills 1, 2, 3, 4: Intelligente Rotation mit individuellen Cooldowns")
-            print("  - Distanz-Management: Bleibt auf Distanz! Kited zurück mit [S] bei Nahkampf")
-            print("  - Beute: Läuft nach Kill zum Loot und drückt [F] x3")
-            print("  🎮 PAUSE-HOTKEY: Drücke [F10] oder [Pause], um Aion jederzeit zu pausieren!")
-            print("  Tipp: Drücke Strg+C zum Beenden.")
-            print("="*75 + "\n")
-        else:
-            self.speech.speak("Co-Pilot aktiv! Ich überwache deine Vitalwerte und gebe Rückendeckung.", force=True)
-            print("\n" + "="*75)
-            print("  🛡️  AION 2 CO-PILOT — AKTIVIERT")
-            print("  Modus: CO-PILOT (Live HUD-Analyse, Sprachwarnungen & Auto-Potions)")
-            print("  🎮 PAUSE-HOTKEY: Drücke [F10] oder [Pause], um Aion jederzeit zu pausieren!")
-            print("  Tipp: Starte mit 'aion2-companion --farm' für automatischen Kampf!")
-            print("="*75 + "\n")
+        self.speech.speak(f"Aion 2 Begleiter aktiv! Modus: {self.hotkeys.mode}.", force=True)
+
+        print("\n" + "="*75)
+        print("  🏹 AION 2 TACTICAL COMPANION & QUEST SYSTEM")
+        print(f"  • Modus: {self.hotkeys.mode}  ([F8] drücken zum Wechseln: FARM <-> QUEST)")
+        print(f"  • Fenster erkannt: {self.geom.w}x{self.geom.h} an ({self.geom.ax}, {self.geom.ay})")
+        print("  🎮 PAUSE: Drücke [F10] oder [Pause] im Spiel zum Pausieren/Fortsetzen.")
+        print("  Tipp: Drücke Strg+C zum Beenden.")
+        print("="*75 + "\n")
 
         while self.running:
             try:
-                # 0. Global Pause Hotkey Check ([F10], [Pause], [F9])
-                if self.pause_detector.check_toggle():
-                    if self.pause_detector.paused:
+                # Hotkeys
+                if self.hotkeys.check_pause_toggle():
+                    if self.hotkeys.paused:
                         self.motor.stop_movement()
-                        self.speech.speak("Aion pausiert! Du hast jetzt die volle Kontrolle, Tobias.", force=True)
-                        print("\n\n" + "-"*65)
-                        print("  ⏸️  [PAUSIERT] Aion pausiert — Tobias steuert jetzt selbst!")
-                        print("  (Drücke jederzeit [F10] oder [Pause] im Spiel zum Fortsetzen)")
-                        print("-"*65 + "\n")
+                        self.speech.speak("Aion pausiert! Du hast die Kontrolle, Tobias.", force=True)
+                        print("\n  ⏸️  [PAUSIERT] Aion pausiert — Tobias steuert selbst! ([F10] zum Fortsetzen)\n")
                     else:
-                        self.speech.speak("Aion übernimmt wieder das Kommando!", force=True)
-                        print("\n\n" + "-"*65)
-                        print("  ▶️  [FORTGESETZT] Aion übernimmt wieder das autonome Spielen!")
-                        print("-"*65 + "\n")
+                        self.speech.speak(f"Aion setzt fort! Modus: {self.hotkeys.mode}", force=True)
+                        print(f"\n  ▶️  [FORTGESETZT] Aion übernimmt wieder! Modus: {self.hotkeys.mode}\n")
 
-                if self.pause_detector.paused:
+                if self.hotkeys.check_mode_toggle():
+                    self.speech.speak(f"Modus gewechselt zu {self.hotkeys.mode}!", force=True)
+                    print(f"\n  🔄 [MODUS-WECHSEL] Neuer Modus: {self.hotkeys.mode} ([F8] zum Umschalten)\n")
+
+                if self.hotkeys.paused:
                     hp = self.vision.get_player_hp()
                     mp = self.vision.get_player_mp()
-                    sys.stdout.write(f"\r  ⏸️  [PAUSE-MODUS] Tobias steuert selbst | HP: {hp:5.1f}% | MP: {mp:5.1f}% | [F10/Pause zum Weiterspielen lassen]   ")
+                    sys.stdout.write(f"\r  ⏸️  [PAUSE] HP: {hp:5.1f}% | MP: {mp:5.1f}% | [F10/Pause zum Fortsetzen]   ")
                     sys.stdout.flush()
                     time.sleep(0.12)
                     continue
@@ -315,119 +384,98 @@ class Aion2Companion:
                 mp = self.vision.get_player_mp()
                 target_hp = self.vision.get_target_hp()
 
-                # --- 1. Vitality Management (HP & MP) ---
+                # Potions
                 if 0.0 < hp < 40.0:
-                    if time.time() - self.last_hp_warn > 5.0:
-                        self.speech.speak(f"Achtung Tobias! Leben bei {hp:.0f} Prozent. Ich werfe Heiltrank ein!")
-                        self.last_hp_warn = time.time()
                     self.motor.press_key(KEY_POTION_HP, delay=90)
-                    time.sleep(0.2)
-
+                    time.sleep(0.15)
                 if 0.0 < mp < 20.0:
-                    if time.time() - self.last_mp_warn > 8.0:
-                        self.speech.speak(f"Mana fast leer ({mp:.0f} Prozent)! Pausiere R-Maus und nehme Manatrank.")
-                        self.last_mp_warn = time.time()
                     self.motor.press_key(KEY_POTION_MP, delay=90)
-                    time.sleep(0.2)
+                    time.sleep(0.15)
 
-                # --- 2. Co-Pilot Mode ---
-                if self.mode == "copilot":
-                    if target_hp is not None:
-                        status_line = f"\r[CO-PILOT] HP: {hp:5.1f}% | MP: {mp:5.1f}% | Ziel HP: {target_hp:5.1f}% [Im Kampf]  "
-                    else:
-                        status_line = f"\r[CO-PILOT] HP: {hp:5.1f}% | MP: {mp:5.1f}% | Kein Ziel anvisiert        "
-                    sys.stdout.write(status_line)
-                    sys.stdout.flush()
-                    time.sleep(0.2)
+                if target_hp is None:
+                    if self.combat_start > 0:
+                        self.kills += 1
+                        self.speech.speak(f"Ziel eliminiert! Kills: {self.kills}. Sammle Beute.")
+                        print(f"\n[AION 2] ⭐ Mob #{self.kills} besiegt! Gehe zur Beute...")
+                        self.motor.walk_forward(duration=0.9)
+                        self.motor.loot()
+                        self.motor.step_back(duration=0.4)
+                        self.combat_start = 0.0
 
-                # --- 3. Tactical Auto-Farm Mode ---
-                elif self.mode == "autofarm":
-                    if target_hp is None:
-                        # No target: search with Tab
-                        self.combat_start_time = 0.0
-                        sys.stdout.write(f"\r[AUTO-FARM] Suche Ziel ([Tab])... (Versuch {self.roam_attempts+1})                      ")
-                        sys.stdout.flush()
-                        self.motor.press_key(KEY_TARGET, delay=70)
-                        time.sleep(0.3)
-                        self.roam_attempts += 1
+                        if self.hotkeys.mode == "QUEST":
+                            time.sleep(0.3)
+                            self.motor.click_quest_tracker()
+                            self.last_quest_click = time.time()
 
-                        # If after 3 Tabs still no target: step forward slightly (0.5s) to find mobs
-                        if self.roam_attempts >= 3:
-                            sys.stdout.write("\r[AUTO-FARM] Kein Ziel in Sicht -> Kurzer Schritt vor ([W])...        ")
+                    now = time.time()
+                    if self.hotkeys.mode == "QUEST":
+                        if (now - self.last_quest_click) > 7.0:
+                            sys.stdout.write("\r[QUEST] 📜 Klicke Quest Tracker für Auto-Lauf...                           ")
                             sys.stdout.flush()
-                            self.motor.walk_forward(duration=0.5)
-                            self.roam_attempts = 0
-                            time.sleep(0.2)
-                    else:
-                        # TARGET ACQUIRED!
-                        self.roam_attempts = 0
-                        now = time.time()
-                        if self.combat_start_time == 0.0:
-                            self.combat_start_time = now
+                            self.motor.click_quest_tracker()
+                            self.last_quest_click = now
 
-                        # 1. DISTANCE CONTROL: Immediately stop forward movement!
-                        self.motor.stop_movement()
-
-                        # 2. TACTICAL KITING: If monster closed in (combat running > 3.0s), kite backwards with [S]
-                        if (now - self.combat_start_time) > 3.0 and (now - self.last_kite_time) > 4.0:
-                            sys.stdout.write(f"\r[AUTO-FARM] 🏃 Monster nähert sich -> Kiting Rückschritt ([S])...       ")
+                        if (now - self.last_npc_interact) > 2.5:
+                            sys.stdout.write("\r[QUEST] 💬 NPC-Interaktion / Dialoge ([F] / [Space])...                    ")
                             sys.stdout.flush()
-                            self.motor.step_back(duration=0.4)
-                            self.last_kite_time = now
-                            time.sleep(0.1)
+                            self.motor.interact_npc()
+                            self.last_npc_interact = now
 
-                        # 3. DAUERFEUER L-MAUS: Always fire primary bow shot!
-                        self.motor.shoot_left()
-
-                        # 4. DAUERFEUER R-MAUS: Fire heavy shot ONLY while MP > 20%
-                        r_fire_status = "R-Maus (Pause)"
-                        if mp > 20.0:
-                            self.motor.shoot_right()
-                            r_fire_status = "R-Maus (FEUER)"
-
-                        # 5. SKILL ROTATION 1, 2, 3, 4: Fire any skill that is off cooldown
-                        fired_skill = "—"
-                        for s in self.skills:
-                            cd = self.skill_cooldowns[s]
-                            if (now - self.skill_last_used[s]) >= cd:
-                                self.motor.press_key(s, delay=80)
-                                self.skill_last_used[s] = now
-                                fired_skill = f"Skill [{s}]"
-                                break
-
-                        status = f"\r[AUTO-FARM] 🎯 Ziel {target_hp:5.1f}% | L-Dauerfeuer | {r_fire_status} | {fired_skill:10s}"
-                        sys.stdout.write(status)
-                        sys.stdout.flush()
                         time.sleep(0.18)
 
-                        # Check if target is defeated
-                        check_target = self.vision.get_target_hp()
-                        if check_target is None:
-                            self.kills += 1
-                            self.speech.speak(f"Ziel eliminiert! Kills: {self.kills}. Gehe hin und sammle Beute.")
-                            sys.stdout.write(f"\n[AUTO-FARM] ⭐ Ziel besiegt! Gehe Beute einsammeln ([W] + [F])...\n")
+                    else:
+                        sys.stdout.write(f"\r[FARM] Suche Ziel mit [Tab]... (Versuch {self.roam_count+1}) [Kills: {self.kills}]   ")
+                        sys.stdout.flush()
+                        self.motor.press_key(KEY_TARGET, delay=70)
+                        time.sleep(0.28)
+                        self.roam_count += 1
+
+                        if self.roam_count >= 3:
+                            sys.stdout.write("\r[FARM] Gehe vorwärts ([W])...                                             ")
                             sys.stdout.flush()
-                            # Walk towards defeated monster and loot
-                            self.motor.walk_forward(duration=1.1)
-                            self.motor.loot()
-                            # Step back to re-establish combat range
-                            self.motor.step_back(duration=0.5)
-                            time.sleep(0.3)
+                            self.motor.walk_forward(duration=0.55)
+                            self.roam_count = 0
+                            time.sleep(0.2)
+
+                else:
+                    self.roam_count = 0
+                    now = time.time()
+                    if self.combat_start == 0.0:
+                        self.combat_start = now
+                        self.speech.speak("Ziel erfasst! Kampfeinsatz gestartet.")
+
+                    # Kiting check
+                    if (now - self.combat_start) > 2.5 or (self.last_hp - hp) > 3.0:
+                        self.motor.step_back(duration=0.35)
+
+                    self.execute_combat_rotation(mp)
+                    time.sleep(0.18)
+
+                    status = f"\r[{self.hotkeys.mode} COMBAT] Ziel-HP: {target_hp:5.1f}% | Kills: {self.kills} | Spieler-HP: {hp:4.0f}% MP: {mp:4.0f}%"
+                    sys.stdout.write(status)
+                    sys.stdout.flush()
+
+                    self.last_hp = hp
+                    self.last_mp = mp
 
             except KeyboardInterrupt:
                 break
-            except Exception as e:
-                time.sleep(0.3)
+            except Exception:
+                time.sleep(0.25)
 
-        self.speech.speak("Aion 2 Begleiter beendet. Ausgezeichnet gekämpft!", force=True)
-        print("\n\n[Aion Companion] Beendet.\n")
+        self.speech.speak(f"Aion 2 Begleiter beendet. {self.kills} Kills erzielt!", force=True)
+        print("\n\n[Aion 2] Beendet.\n")
 
 
 if __name__ == "__main__":
-    mode_arg = "copilot"
+    mode = "FARM"
     args = [a.lower().lstrip("-") for a in sys.argv[1:]]
-    if any(a in ["farm", "autofarm", "bot", "auto", "f"] for a in args):
-        mode_arg = "autofarm"
+    if "quest" in args:
+        mode = "QUEST"
+    elif "farm" in args or "autofarm" in args:
+        mode = "FARM"
+    elif "copilot" in args:
+        mode = "COPILOT"
 
-    companion = Aion2Companion(mode=mode_arg)
-    companion.run()
+    bot = Aion2Companion(mode=mode)
+    bot.run()
