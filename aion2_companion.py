@@ -209,6 +209,29 @@ class AionMotor:
             time.sleep(0.25)
 
 
+class GlobalPauseDetector:
+    """Non-blocking global X11 hotkey detector for [F10] (76), [Pause] (127), and [F9] (75)."""
+    def __init__(self, keycodes=[76, 127, 75]):
+        self.disp = display.Display(":0")
+        self.keycodes = keycodes
+        self.prev_state = False
+        self.paused = False
+
+    def check_toggle(self) -> bool:
+        try:
+            keymap = self.disp.query_keymap()
+            is_down = any(bool(keymap[kc // 8] & (1 << (kc % 8))) for kc in self.keycodes)
+            if is_down and not self.prev_state:
+                self.paused = not self.paused
+                self.prev_state = True
+                return True
+            elif not is_down:
+                self.prev_state = False
+        except Exception:
+            pass
+        return False
+
+
 class Aion2Companion:
     """Tactical Ranger Combat Bot for Aion 2."""
     def __init__(self, mode="copilot"):
@@ -234,6 +257,7 @@ class Aion2Companion:
         self.skill_last_used = {k: 0.0 for k in self.skills}
         self.combat_start_time = 0.0
         self.last_kite_time = 0.0
+        self.pause_detector = GlobalPauseDetector()
 
     def run(self):
         self.motor.focus_game()
@@ -248,6 +272,7 @@ class Aion2Companion:
             print("  - Skills 1, 2, 3, 4: Intelligente Rotation mit individuellen Cooldowns")
             print("  - Distanz-Management: Bleibt auf Distanz! Kited zurück mit [S] bei Nahkampf")
             print("  - Beute: Läuft nach Kill zum Loot und drückt [F] x3")
+            print("  🎮 PAUSE-HOTKEY: Drücke [F10] oder [Pause], um Aion jederzeit zu pausieren!")
             print("  Tipp: Drücke Strg+C zum Beenden.")
             print("="*75 + "\n")
         else:
@@ -255,11 +280,35 @@ class Aion2Companion:
             print("\n" + "="*75)
             print("  🛡️  AION 2 CO-PILOT — AKTIVIERT")
             print("  Modus: CO-PILOT (Live HUD-Analyse, Sprachwarnungen & Auto-Potions)")
+            print("  🎮 PAUSE-HOTKEY: Drücke [F10] oder [Pause], um Aion jederzeit zu pausieren!")
             print("  Tipp: Starte mit 'aion2-companion --farm' für automatischen Kampf!")
             print("="*75 + "\n")
 
         while self.running:
             try:
+                # 0. Global Pause Hotkey Check ([F10], [Pause], [F9])
+                if self.pause_detector.check_toggle():
+                    if self.pause_detector.paused:
+                        self.motor.stop_movement()
+                        self.speech.speak("Aion pausiert! Du hast jetzt die volle Kontrolle, Tobias.", force=True)
+                        print("\n\n" + "-"*65)
+                        print("  ⏸️  [PAUSIERT] Aion pausiert — Tobias steuert jetzt selbst!")
+                        print("  (Drücke jederzeit [F10] oder [Pause] im Spiel zum Fortsetzen)")
+                        print("-"*65 + "\n")
+                    else:
+                        self.speech.speak("Aion übernimmt wieder das Kommando!", force=True)
+                        print("\n\n" + "-"*65)
+                        print("  ▶️  [FORTGESETZT] Aion übernimmt wieder das autonome Spielen!")
+                        print("-"*65 + "\n")
+
+                if self.pause_detector.paused:
+                    hp = self.vision.get_player_hp()
+                    mp = self.vision.get_player_mp()
+                    sys.stdout.write(f"\r  ⏸️  [PAUSE-MODUS] Tobias steuert selbst | HP: {hp:5.1f}% | MP: {mp:5.1f}% | [F10/Pause zum Weiterspielen lassen]   ")
+                    sys.stdout.flush()
+                    time.sleep(0.12)
+                    continue
+
                 self.motor.focus_game()
 
                 hp = self.vision.get_player_hp()

@@ -202,10 +202,40 @@ class AionMotor:
         except Exception:
             pass
 
+    def stop_movement(self):
+        """Releases movement keys so character halts immediately."""
+        try:
+            subprocess.run(["xdotool", "keyup", KEY_FORWARD, "keyup", KEY_BACKWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
     def loot(self):
         for _ in range(3):
             self.press_key(KEY_LOOT, delay=80)
             time.sleep(0.25)
+
+
+class GlobalPauseDetector:
+    """Non-blocking global X11 hotkey detector for [F10] (76), [Pause] (127), and [F9] (75)."""
+    def __init__(self, keycodes=[76, 127, 75]):
+        self.disp = display.Display(":0")
+        self.keycodes = keycodes
+        self.prev_state = False
+        self.paused = False
+
+    def check_toggle(self) -> bool:
+        try:
+            keymap = self.disp.query_keymap()
+            is_down = any(bool(keymap[kc // 8] & (1 << (kc % 8))) for kc in self.keycodes)
+            if is_down and not self.prev_state:
+                self.paused = not self.paused
+                self.prev_state = True
+                return True
+            elif not is_down:
+                self.prev_state = False
+        except Exception:
+            pass
+        return False
 
 
 class NexusCombatBrain:
@@ -337,6 +367,7 @@ class AionNexusAutonomousGamer:
         self.combat_start = 0.0
         self.roam_count = 0
         self.kills = self.brain.total_kills
+        self.pause_detector = GlobalPauseDetector()
 
         # Cooldown manager for discrete skills
         self.skill_cooldowns = {
@@ -461,6 +492,7 @@ class AionNexusAutonomousGamer:
         print(f"  • Bekannte Zustandskombinationen: {len(self.brain.q_table)}")
         print(f"  • Explorations-Rate: {self.brain.epsilon*100:.1f}%")
         print("  • Belohnungen: +DPS, +Kills, +Kiting-Distanz | -Schaden, -OOM")
+        print("  🎮 PAUSE-HOTKEY: Drücke jederzeit [F10] oder [Pause], um Aion zu pausieren!")
         print("  Tipp: Drücke Strg+C zum Beenden.")
         print("="*80 + "\n")
 
@@ -468,6 +500,30 @@ class AionNexusAutonomousGamer:
 
         while self.running:
             try:
+                # 0. Global Pause Hotkey Check ([F10], [Pause], [F9])
+                if self.pause_detector.check_toggle():
+                    if self.pause_detector.paused:
+                        self.motor.stop_movement()
+                        self.speech.speak("Aion pausiert! Du hast jetzt die volle Kontrolle, Tobias.", force=True)
+                        print("\n\n" + "-"*65)
+                        print("  ⏸️  [PAUSIERT] Aion pausiert — Tobias steuert jetzt selbst!")
+                        print("  (Drücke jederzeit [F10] oder [Pause] im Spiel zum Fortsetzen)")
+                        print("-"*65 + "\n")
+                    else:
+                        self.speech.speak("Aion übernimmt wieder das Kommando!", force=True)
+                        print("\n\n" + "-"*65)
+                        print("  ▶️  [FORTGESETZT] Aion Nexus übernimmt wieder das autonome Spielen!")
+                        print("-"*65 + "\n")
+
+                if self.pause_detector.paused:
+                    # Paused: Do NOT focus, do NOT send keys, do NOT click
+                    hp = self.vision.get_player_hp()
+                    mp = self.vision.get_player_mp()
+                    sys.stdout.write(f"\r  ⏸️  [PAUSE-MODUS] Tobias steuert | HP: {hp:5.1f}% | MP: {mp:5.1f}% | [F10/Pause zum Weiterspielen lassen]   ")
+                    sys.stdout.flush()
+                    time.sleep(0.12)
+                    continue
+
                 self.motor.focus_game()
 
                 hp = self.vision.get_player_hp()
@@ -584,3 +640,4 @@ class AionNexusAutonomousGamer:
 if __name__ == "__main__":
     gamer = AionNexusAutonomousGamer()
     gamer.run()
+
