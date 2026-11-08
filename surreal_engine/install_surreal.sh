@@ -27,8 +27,8 @@ mkdir -p "${PREFIX}/share/surreal/avatar"
 mkdir -p "${PREFIX}/lib/pkgconfig"
 
 # 2. Compile Engine Binaries
-echo "[*] Building Surreal Studio & Dojo Editor (AVX2 + OpenGL 4.6)..."
-g++ -O3 -mavx2 -mfma -std=c++17 "${SRC_DIR}/surreal_live_dojo.cpp" -lSDL2 -lGL -lm -lpthread -o "${SRC_DIR}/surreal_live_dojo"
+echo "[*] Building Surreal Studio & Dojo Editor (AVX2 + OpenGL 4.6 + OpenMP)..."
+g++ -O3 -mavx2 -mfma -fopenmp -pthread -std=c++20 "${SRC_DIR}/surreal_live_dojo.cpp" -lSDL2 -lGL -ldl -lm -fopenmp -o "${SRC_DIR}/surreal_live_dojo"
 
 echo "[*] Building Surreal Benchmark Utility..."
 g++ -O3 -mavx2 -mfma -std=c++17 "${SRC_DIR}/test_surreal_benchmark.cpp" -lSDL2 -lGL -lm -lpthread -o "${SRC_DIR}/test_surreal_benchmark"

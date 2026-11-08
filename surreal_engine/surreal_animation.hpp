@@ -203,10 +203,17 @@ public:
     void Update(float dt) {
         if (joints.empty() || bindVertices.empty()) return;
 
-        // High-poly avatar cadence limiter: cap 50k+ vertex skinning to ~45 Hz
-        if (hasFootBaseOffset && staticAttributesInitialized && bindVertices.size() > 25000 && dt > 0.0f && dt < 0.021f) {
+        // Static / clip-less skeletal models: once calibrated on frame 1, joints never change — skip 86k-vertex CPU LBS & PCIe VBO upload!
+        const bool hasActiveAnim = (activeClipIndex >= 0 && activeClipIndex < (int)clips.size() &&
+                                    clips[activeClipIndex].duration > 0.0f && !clips[activeClipIndex].channels.empty());
+        if (!hasActiveAnim && hasFootBaseOffset && staticAttributesInitialized) {
+            return;
+        }
+
+        // High-poly avatar cadence limiter: cap 25k+ vertex skinning to ~30 Hz
+        if (hasFootBaseOffset && staticAttributesInitialized && bindVertices.size() > 25000 && dt > 0.0f && dt < 0.032f) {
             skinDtAccum += dt;
-            if (skinDtAccum < 0.021f) {
+            if (skinDtAccum < 0.032f) {
                 return;
             }
             dt = skinDtAccum;
@@ -366,7 +373,8 @@ private:
         Vertex3D* __restrict outPtr = activeDeformedMesh->vertices.data();
 
         // Multi-threaded Pre-Blended 3x4 Affine Linear Blend Skinning (LBS) via OpenMP
-        #pragma omp parallel for schedule(static)
+        // Avoid thread-barrier wakeups for compact (<8192 vertex) auto-rigged dancers
+        #pragma omp parallel for schedule(static) if(vertCount >= 8192)
         for (int i = 0; i < (int)vertCount; ++i) {
             const SkinnedVertex3D& b = bindPtr[i];
             const float px = b.position.x, py = b.position.y, pz = b.position.z;
