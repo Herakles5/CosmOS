@@ -1,0 +1,147 @@
+#!/bin/bash
+# ==============================================================================
+# CosmOS / Linux Dynamic GPU Switcher (NVIDIA GTX 1060 6GB <-> VFIO-PCI)
+# ==============================================================================
+# Allows the NVIDIA GeForce GTX 1060 6GB (01:00.0 / 01:00.1) to run natively
+# on the Linux Host via PRIME Render Offload (outputting through the Mainboard
+# Onboard Intel HD 630 HDMI port without unplugging any cables!) whenever no
+# passthrough VM is running, and dynamically switches to vfio-pci when
+# Win10_Gaming starts.
+# ==============================================================================
+
+GPU_PCI="0000:01:00.0"
+AUD_PCI="0000:01:00.1"
+LOG="/var/log/libvirt/cosmos_hook.log"
+mkdir -p /var/log/libvirt
+
+log_msg() {
+    echo "$(date '+%F %T') [cosmos-gpu-mode] $*" | tee -a "$LOG"
+}
+
+switch_to_host() {
+    log_msg "Switching GTX 1060 6GB ($GPU_PCI) to Linux Host NVIDIA driver..."
+
+    KVER="$(uname -r)"
+    if [ ! -f "/lib/modules/$KVER/updates/dkms/nvidia.ko.zst" ] && [ -d "/var/lib/dkms/nvidia/580.178.04/$KVER/x86_64/module" ]; then
+        mkdir -p "/lib/modules/$KVER/updates/dkms"
+        cp -f /var/lib/dkms/nvidia/580.178.04/"$KVER"/x86_64/module/*.ko.zst "/lib/modules/$KVER/updates/dkms/"
+        depmod -a
+    fi
+
+    # 1. Unbind from vfio-pci if currently bound
+    if [ -e "/sys/bus/pci/drivers/vfio-pci/$GPU_PCI" ]; then
+        echo "$GPU_PCI" > /sys/bus/pci/drivers/vfio-pci/unbind 2>/dev/null || true
+    fi
+    if [ -e "/sys/bus/pci/drivers/vfio-pci/$AUD_PCI" ]; then
+        echo "$AUD_PCI" > /sys/bus/pci/drivers/vfio-pci/unbind 2>/dev/null || true
+    fi
+
+    echo "" > "/sys/bus/pci/devices/$GPU_PCI/driver_override" 2>/dev/null || true
+    echo "" > "/sys/bus/pci/devices/$AUD_PCI/driver_override" 2>/dev/null || true
+
+    modprobe -r vfio_pci vfio_pci_core vfio_iommu_type1 vfio 2>/dev/null || true
+
+    # 2. Load native NVIDIA kernel modules + DRM modeset for PRIME Render Offload
+    modprobe nvidia
+    modprobe nvidia_modeset
+    modprobe nvidia_uvm
+    modprobe nvidia_drm modeset=1
+
+    if [ ! -e "/sys/bus/pci/drivers/nvidia/$GPU_PCI" ]; then
+        echo "$GPU_PCI" > /sys/bus/pci/drivers/nvidia/bind 2>/dev/null || true
+    fi
+    # Keep GP106 HDMI audio (01:00.1) unbound on Linux host (monitor HDMI is on Intel PCH),
+    # preventing WirePlumber from locking /dev/snd/controlC*!
+
+    nvidia-smi >/dev/null 2>&1 || true
+    log_msg "GTX 1060 6GB is now ACTIVE on Linux Host (PRIME Render Offload + CUDA ready)."
+}
+
+switch_to_vfio() {
+    log_msg "Switching GTX 1060 6GB ($GPU_PCI) to VFIO-PCI for VM Passthrough..."
+
+    # 1. Release PipeWire/WirePlumber handle on NVIDIA GP106 HDMI Audio (01:00.1)
+    XDG_RUNTIME_DIR=/run/user/0 pactl set-card-profile alsa_card.pci-0000_01_00.1 off 2>/dev/null || true
+
+    # 2. Stop Steam first if running (otherwise Steam immediately respawns steamwebhelper on /dev/nvidiactl!)
+    if pgrep -x steam >/dev/null 2>&1 || pgrep -f "[s]teamwebhelper" >/dev/null 2>&1; then
+        log_msg "Closing Linux Steam client before handing GTX 1060 + 500GB drive to Win10_Gaming..."
+        pkill -TERM -x steam 2>/dev/null || true
+        sleep 0.5
+        pkill -KILL -f "[s]teamwebhelper" 2>/dev/null || true
+        pkill -KILL -x steam 2>/dev/null || true
+    fi
+
+    # 3. Release any remaining non-Xorg processes using /dev/nvidia*
+    for pass in 1 2 3; do
+        pids="$(fuser /dev/nvidia* /dev/dri/by-path/pci-0000:01:00.0-* 2>/dev/null || true)"
+        [ -z "$pids" ] && break
+        for pid in $pids; do
+            comm_name="$(ps -p "$pid" -o comm= 2>/dev/null || true)"
+            if [ -n "$comm_name" ] && [ "$comm_name" != "Xorg" ]; then
+                log_msg "Stopping GPU client process $comm_name (PID $pid) [pass $pass]"
+                if [ "$pass" -eq 1 ]; then
+                    kill -TERM "$pid" 2>/dev/null || true
+                else
+                    kill -KILL "$pid" 2>/dev/null || true
+                fi
+            fi
+        done
+        sleep 0.4
+    done
+
+    # 4. Unload NVIDIA DRM/modeset/driver cleanly and unbind PCI devices
+    modprobe -r nvidia_drm 2>/dev/null || true
+    modprobe -r nvidia_modeset 2>/dev/null || true
+    modprobe -r nvidia_uvm 2>/dev/null || true
+
+    if [ -e "/sys/bus/pci/drivers/snd_hda_intel/$AUD_PCI" ]; then
+        echo "$AUD_PCI" > /sys/bus/pci/drivers/snd_hda_intel/unbind 2>/dev/null || true
+    fi
+    if [ -e "/sys/bus/pci/drivers/nvidia/$GPU_PCI" ]; then
+        echo "$GPU_PCI" > /sys/bus/pci/drivers/nvidia/unbind 2>/dev/null || true
+    fi
+    modprobe -r nvidia 2>/dev/null || true
+
+    # 5. Bind both 01:00.0 and 01:00.1 to vfio-pci
+    modprobe vfio-pci
+    echo "vfio-pci" > "/sys/bus/pci/devices/$GPU_PCI/driver_override"
+    echo "vfio-pci" > "/sys/bus/pci/devices/$AUD_PCI/driver_override"
+    if [ ! -e "/sys/bus/pci/drivers/vfio-pci/$GPU_PCI" ]; then
+        echo "$GPU_PCI" > /sys/bus/pci/drivers/vfio-pci/bind 2>/dev/null || true
+    fi
+    if [ ! -e "/sys/bus/pci/drivers/vfio-pci/$AUD_PCI" ]; then
+        echo "$AUD_PCI" > /sys/bus/pci/drivers/vfio-pci/bind 2>/dev/null || true
+    fi
+
+    log_msg "GTX 1060 6GB is now bound to vfio-pci for VM Passthrough."
+}
+
+show_status() {
+    echo "=== PCI Binding ($GPU_PCI / $AUD_PCI) ==="
+    lspci -nnk -s 01:00
+    if [ -e "/sys/bus/pci/drivers/nvidia/$GPU_PCI" ]; then
+        echo ""
+        echo "=== Host NVIDIA Driver Active (PRIME Render Offload via Onboard HDMI) ==="
+        nvidia-smi
+    else
+        echo ""
+        echo "=== VFIO-PCI Passthrough Mode Active ==="
+    fi
+}
+
+case "${1:-status}" in
+    host|nvidia)
+        switch_to_host
+        ;;
+    vfio|vm)
+        switch_to_vfio
+        ;;
+    status)
+        show_status
+        ;;
+    *)
+        echo "Usage: $0 {host|vfio|status}"
+        exit 1
+        ;;
+esac

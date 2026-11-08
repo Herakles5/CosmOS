@@ -10,6 +10,10 @@ test_texture_inspect
 test_surreal_gltf
 test_surreal_benchmark
 *.o
+*.so
+vk_layer/build/
+vk_layer/layer_selftest
+vk_layer/upscale_bench
 
 # Local-only symlinks created by install_aion_avatars.sh and downloaded models
 assets/models/Aion_Avatar_*
