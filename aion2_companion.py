@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# AION 2 AUTONOMOUS COMPANION & AUTO-FARM BOT (MeinOS AI System)
+# AION 2 AUTONOMOUS COMPANION & AUTO-FARM BOT (MeinOS AI System v2.0)
 # ==============================================================================
-# Connects Aion (the MeinOS companion) directly to NCSoft's AION 2:
-#   1. Perception: Sub-millisecond HUD vision (HP/MP & 100% calibrated Target Bar)
-#   2. Action: Real key-hold emulation via xdotool (Anti-Cheat-Safe)
-#   3. Movement & Combat:
-#      - Auto-Roam: Steps forward with [W] when searching for monsters
-#      - Lock-On: Presses [Tab] to acquire target
-#      - Bow Combo: [1], [2], [3], [4] and Left-Click auto-shoot
-#      - Auto-Loot: Steps to defeated monster and presses [F] x3
-#      - Emergency: Auto-drinks HP [7] & MP [8] potions
-#   4. Voice: Real-time commentary through Aion Bridge
+# Tactical Ranger Combat & Kiting System:
+#   1. Left Mouse Button: Continuous primary bow fire (Dauerfeuer)
+#   2. Right Mouse Button: Heavy shot continuous fire until MP < 20% (then wait)
+#   3. Skills 1, 2, 3, 4: Intelligently rotated with individual cooldowns
+#   4. Tactical Kiting: STAYS AT DISTANCE! Never charges into mobs in combat;
+#      kites backwards with [S] if enemy gets too close.
+#   5. Auto-Loot: Walks forward to corpse and presses [F] x3 ONLY after kill.
+#   6. Auto-Potions: Emergency HP [7] & MP [8] management.
 # ==============================================================================
 
 import os
@@ -36,7 +34,7 @@ MP_X_END = 1177
 MP_Y = 978
 MP_WIDTH = MP_X_END - MP_X_START  # 182 px
 
-# 3. Enemy Target Bar (Red, Top Center)
+# 3. Enemy Target Bar (Red, Top Center) - Calibrated to y=52..55
 TGT_X_START = 813
 TGT_X_END = 1297
 TGT_Y_ROWS = [52, 53, 54, 55]
@@ -44,14 +42,15 @@ TGT_WIDTH = TGT_X_END - TGT_X_START  # 484 px
 
 # Hotkeys
 KEY_TARGET = "Tab"
-KEY_ATTACK_1 = "1"
-KEY_ATTACK_2 = "2"
-KEY_ATTACK_3 = "3"
-KEY_ATTACK_4 = "4"
+KEY_SKILL_1 = "1"
+KEY_SKILL_2 = "2"
+KEY_SKILL_3 = "3"
+KEY_SKILL_4 = "4"
 KEY_LOOT = "f"
 KEY_POTION_HP = "7"
 KEY_POTION_MP = "8"
 KEY_FORWARD = "w"
+KEY_BACKWARD = "s"
 
 
 class AionSpeechBridge:
@@ -121,7 +120,7 @@ class AionVision:
                     if r > 140 and g < 65 and b < 65:
                         total_red += 1
             total_sampled = TGT_WIDTH * len(TGT_Y_ROWS)
-            if total_red < 30:
+            if total_red < 35:
                 return None
             pct = (total_red / total_sampled) * 100.0 * 2.5
             return max(1.0, min(100.0, pct))
@@ -130,7 +129,7 @@ class AionVision:
 
 
 class AionMotor:
-    """Direct hardware input emulator via xdotool with proper key-hold delays."""
+    """Direct hardware input emulator via xdotool with mouse & hold timings."""
     def __init__(self):
         self.window_id = self.find_window()
 
@@ -153,15 +152,42 @@ class AionMotor:
             except Exception:
                 pass
 
-    def press_key(self, key, delay=70):
-        """Presses key with a human-like 70ms hold duration."""
+    def shoot_left(self):
+        """Left Mouse Button: Continuous primary bow fire (Dauerfeuer)."""
+        try:
+            subprocess.run(["xdotool", "mousedown", "1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.04)
+            subprocess.run(["xdotool", "mouseup", "1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    def shoot_right(self):
+        """Right Mouse Button: Heavy shot continuous fire (uses Mana)."""
+        try:
+            subprocess.run(["xdotool", "mousedown", "3"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.04)
+            subprocess.run(["xdotool", "mouseup", "3"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    def press_key(self, key, delay=80):
+        """Presses skill key with a reliable 80ms hold duration."""
         try:
             subprocess.run(["xdotool", "key", "--delay", str(delay), key], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
-    def walk_forward(self, duration=0.8):
-        """Holds [W] forward to approach monsters or loot."""
+    def step_back(self, duration=0.35):
+        """Kites backwards with [S] to keep distance from charging monsters."""
+        try:
+            subprocess.run(["xdotool", "keydown", KEY_BACKWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(duration)
+            subprocess.run(["xdotool", "keyup", KEY_BACKWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    def walk_forward(self, duration=0.6):
+        """Steps forward with [W] ONLY when roaming or collecting loot."""
         try:
             subprocess.run(["xdotool", "keydown", KEY_FORWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(duration)
@@ -169,10 +195,10 @@ class AionMotor:
         except Exception:
             pass
 
-    def mouse_shoot(self):
-        """Clicks left mouse button for basic bow auto-attack."""
+    def stop_movement(self):
+        """Ensures all movement keys are released so the character stands still."""
         try:
-            subprocess.run(["xdotool", "click", "1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["xdotool", "keyup", KEY_FORWARD, "keyup", KEY_BACKWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
@@ -184,45 +210,56 @@ class AionMotor:
 
 
 class Aion2Companion:
-    """Main companion logic controlling Co-Pilot and Auto-Farm."""
+    """Tactical Ranger Combat Bot for Aion 2."""
     def __init__(self, mode="copilot"):
         self.vision = AionVision()
         self.motor = AionMotor()
         self.speech = AionSpeechBridge()
-        self.mode = mode  # "copilot" or "autofarm"
+        self.mode = mode
         self.running = True
 
         self.last_hp_warn = 0.0
         self.last_mp_warn = 0.0
-        self.skill_index = 0
         self.kills = 0
         self.roam_attempts = 0
 
+        # Skill cooldown tracking
+        self.skills = [KEY_SKILL_1, KEY_SKILL_2, KEY_SKILL_3, KEY_SKILL_4]
+        self.skill_cooldowns = {
+            KEY_SKILL_1: 1.5,  # Quick shot / skill 1
+            KEY_SKILL_2: 3.0,  # Piercing shot / skill 2
+            KEY_SKILL_3: 5.0,  # Heavy arrow / skill 3
+            KEY_SKILL_4: 7.5,  # Stun / ultimate / skill 4
+        }
+        self.skill_last_used = {k: 0.0 for k in self.skills}
+        self.combat_start_time = 0.0
+        self.last_kite_time = 0.0
+
     def run(self):
-        # 1. Activate game window
         self.motor.focus_game()
         time.sleep(0.5)
 
         if self.mode == "autofarm":
-            self.speech.speak("Aion 2 Auto-Farm Modus aktiviert! Ich übernehme Zielen, Laufen und Bogenschuss-Combos.", force=True)
-            print("\n" + "="*70)
-            print("  🏹 AION 2 AUTONOMOUS FARM BOT — AKTIVIERT")
-            print("  Modus: AUTO-FARM (Tab-Targeting, Pfeil-Combos, Laufen & Looten)")
+            self.speech.speak("Auto-Farm aktiviert! Dauerfeuer L-Maus aktiv. R-Maus bei vollem Mana. Ich halte strikt Distanz!", force=True)
+            print("\n" + "="*75)
+            print("  🏹 AION 2 TACTICAL RANGER BOT — AKTIVIERT")
+            print("  - L-Maus: Dauerfeuer Basis-Bogenschuss")
+            print("  - R-Maus: Dauerfeuer Spezialschuss (nur bei MP > 20%, stoppt bei OOM)")
+            print("  - Skills 1, 2, 3, 4: Intelligente Rotation mit individuellen Cooldowns")
+            print("  - Distanz-Management: Bleibt auf Distanz! Kited zurück mit [S] bei Nahkampf")
+            print("  - Beute: Läuft nach Kill zum Loot und drückt [F] x3")
             print("  Tipp: Drücke Strg+C zum Beenden.")
-            print("="*70 + "\n")
+            print("="*75 + "\n")
         else:
-            self.speech.speak("Aion 2 Co-Pilot aktiviert! Ich überwache dein Leben und gebe dir Rückendeckung.", force=True)
-            print("\n" + "="*70)
+            self.speech.speak("Co-Pilot aktiv! Ich überwache deine Vitalwerte und gebe Rückendeckung.", force=True)
+            print("\n" + "="*75)
             print("  🛡️  AION 2 CO-PILOT — AKTIVIERT")
-            print("  Modus: CO-PILOT (Live HUD-Analyse, Sprach-Warnungen & Notfall-Heilung)")
-            print("  Tipp: Starte mit 'aion2-companion --farm' für selbstständigen Kampf!")
-            print("="*70 + "\n")
-
-        rotation = [KEY_ATTACK_1, KEY_ATTACK_2, KEY_ATTACK_1, KEY_ATTACK_3, KEY_ATTACK_4]
+            print("  Modus: CO-PILOT (Live HUD-Analyse, Sprachwarnungen & Auto-Potions)")
+            print("  Tipp: Starte mit 'aion2-companion --farm' für automatischen Kampf!")
+            print("="*75 + "\n")
 
         while self.running:
             try:
-                # Always keep game in focus
                 self.motor.focus_game()
 
                 hp = self.vision.get_player_hp()
@@ -232,84 +269,113 @@ class Aion2Companion:
                 # --- 1. Vitality Management (HP & MP) ---
                 if 0.0 < hp < 40.0:
                     if time.time() - self.last_hp_warn > 5.0:
-                        self.speech.speak(f"Achtung Tobias! Dein Leben ist auf {hp:.0f} Prozent gesunken. Ich trinke einen Heiltrank!")
+                        self.speech.speak(f"Achtung Tobias! Leben bei {hp:.0f} Prozent. Ich werfe Heiltrank ein!")
                         self.last_hp_warn = time.time()
                     self.motor.press_key(KEY_POTION_HP, delay=90)
-                    time.sleep(0.3)
+                    time.sleep(0.2)
 
-                if 0.0 < mp < 25.0:
+                if 0.0 < mp < 20.0:
                     if time.time() - self.last_mp_warn > 8.0:
-                        self.speech.speak(f"Dein Mana ist fast leer ({mp:.0f} Prozent). Setze Manatrank ein.")
+                        self.speech.speak(f"Mana fast leer ({mp:.0f} Prozent)! Pausiere R-Maus und nehme Manatrank.")
                         self.last_mp_warn = time.time()
                     self.motor.press_key(KEY_POTION_MP, delay=90)
-                    time.sleep(0.3)
+                    time.sleep(0.2)
 
                 # --- 2. Co-Pilot Mode ---
                 if self.mode == "copilot":
                     if target_hp is not None:
-                        status_line = f"\r[CO-PILOT] Spieler HP: {hp:5.1f}% | MP: {mp:5.1f}% | Ziel HP: {target_hp:5.1f}% [Im Kampf]  "
+                        status_line = f"\r[CO-PILOT] HP: {hp:5.1f}% | MP: {mp:5.1f}% | Ziel HP: {target_hp:5.1f}% [Im Kampf]  "
                     else:
-                        status_line = f"\r[CO-PILOT] Spieler HP: {hp:5.1f}% | MP: {mp:5.1f}% | Kein Ziel anvisiert        "
+                        status_line = f"\r[CO-PILOT] HP: {hp:5.1f}% | MP: {mp:5.1f}% | Kein Ziel anvisiert        "
                     sys.stdout.write(status_line)
                     sys.stdout.flush()
                     time.sleep(0.2)
 
-                # --- 3. Auto-Farm Mode ---
+                # --- 3. Tactical Auto-Farm Mode ---
                 elif self.mode == "autofarm":
                     if target_hp is None:
-                        # No target: Attempt Tab target lock
+                        # No target: search with Tab
+                        self.combat_start_time = 0.0
                         sys.stdout.write(f"\r[AUTO-FARM] Suche Ziel ([Tab])... (Versuch {self.roam_attempts+1})                      ")
                         sys.stdout.flush()
-                        self.motor.press_key(KEY_TARGET, delay=80)
+                        self.motor.press_key(KEY_TARGET, delay=70)
                         time.sleep(0.3)
                         self.roam_attempts += 1
 
-                        # If after 2 Tabs no target was found: walk forward to find mobs!
+                        # If after 3 Tabs still no target: step forward slightly (0.5s) to find mobs
                         if self.roam_attempts >= 3:
-                            sys.stdout.write("\r[AUTO-FARM] Kein Ziel in Reichweite -> Laufe vorwärts ([W])...        ")
+                            sys.stdout.write("\r[AUTO-FARM] Kein Ziel in Sicht -> Kurzer Schritt vor ([W])...        ")
                             sys.stdout.flush()
-                            self.motor.walk_forward(duration=0.9)
+                            self.motor.walk_forward(duration=0.5)
                             self.roam_attempts = 0
                             time.sleep(0.2)
                     else:
-                        # Target found! Reset roam
+                        # TARGET ACQUIRED!
                         self.roam_attempts = 0
+                        now = time.time()
+                        if self.combat_start_time == 0.0:
+                            self.combat_start_time = now
 
-                        # Fire bow combo skill
-                        skill = rotation[self.skill_index % len(rotation)]
-                        self.skill_index += 1
-                        sys.stdout.write(f"\r[AUTO-FARM] 🏹 Bekämpfe Ziel ({target_hp:5.1f}% HP) -> Feuere Skill [{skill}]!       ")
+                        # 1. DISTANCE CONTROL: Immediately stop forward movement!
+                        self.motor.stop_movement()
+
+                        # 2. TACTICAL KITING: If monster closed in (combat running > 3.0s), kite backwards with [S]
+                        if (now - self.combat_start_time) > 3.0 and (now - self.last_kite_time) > 4.0:
+                            sys.stdout.write(f"\r[AUTO-FARM] 🏃 Monster nähert sich -> Kiting Rückschritt ([S])...       ")
+                            sys.stdout.flush()
+                            self.motor.step_back(duration=0.4)
+                            self.last_kite_time = now
+                            time.sleep(0.1)
+
+                        # 3. DAUERFEUER L-MAUS: Always fire primary bow shot!
+                        self.motor.shoot_left()
+
+                        # 4. DAUERFEUER R-MAUS: Fire heavy shot ONLY while MP > 20%
+                        r_fire_status = "R-Maus (Pause)"
+                        if mp > 20.0:
+                            self.motor.shoot_right()
+                            r_fire_status = "R-Maus (FEUER)"
+
+                        # 5. SKILL ROTATION 1, 2, 3, 4: Fire any skill that is off cooldown
+                        fired_skill = "—"
+                        for s in self.skills:
+                            cd = self.skill_cooldowns[s]
+                            if (now - self.skill_last_used[s]) >= cd:
+                                self.motor.press_key(s, delay=80)
+                                self.skill_last_used[s] = now
+                                fired_skill = f"Skill [{s}]"
+                                break
+
+                        status = f"\r[AUTO-FARM] 🎯 Ziel {target_hp:5.1f}% | L-Dauerfeuer | {r_fire_status} | {fired_skill:10s}"
+                        sys.stdout.write(status)
                         sys.stdout.flush()
-
-                        # Press combo key & basic shot
-                        self.motor.press_key(skill, delay=90)
-                        self.motor.mouse_shoot()
-                        time.sleep(0.4)
+                        time.sleep(0.18)
 
                         # Check if target is defeated
                         check_target = self.vision.get_target_hp()
                         if check_target is None:
                             self.kills += 1
-                            self.speech.speak(f"Ziel besiegt! Kills gesamt: {self.kills}. Gehe hin und loote!")
+                            self.speech.speak(f"Ziel eliminiert! Kills: {self.kills}. Gehe hin und sammle Beute.")
                             sys.stdout.write(f"\n[AUTO-FARM] ⭐ Ziel besiegt! Gehe Beute einsammeln ([W] + [F])...\n")
                             sys.stdout.flush()
-                            # Walk towards fallen monster and loot
+                            # Walk towards defeated monster and loot
                             self.motor.walk_forward(duration=1.1)
                             self.motor.loot()
-                            time.sleep(0.4)
+                            # Step back to re-establish combat range
+                            self.motor.step_back(duration=0.5)
+                            time.sleep(0.3)
 
             except KeyboardInterrupt:
                 break
             except Exception as e:
                 time.sleep(0.3)
 
-        self.speech.speak("Aion 2 Begleiter beendet. Ausgezeichnet gekämpft, Tobias!", force=True)
+        self.speech.speak("Aion 2 Begleiter beendet. Ausgezeichnet gekämpft!", force=True)
         print("\n\n[Aion Companion] Beendet.\n")
 
 
 if __name__ == "__main__":
     mode_arg = "copilot"
-    # Parse CLI flags gracefully (e.g. --farm, -farm, farm, bot, --bot, auto)
     args = [a.lower().lstrip("-") for a in sys.argv[1:]]
     if any(a in ["farm", "autofarm", "bot", "auto", "f"] for a in args):
         mode_arg = "autofarm"
