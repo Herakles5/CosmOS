@@ -57,9 +57,10 @@ NORM_MP_X_START = 0.5182
 NORM_MP_X_END = 0.6130
 NORM_MP_Y = 0.9055
 
+# Target Bar Ratios (Calibrated for Borderless Fullscreen & Windowed HUD)
 NORM_TGT_X_START = 0.4234
-NORM_TGT_X_END = 0.6755
-NORM_TGT_Y = 0.0491
+NORM_TGT_X_END = 0.5850
+NORM_TGT_Y_CENTER = 0.0620
 
 NORM_QUEST_X = 0.9220
 NORM_QUEST_Y = 0.2710
@@ -213,23 +214,88 @@ class AionVision:
         self.geom.update()
         tgt_x = self.geom.ax + int(NORM_TGT_X_START * self.geom.w)
         tgt_w = max(20, int((NORM_TGT_X_END - NORM_TGT_X_START) * self.geom.w))
-        tgt_y = self.geom.ay + int(NORM_TGT_Y * self.geom.h)
+        tgt_y_center = self.geom.ay + int(NORM_TGT_Y_CENTER * self.geom.h)
         try:
-            total_red = 0
-            for y_off in [-1, 0, 1, 2]:
-                img = self.root.get_image(tgt_x, tgt_y + y_off, tgt_w, 1, X.ZPixmap, 0xffffffff)
+            # Multi-row scan across vertical band to ensure reliable detection
+            max_row_red = 0
+            for y_off in range(-4, 5):
+                img = self.root.get_image(tgt_x, tgt_y_center + y_off, tgt_w, 1, X.ZPixmap, 0xffffffff)
                 data = img.data
+                row_red = 0
                 for i in range(0, len(data), 4):
                     b, g, r = data[i], data[i+1], data[i+2]
-                    if r > 140 and g < 65 and b < 65:
-                        total_red += 1
-            total_sampled = tgt_w * 4
-            if total_red < 15:
+                    if r > 140 and g < 75 and b < 75:
+                        row_red += 1
+                if row_red > max_row_red:
+                    max_row_red = row_red
+
+            if max_row_red < 15:
                 return None
-            pct = (total_red / total_sampled) * 100.0 * 2.5
+
+            pct = (max_row_red / tgt_w) * 100.0
             return max(1.0, min(100.0, pct))
         except Exception:
             return None
+
+    def detect_enemies_in_view(self) -> List[Dict[str, Any]]:
+        """Visually detects living enemies in the 3D scene by identifying floating nameplates & HP bars."""
+        self.geom.update()
+        # Scan 3D viewport region (center 60% of the screen)
+        vx_start = self.geom.ax + int(0.20 * self.geom.w)
+        vx_end = self.geom.ax + int(0.80 * self.geom.w)
+        vy_start = self.geom.ay + int(0.25 * self.geom.h)
+        vy_end = self.geom.ay + int(0.70 * self.geom.h)
+        step_y = 12
+
+        detected = []
+        try:
+            for y in range(vy_start, vy_end, step_y):
+                width = vx_end - vx_start
+                img = self.root.get_image(vx_start, y, width, 1, X.ZPixmap, 0xffffffff)
+                data = img.data
+                yellow_cluster = []
+                red_cluster = []
+
+                for idx in range(0, len(data), 4):
+                    b, g, r = data[idx], data[idx+1], data[idx+2]
+                    x_screen = vx_start + (idx // 4)
+                    # Yellow monster nameplate / quest marker
+                    if r > 185 and g > 160 and b < 115:
+                        yellow_cluster.append(x_screen)
+                    # Overhead red health bar
+                    elif r > 135 and g < 65 and b < 65:
+                        red_cluster.append(x_screen)
+
+                if len(yellow_cluster) >= 6 or len(red_cluster) >= 12:
+                    cx = sum(yellow_cluster + red_cluster) // max(1, len(yellow_cluster) + len(red_cluster))
+                    # Avoid duplicate clusters close together
+                    if not any(abs(cx - d["x"]) < 40 and abs(y - d["y"]) < 30 for d in detected):
+                        detected.append({"x": cx, "y": y, "type": "enemy_in_sight"})
+        except Exception:
+            pass
+        return detected
+
+    def scan_minimap_enemies(self) -> int:
+        """Counts nearby hostile red dots visible on the top-right mini-map radar."""
+        self.geom.update()
+        mx_start = self.geom.ax + int(0.86 * self.geom.w)
+        mx_end = self.geom.ax + int(0.98 * self.geom.w)
+        my_start = self.geom.ay + int(0.05 * self.geom.h)
+        my_end = self.geom.ay + int(0.22 * self.geom.h)
+        red_dots = 0
+        try:
+            step = 4
+            for y in range(my_start, my_end, step):
+                w_sample = mx_end - mx_start
+                img = self.root.get_image(mx_start, y, w_sample, 1, X.ZPixmap, 0xffffffff)
+                data = img.data
+                for idx in range(0, len(data), 4 * step):
+                    b, g, r = data[idx], data[idx+1], data[idx+2]
+                    if r > 185 and g < 65 and b < 65:
+                        red_dots += 1
+        except Exception:
+            pass
+        return red_dots
 
 
 class AionMotor:
@@ -333,9 +399,10 @@ class AionMotor:
             pass
 
     def loot(self):
-        for _ in range(3):
+        """Spams loot pickup key [F] across multiple cycles to ensure all drops are acquired."""
+        for _ in range(4):
             self.press_key(KEY_LOOT, delay=70)
-            time.sleep(0.18)
+            time.sleep(0.12)
 
     def auto_run_quest(self):
         """Triggers native in-game Quest Auto-Pathing with Alt+1."""
@@ -859,21 +926,21 @@ class AionNexusAutonomousGamer:
                             self.speech.speak(f"Kill number {self.kills}! Average TTK: {avg_ttk:.1f} seconds.")
                             self.record_evolution_milestone(self.kills, avg_ttk)
 
-                        # Quick loot without breaking movement pathing
-                        if self.hotkeys.mode == "FARM":
-                            self.motor.walk_forward(duration=0.5)
-                            self.motor.loot()
-                            self.motor.step_back(duration=0.25)
-                        else:
-                            # In Quest mode, loot stationary — NEVER press W or S!
-                            self.motor.loot()
+                        # SMART APPROACH & LOOT SEQUENCE:
+                        # As an archer kills enemies from 14-25m away, she MUST sprint forward to the corpse!
+                        log_loot = f"[LOOTING] Enemy defeated! Sprinting forward to collect loot ([F])..."
+                        print(f"\n[AION NEXUS] {log_loot}")
+                        AionLogger.log(log_loot)
+                        self.motor.walk_forward(duration=0.85)
+                        self.motor.loot()
+                        self.motor.step_back(duration=0.25)
 
                         self.combat_start = 0.0
                         self.last_target_hp = None
 
                         # IMMEDIATE CHAIN-TARGET ACQUISITION: Check next pack mob!
                         self.motor.press_key(KEY_TARGET, delay=60)
-                        time.sleep(0.12)
+                        time.sleep(0.14)
                         chain_target = self.vision.get_target_hp()
                         if chain_target is not None:
                             AionLogger.log(f"[CHAIN TARGET] Instantly locked next mob! HP: {chain_target:.1f}%")
@@ -886,7 +953,7 @@ class AionNexusAutonomousGamer:
                             self.motor.auto_run_quest()
                             self.quest_autorun_active = True
                             self.last_quest_alt1 = time.time()
-                            AionLogger.log("[QUEST] 🚀 Combat resolved — Resumed Alt+1 Quest Auto-Run!")
+                            AionLogger.log("[QUEST] 🚀 Combat resolved & loot collected — Resumed Alt+1 Quest Auto-Run!")
 
                     # NO ACTIVE TARGET: QUEST AUTORUN VS FARM ROAM
                     now = time.time()
@@ -908,11 +975,11 @@ class AionNexusAutonomousGamer:
                             self.motor.interact_npc()
                             self.last_npc_interact = now
 
-                        # 3. Occasional Tab scan for immediate quest threats
-                        if (now - self.last_tab_scan) > 1.5:
+                        # 3. Fast Proactive Tab & Visual Threat Scan
+                        if (now - self.last_tab_scan) > 0.45:
                             self.motor.press_key(KEY_TARGET, delay=60)
                             self.last_tab_scan = now
-                            time.sleep(0.08)
+                            time.sleep(0.12)
                             scanned_target = self.vision.get_target_hp()
                             if scanned_target is not None:
                                 AionLogger.log(f"[QUEST TARGET LOCKED] Hostile locked! HP: {scanned_target:.1f}%")
@@ -920,27 +987,49 @@ class AionNexusAutonomousGamer:
                                 self.quest_autorun_active = False
                                 continue
 
-                        # CRITICAL: Do NOT press W, S, A, D! Allow the character to run the full path!
-                        time.sleep(0.18)
+                            # Visual scan of 3D viewport for quest monsters in sight
+                            visible = self.vision.detect_enemies_in_view()
+                            if visible:
+                                AionLogger.log(f"[VISION] Visually detected {len(visible)} hostile(s) in view! Acquiring target...")
+                                self.motor.press_key(KEY_TARGET, delay=60)
+                                time.sleep(0.12)
+                                scanned_target = self.vision.get_target_hp()
+                                if scanned_target is not None:
+                                    target_hp = scanned_target
+                                    self.quest_autorun_active = False
+                                    continue
+
+                        time.sleep(0.15)
 
                     else:
-                        # FARM SCOUTING: Proactive Tab Scan
+                        # FARM SCOUTING: Proactive Tab Scan & 3D Computer Vision
                         sys.stdout.write(f"\r[FARM SCOUT] Scanning target with [Tab]... (Try {self.roam_count+1}) [Kills: {self.kills}]   ")
                         sys.stdout.flush()
                         self.motor.press_key(KEY_TARGET, delay=60)
-                        time.sleep(0.15)
+                        time.sleep(0.14)
                         scanned_target = self.vision.get_target_hp()
                         if scanned_target is not None:
                             AionLogger.log(f"[FARM TARGET FOUND] Mob locked via Tab! HP: {scanned_target:.1f}%")
                             target_hp = scanned_target
                             continue
 
+                        # Visual Check: Scan 3D scene for overhead enemy bars
+                        visible = self.vision.detect_enemies_in_view()
+                        if visible:
+                            AionLogger.log(f"[VISION] Visually detected {len(visible)} enemy in 3D viewport! Re-targeting...")
+                            self.motor.press_key(KEY_TARGET, delay=60)
+                            time.sleep(0.14)
+                            scanned_target = self.vision.get_target_hp()
+                            if scanned_target is not None:
+                                target_hp = scanned_target
+                                continue
+
                         self.roam_count += 1
                         if self.roam_count >= 3:
                             # Natural roaming with slight angle turns
                             side = random.choice([KEY_LEFT, KEY_RIGHT])
                             subprocess.run(["xdotool", "key", side], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                            self.motor.walk_forward(duration=0.5)
+                            self.motor.walk_forward(duration=0.55)
                             self.roam_count = 0
                             time.sleep(0.15)
 
