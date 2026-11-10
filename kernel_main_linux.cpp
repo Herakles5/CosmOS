@@ -9197,6 +9197,19 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 }
                 copy_clicked_last = copy_clicked_now;
 
+                // AION 2 GAMING Button (Right next to COPY)
+                bool aion2_hover = is_over_rect(mouse_x, mouse_y, wx+315, wy+wh-65, 85, 25);
+                uint32_t aion2_col = aion2_hover ? 0xaa5522 : 0x663311;
+                DrawRoundedRect(wx+315, wy+wh-65, 85, 25, 4, aion2_col);
+                TextC(wx+357, wy+wh-60, "AION 2", 0xFFFFFF, _128);
+
+                static bool aion2_clicked_last = false;
+                bool aion2_clicked_now = (aion2_hover && mouse_down);
+                if (aion2_clicked_now && !aion2_clicked_last) {
+                    system("python3 /root/coding/MeinOS/aion2_gaming_gui.py &");
+                }
+                aion2_clicked_last = aion2_clicked_now;
+
                 DrawRoundedRect(wx+10, wy+wh-35, ww-120, 25, 4, aion_input_focus ? 0x444444 : 0x222222);
                 Text(wx+15, wy+wh-30, os_text_input_buf[0] == 0 ? "Ask AION something..." : os_text_input_buf, os_text_input_buf[0] == 0 ? 0x555555 : 0xFFFFFF, _128);
 
