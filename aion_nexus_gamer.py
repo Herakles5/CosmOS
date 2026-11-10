@@ -337,23 +337,19 @@ class AionMotor:
             self.press_key(KEY_LOOT, delay=70)
             time.sleep(0.18)
 
-    def click_quest_tracker(self):
-        if not self.geom.wid:
-            self.geom.update(force=True)
-        if not self.geom.wid:
-            return
-        qx = int(NORM_QUEST_X * self.geom.w)
-        qy = int(NORM_QUEST_Y * self.geom.h)
-        cx = int(self.geom.w * 0.5)
-        cy = int(self.geom.h * 0.5)
+    def auto_run_quest(self):
+        """Triggers native in-game Quest Auto-Pathing with Alt+1."""
         try:
-            subprocess.run(["xdotool", "mousemove", "--window", str(self.geom.wid), str(qx), str(qy), "click", "1"],
+            self.focus_game()
+            subprocess.run(["xdotool", "keydown", "Alt_L", "key", "1", "keyup", "Alt_L"],
                            check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(0.08)
-            subprocess.run(["xdotool", "mousemove", "--window", str(self.geom.wid), str(cx), str(cy)],
-                           check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.06)
         except Exception:
             pass
+
+    def click_quest_tracker(self):
+        """Activates Quest Auto-Run directly using native Alt+1 hotkey."""
+        self.auto_run_quest()
 
     def interact_npc(self):
         self.press_key(KEY_INTERACT, delay=80)
@@ -533,6 +529,8 @@ class AionNexusAutonomousGamer:
         self.kills = self.brain.total_kills
 
         # Quest & Navigation timing
+        self.quest_autorun_active = False
+        self.last_quest_alt1 = 0.0
         self.last_quest_click = 0.0
         self.last_npc_interact = 0.0
         self.last_status_write = 0.0
@@ -577,15 +575,27 @@ class AionNexusAutonomousGamer:
                             self.speech.speak("Aion paused! You have manual control.", force=True)
                         else:
                             self.speech.speak(f"Aion resuming! Mode: {self.hotkeys.mode}", force=True)
-                    elif cmd == "MODE_QUEST":
+                    elif cmd in ["MODE_QUEST", "QUEST_AUTORUN", "ALT_1", "CLICK_QUEST"]:
                         self.hotkeys.mode = "QUEST"
-                        self.speech.speak("Quest Mode activated!", force=True)
+                        self.motor.auto_run_quest()
+                        self.quest_autorun_active = True
+                        self.last_quest_alt1 = time.time()
+                        self.speech.speak("Quest Auto-Run active with Alt+1! Running path to objective.", force=True)
+                        AionLogger.log("[QUEST] 🚀 Alt+1 triggered! In-game Auto-Pathing engaged (zero-W policy).")
                     elif cmd == "MODE_FARM":
                         self.hotkeys.mode = "FARM"
+                        self.quest_autorun_active = False
                         self.speech.speak("Farm Mode activated!", force=True)
                     elif cmd == "TOGGLE_MODE":
                         self.hotkeys.mode = "FARM" if self.hotkeys.mode == "QUEST" else "QUEST"
-                        self.speech.speak(f"Mode switched to {self.hotkeys.mode}!", force=True)
+                        if self.hotkeys.mode == "QUEST":
+                            self.motor.auto_run_quest()
+                            self.quest_autorun_active = True
+                            self.last_quest_alt1 = time.time()
+                            self.speech.speak("Switched to Quest Mode: Alt+1 engaged!", force=True)
+                        else:
+                            self.quest_autorun_active = False
+                            self.speech.speak("Switched to Farm Mode!", force=True)
                     elif cmd == "UNSTUCK":
                         self.speech.speak("Unstuck initiated! Evading collision.", force=True)
                         self.motor.jump_shot_unstuck()
@@ -772,6 +782,13 @@ class AionNexusAutonomousGamer:
         print("  🎮 PAUSE: Press [F10] or [Pause] in-game at any time for manual takeover!")
         print("="*80 + "\n")
 
+        if self.hotkeys.mode == "QUEST":
+            time.sleep(0.2)
+            self.motor.auto_run_quest()
+            self.quest_autorun_active = True
+            self.last_quest_alt1 = time.time()
+            AionLogger.log("[QUEST] 🚀 Session started in Quest Mode — Initial Alt+1 Auto-Run triggered.")
+
         current_action = "L_AUTO_SHOT"
         reward = 0.0
 
@@ -842,61 +859,69 @@ class AionNexusAutonomousGamer:
                             self.speech.speak(f"Kill number {self.kills}! Average TTK: {avg_ttk:.1f} seconds.")
                             self.record_evolution_milestone(self.kills, avg_ttk)
 
-                        # Quick loot
-                        self.motor.walk_forward(duration=0.6)
-                        self.motor.loot()
-                        self.motor.step_back(duration=0.3)
+                        # Quick loot without breaking movement pathing
+                        if self.hotkeys.mode == "FARM":
+                            self.motor.walk_forward(duration=0.5)
+                            self.motor.loot()
+                            self.motor.step_back(duration=0.25)
+                        else:
+                            # In Quest mode, loot stationary — NEVER press W or S!
+                            self.motor.loot()
 
                         self.combat_start = 0.0
                         self.last_target_hp = None
 
                         # IMMEDIATE CHAIN-TARGET ACQUISITION: Check next pack mob!
                         self.motor.press_key(KEY_TARGET, delay=60)
-                        time.sleep(0.15)
+                        time.sleep(0.12)
                         chain_target = self.vision.get_target_hp()
                         if chain_target is not None:
                             AionLogger.log(f"[CHAIN TARGET] Instantly locked next mob! HP: {chain_target:.1f}%")
                             target_hp = chain_target
                             continue
 
+                        # If in Quest mode and no mob engaged, RESUME Alt+1 Auto-Run immediately!
                         if self.hotkeys.mode == "QUEST":
                             time.sleep(0.2)
-                            self.motor.click_quest_tracker()
-                            self.last_quest_click = time.time()
+                            self.motor.auto_run_quest()
+                            self.quest_autorun_active = True
+                            self.last_quest_alt1 = time.time()
+                            AionLogger.log("[QUEST] 🚀 Combat resolved — Resumed Alt+1 Quest Auto-Run!")
 
-                    # NO ACTIVE TARGET: PROACTIVE SCANNING
+                    # NO ACTIVE TARGET: QUEST AUTORUN VS FARM ROAM
                     now = time.time()
 
                     if self.hotkeys.mode == "QUEST":
-                        # 1. Proactive Tab Scan for Quest Mobs!
-                        if (now - self.last_tab_scan) > 0.35:
-                            self.motor.press_key(KEY_TARGET, delay=60)
-                            self.last_tab_scan = now
-                            time.sleep(0.12)
-                            scanned_target = self.vision.get_target_hp()
-                            if scanned_target is not None:
-                                AionLogger.log(f"[QUEST TARGET FOUND] Mob locked via Tab! HP: {scanned_target:.1f}%")
-                                target_hp = scanned_target
-                                continue
-
-                        # 2. Auto-Pathing Click (keep character moving towards objective)
-                        if (now - self.last_quest_click) > 5.0:
-                            msg = "[QUEST] 📜 Clicking Quest Tracker for auto-pathing..."
+                        # 1. Trigger or refresh Quest Auto-Run (Alt+1)
+                        if not self.quest_autorun_active or (now - self.last_quest_alt1) > 20.0:
+                            self.motor.auto_run_quest()
+                            self.quest_autorun_active = True
+                            self.last_quest_alt1 = now
+                            msg = "[QUEST] 🚀 Alt+1 Auto-Running to objective (Hands-off movement policy)..."
                             sys.stdout.write(f"\r{msg}                                  ")
                             sys.stdout.flush()
-                            AionLogger.log("[QUEST] Auto-Pathing click on Quest Tracker")
-                            self.motor.click_quest_tracker()
-                            self.last_quest_click = now
+                            AionLogger.log("[QUEST] 🚀 Alt+1 Auto-Running to objective — preserving pathing without W/S keys.")
 
-                        # 3. NPC Dialogue / Interaction Advance
-                        if (now - self.last_npc_interact) > 2.5:
-                            msg = "[QUEST] 💬 Checking NPC Interaction / Dialogue ([F] / [Space])..."
-                            sys.stdout.write(f"\r{msg}                                  ")
-                            sys.stdout.flush()
+                        # 2. Check NPC Dialogue / Interaction Advance ([F] / [Space])
+                        # Advances dialogue or completes quest on arrival without breaking movement
+                        if (now - self.last_npc_interact) > 1.8:
                             self.motor.interact_npc()
                             self.last_npc_interact = now
 
-                        time.sleep(0.15)
+                        # 3. Occasional Tab scan for immediate quest threats
+                        if (now - self.last_tab_scan) > 1.5:
+                            self.motor.press_key(KEY_TARGET, delay=60)
+                            self.last_tab_scan = now
+                            time.sleep(0.08)
+                            scanned_target = self.vision.get_target_hp()
+                            if scanned_target is not None:
+                                AionLogger.log(f"[QUEST TARGET LOCKED] Hostile locked! HP: {scanned_target:.1f}%")
+                                target_hp = scanned_target
+                                self.quest_autorun_active = False
+                                continue
+
+                        # CRITICAL: Do NOT press W, S, A, D! Allow the character to run the full path!
+                        time.sleep(0.18)
 
                     else:
                         # FARM SCOUTING: Proactive Tab Scan

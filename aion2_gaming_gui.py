@@ -151,11 +151,11 @@ class AionGamingGUI(tk.Tk):
         btn_cfg = [
             ("▶️ Start Aion Nexus", "#00b0ff", "#002845", self._cmd_start),
             ("⏸️ Pause / Resume [F10]", "#ffb300", "#3d2a00", self._cmd_pause),
-            ("📜 Quest Mode [F8]", "#ffd700", "#382f05", self._cmd_mode_quest),
+            ("📜 Quest Auto-Run [Alt+1]", "#ffd700", "#382f05", self._cmd_mode_quest),
             ("🏹 Auto-Farm [F8]", "#00e676", "#043318", self._cmd_mode_farm),
             ("🔄 Unstuck (Jump + Evade)", "#b388ff", "#291847", self._cmd_unstuck),
             ("🎯 Acquire Target [Tab]", "#ff80ab", "#3b1422", self._cmd_target),
-            ("📜 Click Quest Tracker", "#ffe57f", "#3d3305", self._cmd_click_quest),
+            ("🚀 Trigger Quest [Alt+1]", "#ffe57f", "#3d3305", self._cmd_click_quest),
             ("💬 NPC Dialogue [F / Space]", "#80d8ff", "#092f42", self._cmd_interact_npc),
             ("🛑 Stop Aion Nexus", "#ff5252", "#420d12", self._cmd_stop),
         ]
@@ -237,7 +237,7 @@ class AionGamingGUI(tk.Tk):
         self._send_cmd("TARGET")
 
     def _cmd_click_quest(self):
-        self._send_cmd("CLICK_QUEST")
+        self._send_cmd("QUEST_AUTORUN")
 
     def _cmd_interact_npc(self):
         self._send_cmd("INTERACT_NPC")
