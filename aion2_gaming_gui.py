@@ -43,6 +43,10 @@ class AionGamingGUI(tk.Tk):
         self.minsize(840, 560)
         self.configure(bg="#0c0e17")
 
+        # Always on Top by default so game window cannot bury the GUI!
+        self.is_topmost = True
+        self.attributes("-topmost", True)
+
         # Command queue writer
         self.last_log_pos = 0
 
@@ -75,11 +79,28 @@ class AionGamingGUI(tk.Tk):
         self.badge_box = tk.Frame(hdr, bg="#131625")
         self.badge_box.pack(side="right", padx=12, pady=8)
 
+        # Pin On Top Toggle Button
+        self.btn_pin = tk.Button(self.badge_box, text="📌 PIN: ON (Vordergrund)", font=("Helvetica", 9, "bold"),
+                                 fg="#00e5ff", bg="#152f47", activebackground="#00e5ff", activeforeground="#000000",
+                                 bd=1, relief="groove", cursor="hand2", padx=8, pady=2, command=self._toggle_topmost)
+        self.btn_pin.pack(side="right", padx=6)
+
         self.lbl_status = tk.Label(self.badge_box, text="⚫ PRÜFE STATUS...", font=("Helvetica", 10, "bold"), fg="#ffffff", bg="#2a2e45", padx=10, pady=4)
         self.lbl_status.pack(side="right", padx=4)
 
         self.lbl_mode = tk.Label(self.badge_box, text="MODE: UNBEKANNT", font=("Helvetica", 10, "bold"), fg="#ffd700", bg="#3a3015", padx=10, pady=4)
         self.lbl_mode.pack(side="right", padx=4)
+
+    def _toggle_topmost(self):
+        self.is_topmost = not self.is_topmost
+        self.attributes("-topmost", self.is_topmost)
+        if self.is_topmost:
+            self.lift()
+            self.btn_pin.config(text="📌 PIN: ON (Vordergrund)", fg="#00e5ff", bg="#152f47")
+            self._log_local("[GUI] Fenster bleibt immer im Vordergrund (Always-On-Top)", "info")
+        else:
+            self.btn_pin.config(text="📌 PIN: OFF", fg="#888888", bg="#202438")
+            self._log_local("[GUI] Always-On-Top deaktiviert", "dim")
 
     def _build_main_layout(self):
         main_pane = tk.PanedWindow(self, orient="horizontal", bg="#0c0e17", bd=0, sashwidth=4, sashrelief="flat")
@@ -306,6 +327,12 @@ class AionGamingGUI(tk.Tk):
                     self.lbl_status.config(text="🔴 OFFLINE", bg="#4a151b", fg="#ffffff")
             except Exception:
                 self.lbl_status.config(text="🔴 OFFLINE", bg="#4a151b", fg="#ffffff")
+
+        if self.is_topmost:
+            try:
+                self.attributes("-topmost", True)
+            except Exception:
+                pass
 
         self.after(300, self._update_telemetry)
 

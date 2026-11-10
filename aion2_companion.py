@@ -184,7 +184,10 @@ class AionMotor:
             self.geom.update(force=True)
         if self.geom.wid:
             try:
-                subprocess.run(["xdotool", "windowactivate", "--sync", str(self.geom.wid)],
+                active = subprocess.check_output(["xdotool", "getactivewindow"], text=True, stderr=subprocess.DEVNULL).strip()
+                if active and int(active) == int(self.geom.wid):
+                    return
+                subprocess.run(["xdotool", "windowactivate", str(self.geom.wid)],
                                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
