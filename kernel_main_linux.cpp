@@ -9198,10 +9198,10 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 copy_clicked_last = copy_clicked_now;
 
                 // AION 2 GAMING Button (Right next to COPY)
-                bool aion2_hover = is_over_rect(mouse_x, mouse_y, wx+315, wy+wh-65, 85, 25);
-                uint32_t aion2_col = aion2_hover ? 0xaa5522 : 0x663311;
-                DrawRoundedRect(wx+315, wy+wh-65, 85, 25, 4, aion2_col);
-                TextC(wx+357, wy+wh-60, "AION 2", 0xFFFFFF, _128);
+                bool aion2_hover = is_over_rect(mouse_x, mouse_y, wx+315, wy+wh-65, 110, 25);
+                uint32_t aion2_col = aion2_hover ? 0xaa5522 : 0x773311;
+                DrawRoundedRect(wx+315, wy+wh-65, 110, 25, 4, aion2_col);
+                TextC(wx+370, wy+wh-60, "AION2 Gaming", 0xFFFFFF, _128);
 
                 static bool aion2_clicked_last = false;
                 bool aion2_clicked_now = (aion2_hover && mouse_down);
