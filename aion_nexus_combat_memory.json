@@ -1,12 +1,12 @@
 {
   "agent": "AION_NEXUS_AUTONOMOUS_GAMER",
   "model": "MULTI_DOMAIN_REINFORCEMENT_POLICY_V3",
-  "last_updated": "2026-11-10 19:20:10",
-  "total_kills": 7,
-  "total_damage_dealt": 399.8,
-  "total_damage_taken": 356.5,
-  "epsilon": 0.3308,
-  "states_learned": 13,
+  "last_updated": "2026-11-10 19:31:11",
+  "total_kills": 20,
+  "total_damage_dealt": 611.7,
+  "total_damage_taken": 674.0,
+  "epsilon": 0.2981,
+  "states_learned": 17,
   "combat_durations": [
     3.68,
     4.94,
@@ -14,31 +14,48 @@
     26.94,
     2.32,
     1.26,
-    3.59
+    3.59,
+    0.53,
+    11.79,
+    2.5,
+    21.41,
+    0.37,
+    19.7,
+    1.07,
+    1.9,
+    2.75,
+    16.81,
+    29.43,
+    0.79,
+    1.55
   ],
   "q_table": {
     "full_high_high_melee": {
-      "L_AUTO_SHOT": 9.749,
+      "L_AUTO_SHOT": -2.7635,
       "R_HEAVY_SHOT": 0.179,
-      "SKILL_1": 0.0673,
+      "SKILL_1": 1.8443,
       "SKILL_3": 0.2139,
       "SKILL_2": 0.2589,
-      "SKILL_4": 1.4892,
+      "SKILL_4": 2.2332,
       "TACTICAL_KITE": 2.3674,
-      "STRAFE_RIGHT": -0.9521
+      "STRAFE_RIGHT": 15.8911,
+      "JUMP_UNSTUCK": 18.1211,
+      "STRAFE_LEFT": 15.9012
     },
     "full_high_high_range": {
-      "L_AUTO_SHOT": 7.0585,
+      "L_AUTO_SHOT": 3.1728,
       "R_HEAVY_SHOT": 0.4208,
       "SKILL_1": 0.0,
-      "SKILL_3": 0.4951,
-      "SKILL_2": 1.3316,
+      "SKILL_3": 1.3005,
+      "SKILL_2": 1.9994,
       "SKILL_4": 0.5274,
       "TACTICAL_KITE": 0.0,
-      "STRAFE_LEFT": 1.0119
+      "STRAFE_LEFT": 3.3419,
+      "STRAFE_RIGHT": 2.2297,
+      "JUMP_UNSTUCK": 4.3128
     },
     "mid_high_high_range": {
-      "L_AUTO_SHOT": 5.25,
+      "L_AUTO_SHOT": 9.9597,
       "R_HEAVY_SHOT": 0.0,
       "SKILL_1": 0.5093,
       "SKILL_3": 0.0,
@@ -48,10 +65,10 @@
     },
     "mid_high_high_melee": {
       "L_AUTO_SHOT": -3.1347,
-      "R_HEAVY_SHOT": 0.9572,
+      "R_HEAVY_SHOT": 2.5661,
       "SKILL_1": -3.093,
-      "SKILL_3": -3.0944,
-      "SKILL_2": 0.7815,
+      "SKILL_3": -2.4657,
+      "SKILL_2": 0.8843,
       "SKILL_4": 0.6225,
       "TACTICAL_KITE": 0.5284
     },
@@ -62,23 +79,27 @@
       "SKILL_3": 0.0,
       "SKILL_2": 0.0,
       "SKILL_4": 0.0,
-      "TACTICAL_KITE": 0.0
+      "TACTICAL_KITE": 0.0,
+      "JUMP_UNSTUCK": 0.0
     },
     "low_high_high_melee": {
-      "L_AUTO_SHOT": 0.0,
+      "L_AUTO_SHOT": 0.8867,
       "R_HEAVY_SHOT": 0.0,
       "SKILL_1": 0.0,
       "SKILL_3": 0.0,
-      "SKILL_2": 0.4768,
-      "SKILL_4": 0.0,
-      "TACTICAL_KITE": 0.0
+      "SKILL_2": 1.5658,
+      "SKILL_4": 6.9546,
+      "TACTICAL_KITE": 0.0,
+      "STRAFE_RIGHT": 2.6571,
+      "JUMP_UNSTUCK": 2.0318,
+      "STRAFE_LEFT": 1.3188
     },
     "low_high_high_range": {
-      "L_AUTO_SHOT": 5.2318,
-      "R_HEAVY_SHOT": 0.0,
+      "L_AUTO_SHOT": 18.3901,
+      "R_HEAVY_SHOT": 1.6748,
       "SKILL_1": 0.0,
       "SKILL_3": 0.0,
-      "SKILL_2": 0.0,
+      "SKILL_2": 5.2378,
       "SKILL_4": 0.0,
       "TACTICAL_KITE": 0.0
     },
@@ -98,7 +119,8 @@
       "SKILL_3": 0.0,
       "SKILL_2": 0.0,
       "SKILL_4": 0.0,
-      "TACTICAL_KITE": 0.0
+      "TACTICAL_KITE": 0.0,
+      "STRAFE_RIGHT": 0.45
     },
     "mid_high_low_melee": {
       "L_AUTO_SHOT": 0.0,
@@ -134,7 +156,7 @@
       "TACTICAL_KITE": 0.0,
       "STRAFE_LEFT": 0.0,
       "STRAFE_RIGHT": 0.0,
-      "JUMP_UNSTUCK": 0.0
+      "JUMP_UNSTUCK": 1.9772
     },
     "none_mid_high_range": {
       "L_AUTO_SHOT": 0.0,
@@ -145,6 +167,54 @@
       "SKILL_4": 0.0,
       "TACTICAL_KITE": 0.0,
       "STRAFE_LEFT": 0.0,
+      "STRAFE_RIGHT": 0.0,
+      "JUMP_UNSTUCK": 0.0
+    },
+    "low_low_low_melee": {
+      "L_AUTO_SHOT": 0.0,
+      "R_HEAVY_SHOT": 0.0,
+      "SKILL_1": 0.0,
+      "SKILL_2": 0.0,
+      "SKILL_3": 0.0,
+      "SKILL_4": 0.0,
+      "TACTICAL_KITE": 0.0,
+      "STRAFE_LEFT": 0.6671,
+      "STRAFE_RIGHT": 0.0,
+      "JUMP_UNSTUCK": 0.0
+    },
+    "mid_mid_high_melee": {
+      "L_AUTO_SHOT": 0.0,
+      "R_HEAVY_SHOT": 0.6069,
+      "SKILL_1": 4.7597,
+      "SKILL_2": 0.0,
+      "SKILL_3": 0.0,
+      "SKILL_4": 0.0,
+      "TACTICAL_KITE": 3.75,
+      "STRAFE_LEFT": 0.0,
+      "STRAFE_RIGHT": 0.0,
+      "JUMP_UNSTUCK": 0.0
+    },
+    "none_mid_high_melee": {
+      "L_AUTO_SHOT": 0.0,
+      "R_HEAVY_SHOT": 0.0,
+      "SKILL_1": 0.0,
+      "SKILL_2": 0.0,
+      "SKILL_3": 0.0,
+      "SKILL_4": 0.0,
+      "TACTICAL_KITE": 0.0,
+      "STRAFE_LEFT": 0.0,
+      "STRAFE_RIGHT": 0.0,
+      "JUMP_UNSTUCK": 0.0
+    },
+    "full_high_low_melee": {
+      "L_AUTO_SHOT": 0.0,
+      "R_HEAVY_SHOT": 0.0,
+      "SKILL_1": 0.0,
+      "SKILL_2": 0.0,
+      "SKILL_3": 0.0,
+      "SKILL_4": 0.0,
+      "TACTICAL_KITE": 0.0,
+      "STRAFE_LEFT": 0.921,
       "STRAFE_RIGHT": 0.0,
       "JUMP_UNSTUCK": 0.0
     }

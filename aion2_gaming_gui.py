@@ -6,15 +6,15 @@
 #   1. Real-time Status Badges: Running / Paused / Mode (Quest vs Farm)
 #   2. Live HP, MP & Enemy Target Visual Meters
 #   3. Interactive Control Buttons:
-#      - ▶️ Start / Weiterspielen
-#      - ⏸️ Pause / Resume [F10 / Pause]
-#      - 📜 Quest-Modus [F8] (Auto-Pathing & NPC Dialogues)
-#      - 🏹 Auto-Farm Modus [F8] (Mob Hunting & Kiting)
-#      - 🔄 Unstuck / Befreien (Jump + Lateral Strafe)
-#      - 🎯 Target Scan [Tab]
-#      - 📜 Quest Tracker Click
-#      - 💬 NPC Interagieren [F / Space]
-#      - 🛑 Beenden
+#      - ▶️ Start Aion Nexus
+#      - ⏸️ Pause / Resume [F10]
+#      - 📜 Quest Mode [F8] (Auto-Pathing & NPC Dialogues)
+#      - 🏹 Auto-Farm [F8] (Mob Hunting & Kiting)
+#      - 🔄 Unstuck (Jump + Evade)
+#      - 🎯 Acquire Target [Tab]
+#      - 📜 Click Quest Tracker
+#      - 💬 NPC Dialogue [F / Space]
+#      - 🛑 Stop Aion Nexus
 #   4. Live Telemetry & Log Console with Auto-Scroll
 #   5. Reinforcement Learning Telemetry (Q-States, Kills, TTK, Epsilon)
 # ==============================================================================
@@ -43,11 +43,12 @@ class AionGamingGUI(tk.Tk):
         self.minsize(840, 560)
         self.configure(bg="#0c0e17")
 
-        # Always on Top by default so game window cannot bury the GUI!
+        # Always on Top by default so game window cannot bury the GUI
         self.is_topmost = True
         self.attributes("-topmost", True)
+        self.deiconify()
+        self.lift()
 
-        # Command queue writer
         self.last_log_pos = 0
 
         self._init_styles()
@@ -75,20 +76,20 @@ class AionGamingGUI(tk.Tk):
         lbl_sub = tk.Label(title_box, text="MeinOS Autonomous Reinforcement Learning & Quest System", font=("Helvetica", 9), fg="#8c93b0", bg="#131625")
         lbl_sub.pack(anchor="w")
 
-        # Badges
+        # Badges & Pin Button
         self.badge_box = tk.Frame(hdr, bg="#131625")
         self.badge_box.pack(side="right", padx=12, pady=8)
 
         # Pin On Top Toggle Button
-        self.btn_pin = tk.Button(self.badge_box, text="📌 PIN: ON (Vordergrund)", font=("Helvetica", 9, "bold"),
+        self.btn_pin = tk.Button(self.badge_box, text="📌 PIN: ON (Always on Top)", font=("Helvetica", 9, "bold"),
                                  fg="#00e5ff", bg="#152f47", activebackground="#00e5ff", activeforeground="#000000",
                                  bd=1, relief="groove", cursor="hand2", padx=8, pady=2, command=self._toggle_topmost)
         self.btn_pin.pack(side="right", padx=6)
 
-        self.lbl_status = tk.Label(self.badge_box, text="⚫ PRÜFE STATUS...", font=("Helvetica", 10, "bold"), fg="#ffffff", bg="#2a2e45", padx=10, pady=4)
+        self.lbl_status = tk.Label(self.badge_box, text="⚫ CHECKING STATUS...", font=("Helvetica", 10, "bold"), fg="#ffffff", bg="#2a2e45", padx=10, pady=4)
         self.lbl_status.pack(side="right", padx=4)
 
-        self.lbl_mode = tk.Label(self.badge_box, text="MODE: UNBEKANNT", font=("Helvetica", 10, "bold"), fg="#ffd700", bg="#3a3015", padx=10, pady=4)
+        self.lbl_mode = tk.Label(self.badge_box, text="MODE: UNKNOWN", font=("Helvetica", 10, "bold"), fg="#ffd700", bg="#3a3015", padx=10, pady=4)
         self.lbl_mode.pack(side="right", padx=4)
 
     def _toggle_topmost(self):
@@ -96,11 +97,11 @@ class AionGamingGUI(tk.Tk):
         self.attributes("-topmost", self.is_topmost)
         if self.is_topmost:
             self.lift()
-            self.btn_pin.config(text="📌 PIN: ON (Vordergrund)", fg="#00e5ff", bg="#152f47")
-            self._log_local("[GUI] Fenster bleibt immer im Vordergrund (Always-On-Top)", "info")
+            self.btn_pin.config(text="📌 PIN: ON (Always on Top)", fg="#00e5ff", bg="#152f47")
+            self._log_local("[GUI] Window set to Always-on-Top", "info")
         else:
             self.btn_pin.config(text="📌 PIN: OFF", fg="#888888", bg="#202438")
-            self._log_local("[GUI] Always-On-Top deaktiviert", "dim")
+            self._log_local("[GUI] Always-on-Top disabled", "dim")
 
     def _build_main_layout(self):
         main_pane = tk.PanedWindow(self, orient="horizontal", bg="#0c0e17", bd=0, sashwidth=4, sashrelief="flat")
@@ -112,13 +113,13 @@ class AionGamingGUI(tk.Tk):
         main_pane.add(left_col, minsize=320)
 
         # Meters Box
-        m_frame = tk.LabelFrame(left_col, text=" VITALWERTE & ZIEL ", font=("Helvetica", 9, "bold"), fg="#00e5ff", bg="#131625", bd=1, relief="groove")
+        m_frame = tk.LabelFrame(left_col, text=" VITALS & TARGET ", font=("Helvetica", 9, "bold"), fg="#00e5ff", bg="#131625", bd=1, relief="groove")
         m_frame.pack(fill="x", padx=8, pady=(6, 4))
 
         # Player HP
         hp_row = tk.Frame(m_frame, bg="#131625")
         hp_row.pack(fill="x", padx=6, pady=2)
-        tk.Label(hp_row, text="SPIELER HP:", font=("Helvetica", 9, "bold"), fg="#ff5252", bg="#131625", width=11, anchor="w").pack(side="left")
+        tk.Label(hp_row, text="PLAYER HP:", font=("Helvetica", 9, "bold"), fg="#ff5252", bg="#131625", width=12, anchor="w").pack(side="left")
         self.lbl_hp_val = tk.Label(hp_row, text="100.0%", font=("Helvetica", 9, "bold"), fg="#ffffff", bg="#131625", width=7, anchor="e")
         self.lbl_hp_val.pack(side="right")
         self.cv_hp = tk.Canvas(hp_row, height=12, bg="#2a1518", highlightthickness=0)
@@ -127,7 +128,7 @@ class AionGamingGUI(tk.Tk):
         # Player MP
         mp_row = tk.Frame(m_frame, bg="#131625")
         mp_row.pack(fill="x", padx=6, pady=2)
-        tk.Label(mp_row, text="SPIELER MP:", font=("Helvetica", 9, "bold"), fg="#40c4ff", bg="#131625", width=11, anchor="w").pack(side="left")
+        tk.Label(mp_row, text="PLAYER MP:", font=("Helvetica", 9, "bold"), fg="#40c4ff", bg="#131625", width=12, anchor="w").pack(side="left")
         self.lbl_mp_val = tk.Label(mp_row, text="100.0%", font=("Helvetica", 9, "bold"), fg="#ffffff", bg="#131625", width=7, anchor="e")
         self.lbl_mp_val.pack(side="right")
         self.cv_mp = tk.Canvas(mp_row, height=12, bg="#102535", highlightthickness=0)
@@ -136,27 +137,27 @@ class AionGamingGUI(tk.Tk):
         # Enemy Target HP
         tgt_row = tk.Frame(m_frame, bg="#131625")
         tgt_row.pack(fill="x", padx=6, pady=(2, 6))
-        tk.Label(tgt_row, text="GEGNER HP:", font=("Helvetica", 9, "bold"), fg="#ff9100", bg="#131625", width=11, anchor="w").pack(side="left")
-        self.lbl_tgt_val = tk.Label(tgt_row, text="KEIN ZIEL", font=("Helvetica", 9, "bold"), fg="#888888", bg="#131625", width=9, anchor="e")
+        tk.Label(tgt_row, text="TARGET HP:", font=("Helvetica", 9, "bold"), fg="#ff9100", bg="#131625", width=12, anchor="w").pack(side="left")
+        self.lbl_tgt_val = tk.Label(tgt_row, text="NO TARGET", font=("Helvetica", 9, "bold"), fg="#888888", bg="#131625", width=9, anchor="e")
         self.lbl_tgt_val.pack(side="right")
         self.cv_tgt = tk.Canvas(tgt_row, height=12, bg="#332010", highlightthickness=0)
         self.cv_tgt.pack(fill="x", expand=True, padx=4)
 
         # Option Buttons Box
-        b_frame = tk.LabelFrame(left_col, text=" KONTROLL-OPTIONEN ", font=("Helvetica", 9, "bold"), fg="#ffd700", bg="#131625", bd=1, relief="groove")
+        b_frame = tk.LabelFrame(left_col, text=" CONTROL OPTIONS ", font=("Helvetica", 9, "bold"), fg="#ffd700", bg="#131625", bd=1, relief="groove")
         b_frame.pack(fill="both", expand=True, padx=8, pady=(4, 6))
 
-        # Buttons Grid
+        # Buttons Grid (100% English)
         btn_cfg = [
             ("▶️ Start Aion Nexus", "#00b0ff", "#002845", self._cmd_start),
-            ("⏸️ Pause / Weiter [F10]", "#ffb300", "#3d2a00", self._cmd_pause),
-            ("📜 Quest-Modus [F8]", "#ffd700", "#382f05", self._cmd_mode_quest),
+            ("⏸️ Pause / Resume [F10]", "#ffb300", "#3d2a00", self._cmd_pause),
+            ("📜 Quest Mode [F8]", "#ffd700", "#382f05", self._cmd_mode_quest),
             ("🏹 Auto-Farm [F8]", "#00e676", "#043318", self._cmd_mode_farm),
-            ("🔄 Unstuck (Sprung+Ausweichen)", "#b388ff", "#291847", self._cmd_unstuck),
-            ("🎯 Gegner erfassen [Tab]", "#ff80ab", "#3b1422", self._cmd_target),
-            ("📜 Quest Tracker Anklicken", "#ffe57f", "#3d3305", self._cmd_click_quest),
-            ("💬 NPC Dialog [F / Space]", "#80d8ff", "#092f42", self._cmd_interact_npc),
-            ("🛑 Aion Beenden", "#ff5252", "#420d12", self._cmd_stop),
+            ("🔄 Unstuck (Jump + Evade)", "#b388ff", "#291847", self._cmd_unstuck),
+            ("🎯 Acquire Target [Tab]", "#ff80ab", "#3b1422", self._cmd_target),
+            ("📜 Click Quest Tracker", "#ffe57f", "#3d3305", self._cmd_click_quest),
+            ("💬 NPC Dialogue [F / Space]", "#80d8ff", "#092f42", self._cmd_interact_npc),
+            ("🛑 Stop Aion Nexus", "#ff5252", "#420d12", self._cmd_stop),
         ]
 
         for text, fg, bg, cmd in btn_cfg:
@@ -171,10 +172,10 @@ class AionGamingGUI(tk.Tk):
 
         log_hdr = tk.Frame(right_col, bg="#131625")
         log_hdr.pack(fill="x", padx=8, pady=(6, 2))
-        tk.Label(log_hdr, text="📋 LIVE-TELEMETRIE & LOG-STREAM", font=("Helvetica", 10, "bold"), fg="#00e5ff", bg="#131625").pack(side="left")
+        tk.Label(log_hdr, text="📋 LIVE TELEMETRY & LOG STREAM", font=("Helvetica", 10, "bold"), fg="#00e5ff", bg="#131625").pack(side="left")
 
         # Log filter buttons
-        tk.Button(log_hdr, text="🧹 Clear", font=("Helvetica", 8), fg="#aaaaaa", bg="#202438", bd=0, padx=6,
+        tk.Button(log_hdr, text="🧹 Clear Logs", font=("Helvetica", 8), fg="#aaaaaa", bg="#202438", bd=0, padx=6,
                   command=self._clear_logs).pack(side="right", padx=2)
 
         self.txt_log = scrolledtext.ScrolledText(right_col, bg="#080910", fg="#d0d5e8", font=("Courier", 9),
@@ -197,7 +198,7 @@ class AionGamingGUI(tk.Tk):
                                   font=("Courier", 9, "bold"), fg="#00e5ff", bg="#131625")
         self.lbl_stats.pack(side="left", padx=10, pady=8)
 
-        self.lbl_thought = tk.Label(ftr, text="Aion: Bereit.", font=("Helvetica", 9, "italic"), fg="#b388ff", bg="#131625")
+        self.lbl_thought = tk.Label(ftr, text="Aion: Ready.", font=("Helvetica", 9, "italic"), fg="#b388ff", bg="#131625")
         self.lbl_thought.pack(side="right", padx=10, pady=8)
 
     # --- Commands ---
@@ -205,12 +206,11 @@ class AionGamingGUI(tk.Tk):
         try:
             with open(CMD_FILE, "w") as f:
                 f.write(cmd_text.strip() + "\n")
-            self._log_local(f"[GUI COMMAND] Gesendet: {cmd_text}", "info")
+            self._log_local(f"[GUI COMMAND] Sent: {cmd_text}", "info")
         except Exception as e:
-            self._log_local(f"[GUI ERROR] Konnte Befehl nicht senden: {e}", "combat")
+            self._log_local(f"[GUI ERROR] Failed to send command: {e}", "combat")
 
     def _cmd_start(self):
-        # Check if already running
         try:
             out = subprocess.check_output(["pgrep", "-f", GAMER_SCRIPT], text=True).strip()
             if out:
@@ -219,7 +219,7 @@ class AionGamingGUI(tk.Tk):
         except Exception:
             pass
         subprocess.Popen(["python3", GAMER_SCRIPT, "--quest"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self._log_local("[GUI] Aion Nexus neu gestartet im Hintergrund!", "info")
+        self._log_local("[GUI] Aion Nexus restarted in background!", "info")
 
     def _cmd_pause(self):
         self._send_cmd("TOGGLE_PAUSE")
@@ -284,15 +284,15 @@ class AionGamingGUI(tk.Tk):
                 if not running:
                     self.lbl_status.config(text="🔴 OFFLINE", bg="#4a151b", fg="#ffffff")
                 elif paused:
-                    self.lbl_status.config(text="⏸️ PAUSIERT (Tobias steuert)", bg="#614300", fg="#ffecb3")
+                    self.lbl_status.config(text="⏸️ PAUSED (Manual Control)", bg="#614300", fg="#ffecb3")
                 else:
-                    self.lbl_status.config(text="🟢 AUTONOM AKTIV", bg="#0a4020", fg="#b9f6ca")
+                    self.lbl_status.config(text="🟢 AUTONOMOUS ACTIVE", bg="#0a4020", fg="#b9f6ca")
 
                 # Mode Badge
                 if mode == "QUEST":
-                    self.lbl_mode.config(text="📜 QUEST-MODUS", bg="#524005", fg="#ffe082")
+                    self.lbl_mode.config(text="📜 QUEST MODE", bg="#524005", fg="#ffe082")
                 else:
-                    self.lbl_mode.config(text="🏹 FARM-MODUS", bg="#0a3d24", fg="#a7f3d0")
+                    self.lbl_mode.config(text="🏹 FARM MODE", bg="#0a3d24", fg="#a7f3d0")
 
                 # Meters
                 self.lbl_hp_val.config(text=f"{hp:.1f}%")
@@ -305,7 +305,7 @@ class AionGamingGUI(tk.Tk):
                     self.lbl_tgt_val.config(text=f"{target_hp:.1f}%", fg="#ff9100")
                     self._draw_bar(self.cv_tgt, target_hp, "#ff5500")
                 else:
-                    self.lbl_tgt_val.config(text="KEIN ZIEL", fg="#666666")
+                    self.lbl_tgt_val.config(text="NO TARGET", fg="#666666")
                     self._draw_bar(self.cv_tgt, 0.0, "#332010")
 
                 # Stats Footer
@@ -318,11 +318,10 @@ class AionGamingGUI(tk.Tk):
             except Exception:
                 pass
         else:
-            # Check process
             try:
                 out = subprocess.check_output(["pgrep", "-f", GAMER_SCRIPT], text=True).strip()
                 if out:
-                    self.lbl_status.config(text="🟢 PROZESS LÄUFT", bg="#0a4020", fg="#b9f6ca")
+                    self.lbl_status.config(text="🟢 PROCESS RUNNING", bg="#0a4020", fg="#b9f6ca")
                 else:
                     self.lbl_status.config(text="🔴 OFFLINE", bg="#4a151b", fg="#ffffff")
             except Exception:
@@ -351,11 +350,11 @@ class AionGamingGUI(tk.Tk):
                     tag = "dim"
                     if "Kill #" in line_clean or "⭐" in line_clean:
                         tag = "kill"
-                    elif "COMBAT" in line_clean or "Ziel:" in line_clean:
+                    elif "COMBAT" in line_clean or "Target:" in line_clean or "Target" in line_clean:
                         tag = "combat"
                     elif "QUEST" in line_clean or "NPC" in line_clean:
                         tag = "quest"
-                    elif "[AION]" in line_clean:
+                    elif "[AION]" in line_clean or "SPEECH" in line_clean:
                         tag = "speech"
                     elif "FARM" in line_clean or "SCOUT" in line_clean:
                         tag = "info"
@@ -377,4 +376,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

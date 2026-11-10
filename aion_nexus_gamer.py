@@ -3,11 +3,16 @@
 # AION NEXUS — AUTONOMOUS MULTI-DOMAIN REINFORCEMENT LEARNING AGENT (AION 2)
 # ==============================================================================
 # Sovereign AI agent that autonomously plays AION 2, learns from:
-#   1. Combat: Q-Learning optimal rotations (L-Fire, R-Fire, Skills 1-4, Mana).
-#   2. Movements: Circle-kiting (Strafing A/D), Tactical backward kiting (S),
-#      and Collision Unstuck (Jump + Leap).
-#   3. Questing: Auto-clicking Quest Tracker, navigating to objective,
-#      talking with NPCs ([F]/[Space]), accepting rewards & defending along paths.
+#   1. Combat: Q-Learning optimal rotations (L-Barrage, R-Heavy, Skills 1-5, Q, E, R).
+#      - Continuous Left-Click primary fire during movement and kiting.
+#      - Heavy Right-Click bow shots when MP > 20%.
+#      - Full skill bar weaving (Keys 1, 2, 3, 4, 5, Q, E, R).
+#   2. Movements: Circle-kiting (Strafing A/D) while firing arrows,
+#      tactical backward kiting (S) while firing, and collision unstuck (Jump+Leap).
+#   3. Questing & Aggressive Mob Hunting:
+#      - Continuous Tab-Targeting in both Quest and Farm modes.
+#      - Instant kill-chain targeting (immediately acquiring next pack mob upon kill).
+#      - Auto-clicking Quest Tracker, navigating to objectives, talking with NPCs ([F]/[Space]).
 #   4. Map Roaming & Exploration: Natural search trajectories across terrain.
 #   5. Telemetry & GUI Integration:
 #      - Status JSON: '/tmp/aion_nexus_status.json'
@@ -43,7 +48,7 @@ STATUS_FILE = "/tmp/aion_nexus_status.json"
 CMD_FILE = "/tmp/aion_nexus_cmd.txt"
 LOG_FILE = "/tmp/aion_nexus_log.txt"
 
-# Normalized HUD Ratios (Resolution Independent)
+# Normalized HUD Ratios (Resolution & Borderless Window Independent)
 NORM_HP_X_START = 0.3844
 NORM_HP_X_END = 0.4813
 NORM_HP_Y = 0.9028
@@ -65,6 +70,10 @@ KEY_SKILL_1 = "1"
 KEY_SKILL_2 = "2"
 KEY_SKILL_3 = "3"
 KEY_SKILL_4 = "4"
+KEY_SKILL_5 = "5"
+KEY_SKILL_Q = "q"
+KEY_SKILL_E = "e"
+KEY_SKILL_R = "r"
 KEY_LOOT = "f"
 KEY_INTERACT = "f"
 KEY_DIALOGUE_ADVANCE = "space"
@@ -76,18 +85,22 @@ KEY_LEFT = "a"
 KEY_RIGHT = "d"
 KEY_JUMP = "space"
 
-# Actions in Multi-Domain Q-Space (Combat, Movement & Kiting)
+# Actions in Multi-Domain Q-Space (Every Action Keeps Arrows Flying!)
 ACTIONS = [
-    "L_AUTO_SHOT",    # 0: Continuous primary bow shot
-    "R_HEAVY_SHOT",   # 1: Heavy bow shot (mana throttled)
-    "SKILL_1",        # 2: Bow Skill 1 (Primary)
-    "SKILL_2",        # 3: Bow Skill 2 (Piercing)
-    "SKILL_3",        # 4: Bow Skill 3 (Rapid Fire)
-    "SKILL_4",        # 5: Bow Skill 4 (Stun / Burst)
-    "TACTICAL_KITE",  # 6: Step backward with [S]
-    "STRAFE_LEFT",    # 7: Circle-kite left with [A]
-    "STRAFE_RIGHT",   # 8: Circle-kite right with [D]
-    "JUMP_UNSTUCK",   # 9: Jump [Space] + forward leap to clear collision
+    "L_AUTO_SHOT",    # 0: Continuous primary bow volley (3 rapid shots)
+    "R_HEAVY_SHOT",   # 1: Heavy charged shot (mana throttled) + LMB weave
+    "SKILL_1",        # 2: Bow Skill 1 (Primary Burst) + LMB weave
+    "SKILL_2",        # 3: Bow Skill 2 (Piercing Arrow) + LMB weave
+    "SKILL_3",        # 4: Bow Skill 3 (Rapid Arrow Volley) + LMB weave
+    "SKILL_4",        # 5: Bow Skill 4 (Stun / Heavy Impact) + LMB weave
+    "SKILL_5",        # 6: Bow Skill 5 (Inferno / Fiery Arrow) + LMB weave
+    "SKILL_Q",        # 7: Bow Skill Q (Runic Shot) + LMB weave
+    "SKILL_E",        # 8: Bow Skill E (Snare / Piercing) + LMB weave
+    "SKILL_R",        # 9: Bow Skill R (Burst Ultimate) + LMB weave
+    "TACTICAL_KITE",  # 10: Step backward with [S] WHILE firing continuous arrows
+    "STRAFE_LEFT",    # 11: Circle-kite left with [A] WHILE firing continuous arrows
+    "STRAFE_RIGHT",   # 12: Circle-kite right with [D] WHILE firing continuous arrows
+    "JUMP_UNSTUCK",   # 13: Forward leap + jump [Space] WHILE firing mid-air arrow
 ]
 
 
@@ -229,70 +242,82 @@ class AionMotor:
         if self.geom.wid:
             try:
                 active = subprocess.check_output(["xdotool", "getactivewindow"], text=True, stderr=subprocess.DEVNULL).strip()
-                if active and int(active) == int(self.geom.wid):
-                    return
+                if active:
+                    if int(active) == int(self.geom.wid):
+                        return
+                    # Avoid stealing focus when user interacts with GUI window
+                    active_name = subprocess.check_output(["xdotool", "getwindowname", active], text=True, stderr=subprocess.DEVNULL).strip()
+                    if "AION 2 — NEURAL" in active_name or "NEURAL GAMING" in active_name:
+                        return
                 subprocess.run(["xdotool", "windowactivate", str(self.geom.wid)],
                                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
 
-    def shoot_left(self):
+    def rapid_shoot_left(self, count: int = 3, delay: float = 0.05):
+        """Continuous primary bow shot volley."""
         try:
-            subprocess.run(["xdotool", "mousedown", "1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(0.04)
-            subprocess.run(["xdotool", "mouseup", "1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for _ in range(count):
+                subprocess.run(["xdotool", "click", "1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if delay > 0:
+                    time.sleep(delay)
         except Exception:
             pass
 
     def shoot_right(self):
+        """Heavy charged bow shot."""
         try:
             subprocess.run(["xdotool", "mousedown", "3"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(0.04)
+            time.sleep(0.08)
             subprocess.run(["xdotool", "mouseup", "3"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
-    def press_key(self, key: str, delay: int = 80):
+    def press_key(self, key: str, delay: int = 65):
         try:
             subprocess.run(["xdotool", "key", "--delay", str(delay), key], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
-    def step_back(self, duration: float = 0.35):
-        try:
-            subprocess.run(["xdotool", "keydown", KEY_BACKWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(duration)
-            subprocess.run(["xdotool", "keyup", KEY_BACKWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-
-    def strafe_left(self, duration: float = 0.32):
+    def strafe_left_and_shoot(self, duration: float = 0.30):
+        """Circle-kites left with [A] while continuously firing arrows."""
         try:
             subprocess.run(["xdotool", "keydown", KEY_LEFT], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(duration)
+            self.rapid_shoot_left(count=3, delay=0.06)
             subprocess.run(["xdotool", "keyup", KEY_LEFT], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
-    def strafe_right(self, duration: float = 0.32):
+    def strafe_right_and_shoot(self, duration: float = 0.30):
+        """Circle-kites right with [D] while continuously firing arrows."""
         try:
             subprocess.run(["xdotool", "keydown", KEY_RIGHT], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(duration)
+            self.rapid_shoot_left(count=3, delay=0.06)
             subprocess.run(["xdotool", "keyup", KEY_RIGHT], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
-    def jump_unstuck(self):
-        """Performs a leap forward + jump to clear terrain collision."""
+    def kite_back_and_shoot(self, duration: float = 0.32):
+        """Steps backward with [S] to maintain distance while firing arrows."""
+        try:
+            subprocess.run(["xdotool", "keydown", KEY_BACKWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.rapid_shoot_left(count=3, delay=0.06)
+            subprocess.run(["xdotool", "keyup", KEY_BACKWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    def jump_shot_unstuck(self):
+        """Performs a leap forward + jump to clear terrain collision while firing in mid-air."""
         try:
             subprocess.run(["xdotool", "keydown", KEY_FORWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             subprocess.run(["xdotool", "key", KEY_JUMP], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(0.35)
+            self.rapid_shoot_left(count=2, delay=0.05)
+            time.sleep(0.2)
             subprocess.run(["xdotool", "keyup", KEY_FORWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
-    def walk_forward(self, duration: float = 0.6):
+    def walk_forward(self, duration: float = 0.5):
         try:
             subprocess.run(["xdotool", "keydown", KEY_FORWARD], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(duration)
@@ -309,8 +334,8 @@ class AionMotor:
 
     def loot(self):
         for _ in range(3):
-            self.press_key(KEY_LOOT, delay=80)
-            time.sleep(0.22)
+            self.press_key(KEY_LOOT, delay=70)
+            time.sleep(0.18)
 
     def click_quest_tracker(self):
         if not self.geom.wid:
@@ -331,9 +356,9 @@ class AionMotor:
             pass
 
     def interact_npc(self):
-        self.press_key(KEY_INTERACT, delay=90)
-        time.sleep(0.2)
-        self.press_key(KEY_DIALOGUE_ADVANCE, delay=70)
+        self.press_key(KEY_INTERACT, delay=80)
+        time.sleep(0.15)
+        self.press_key(KEY_DIALOGUE_ADVANCE, delay=60)
 
 
 class GlobalHotkeyManager:
@@ -376,11 +401,11 @@ class GlobalHotkeyManager:
 
 
 class NexusCombatBrain:
-    """Multi-Domain Reinforcement Learning (Combat, Circle Kiting, Unstuck, Quest)."""
+    """Multi-Domain Reinforcement Learning Policy (Offense, Circle Kiting, Unstuck, Quest)."""
     def __init__(self):
         self.alpha = 0.15
         self.gamma = 0.85
-        self.epsilon = 0.34
+        self.epsilon = 0.30
         self.epsilon_min = 0.05
         self.epsilon_decay = 0.992
 
@@ -410,8 +435,12 @@ class NexusCombatBrain:
         if state not in self.q_table:
             self.q_table[state] = {a: 0.0 for a in ACTIONS}
 
+        # Backwards compatibility: ensure newly added actions exist in state
+        for a in ACTIONS:
+            if a not in self.q_table[state]:
+                self.q_table[state][a] = 0.0
+
         if is_stuck:
-            # High priority to unstuck / strafe
             return random.choice(["JUMP_UNSTUCK", "STRAFE_LEFT", "STRAFE_RIGHT"])
 
         if random.random() < self.epsilon:
@@ -433,6 +462,12 @@ class NexusCombatBrain:
         if next_state not in self.q_table:
             self.q_table[next_state] = {a: 0.0 for a in ACTIONS}
 
+        for a in ACTIONS:
+            if a not in self.q_table[state]:
+                self.q_table[state][a] = 0.0
+            if a not in self.q_table[next_state]:
+                self.q_table[next_state][a] = 0.0
+
         old_q = self.q_table[state].get(action, 0.0)
         max_next_q = max(self.q_table[next_state].values()) if self.q_table[next_state] else 0.0
         new_q = old_q + self.alpha * (reward + self.gamma * max_next_q - old_q)
@@ -451,7 +486,7 @@ class NexusCombatBrain:
                     self.total_kills = data.get("total_kills", 0)
                     self.total_damage_dealt = data.get("total_damage_dealt", 0.0)
                     self.total_damage_taken = data.get("total_damage_taken", 0.0)
-                    self.epsilon = data.get("epsilon", 0.34)
+                    self.epsilon = data.get("epsilon", 0.30)
                     self.combat_durations = data.get("combat_durations", [])
             except Exception:
                 pass
@@ -459,7 +494,7 @@ class NexusCombatBrain:
     def save_memory(self):
         data = {
             "agent": "AION_NEXUS_AUTONOMOUS_GAMER",
-            "model": "MULTI_DOMAIN_REINFORCEMENT_POLICY_V3",
+            "model": "MULTI_DOMAIN_REINFORCEMENT_POLICY_V4_AGGRESSIVE",
             "last_updated": time.strftime("%Y-%m-%d %H:%M:%S"),
             "total_kills": self.total_kills,
             "total_damage_dealt": round(self.total_damage_dealt, 1),
@@ -501,15 +536,20 @@ class AionNexusAutonomousGamer:
         self.last_quest_click = 0.0
         self.last_npc_interact = 0.0
         self.last_status_write = 0.0
+        self.last_tab_scan = 0.0
         self.last_target_change = time.time()
         self.last_observed_target_hp = None
 
-        # Cooldown manager
+        # Cooldown Manager for all hotbar skills
         self.skill_cooldowns = {
             KEY_SKILL_1: 1.5,
             KEY_SKILL_2: 3.0,
             KEY_SKILL_3: 5.0,
             KEY_SKILL_4: 7.5,
+            KEY_SKILL_5: 9.0,
+            KEY_SKILL_Q: 4.0,
+            KEY_SKILL_E: 6.0,
+            KEY_SKILL_R: 12.0,
         }
         self.skill_last_used = {k: 0.0 for k in self.skill_cooldowns}
 
@@ -519,7 +559,6 @@ class AionNexusAutonomousGamer:
                 with open(CMD_FILE, "r") as f:
                     cmd = f.read().strip()
                 if cmd:
-                    # Clear command file
                     with open(CMD_FILE, "w") as f:
                         f.write("")
 
@@ -527,31 +566,31 @@ class AionNexusAutonomousGamer:
                     if cmd == "PAUSE":
                         self.hotkeys.paused = True
                         self.motor.stop_movement()
-                        self.speech.speak("Aion pausiert! Du übernimmst die Steuerung, Tobias.", force=True)
+                        self.speech.speak("Aion paused! Manual control engaged.", force=True)
                     elif cmd == "RESUME":
                         self.hotkeys.paused = False
-                        self.speech.speak(f"Aion setzt fort! Modus: {self.hotkeys.mode}", force=True)
+                        self.speech.speak(f"Aion resuming! Mode: {self.hotkeys.mode}", force=True)
                     elif cmd == "TOGGLE_PAUSE":
                         self.hotkeys.paused = not self.hotkeys.paused
                         if self.hotkeys.paused:
                             self.motor.stop_movement()
-                            self.speech.speak("Aion pausiert! Du hast die Kontrolle.", force=True)
+                            self.speech.speak("Aion paused! You have manual control.", force=True)
                         else:
-                            self.speech.speak(f"Aion setzt fort! Modus: {self.hotkeys.mode}", force=True)
+                            self.speech.speak(f"Aion resuming! Mode: {self.hotkeys.mode}", force=True)
                     elif cmd == "MODE_QUEST":
                         self.hotkeys.mode = "QUEST"
-                        self.speech.speak("Quest-Modus aktiviert!", force=True)
+                        self.speech.speak("Quest Mode activated!", force=True)
                     elif cmd == "MODE_FARM":
                         self.hotkeys.mode = "FARM"
-                        self.speech.speak("Farm-Modus aktiviert!", force=True)
+                        self.speech.speak("Farm Mode activated!", force=True)
                     elif cmd == "TOGGLE_MODE":
                         self.hotkeys.mode = "FARM" if self.hotkeys.mode == "QUEST" else "QUEST"
-                        self.speech.speak(f"Modus: {self.hotkeys.mode}!", force=True)
+                        self.speech.speak(f"Mode switched to {self.hotkeys.mode}!", force=True)
                     elif cmd == "UNSTUCK":
-                        self.speech.speak("Befreie Charakter aus Geländekollision!", force=True)
-                        self.motor.jump_unstuck()
+                        self.speech.speak("Unstuck initiated! Evading collision.", force=True)
+                        self.motor.jump_shot_unstuck()
                     elif cmd == "TARGET":
-                        self.motor.press_key(KEY_TARGET, delay=70)
+                        self.motor.press_key(KEY_TARGET, delay=60)
                     elif cmd == "CLICK_QUEST":
                         self.motor.click_quest_tracker()
                     elif cmd == "INTERACT_NPC":
@@ -591,43 +630,62 @@ class AionNexusAutonomousGamer:
             pass
 
     def execute_action(self, action: str):
+        """Executes offensive tactical action — EVERY action maintains damage output!"""
         now = time.time()
         if action == "L_AUTO_SHOT":
-            self.motor.shoot_left()
+            # Rapid 3-arrow barrage
+            self.motor.rapid_shoot_left(count=3, delay=0.06)
         elif action == "R_HEAVY_SHOT":
             self.motor.shoot_right()
+            self.motor.rapid_shoot_left(count=1, delay=0.04)
         elif action == "SKILL_1":
             if (now - self.skill_last_used[KEY_SKILL_1]) >= self.skill_cooldowns[KEY_SKILL_1]:
-                self.motor.press_key(KEY_SKILL_1, delay=85)
+                self.motor.press_key(KEY_SKILL_1, delay=65)
                 self.skill_last_used[KEY_SKILL_1] = now
-            else:
-                self.motor.shoot_left()
+            self.motor.rapid_shoot_left(count=2, delay=0.05)
         elif action == "SKILL_2":
             if (now - self.skill_last_used[KEY_SKILL_2]) >= self.skill_cooldowns[KEY_SKILL_2]:
-                self.motor.press_key(KEY_SKILL_2, delay=85)
+                self.motor.press_key(KEY_SKILL_2, delay=65)
                 self.skill_last_used[KEY_SKILL_2] = now
-            else:
-                self.motor.shoot_left()
+            self.motor.rapid_shoot_left(count=2, delay=0.05)
         elif action == "SKILL_3":
             if (now - self.skill_last_used[KEY_SKILL_3]) >= self.skill_cooldowns[KEY_SKILL_3]:
-                self.motor.press_key(KEY_SKILL_3, delay=85)
+                self.motor.press_key(KEY_SKILL_3, delay=65)
                 self.skill_last_used[KEY_SKILL_3] = now
-            else:
-                self.motor.shoot_left()
+            self.motor.rapid_shoot_left(count=2, delay=0.05)
         elif action == "SKILL_4":
             if (now - self.skill_last_used[KEY_SKILL_4]) >= self.skill_cooldowns[KEY_SKILL_4]:
-                self.motor.press_key(KEY_SKILL_4, delay=85)
+                self.motor.press_key(KEY_SKILL_4, delay=65)
                 self.skill_last_used[KEY_SKILL_4] = now
-            else:
-                self.motor.shoot_left()
+            self.motor.rapid_shoot_left(count=2, delay=0.05)
+        elif action == "SKILL_5":
+            if (now - self.skill_last_used[KEY_SKILL_5]) >= self.skill_cooldowns[KEY_SKILL_5]:
+                self.motor.press_key(KEY_SKILL_5, delay=65)
+                self.skill_last_used[KEY_SKILL_5] = now
+            self.motor.rapid_shoot_left(count=2, delay=0.05)
+        elif action == "SKILL_Q":
+            if (now - self.skill_last_used[KEY_SKILL_Q]) >= self.skill_cooldowns[KEY_SKILL_Q]:
+                self.motor.press_key(KEY_SKILL_Q, delay=65)
+                self.skill_last_used[KEY_SKILL_Q] = now
+            self.motor.rapid_shoot_left(count=2, delay=0.05)
+        elif action == "SKILL_E":
+            if (now - self.skill_last_used[KEY_SKILL_E]) >= self.skill_cooldowns[KEY_SKILL_E]:
+                self.motor.press_key(KEY_SKILL_E, delay=65)
+                self.skill_last_used[KEY_SKILL_E] = now
+            self.motor.rapid_shoot_left(count=2, delay=0.05)
+        elif action == "SKILL_R":
+            if (now - self.skill_last_used[KEY_SKILL_R]) >= self.skill_cooldowns[KEY_SKILL_R]:
+                self.motor.press_key(KEY_SKILL_R, delay=65)
+                self.skill_last_used[KEY_SKILL_R] = now
+            self.motor.rapid_shoot_left(count=2, delay=0.05)
         elif action == "TACTICAL_KITE":
-            self.motor.step_back(duration=0.35)
+            self.motor.kite_back_and_shoot(duration=0.32)
         elif action == "STRAFE_LEFT":
-            self.motor.strafe_left(duration=0.32)
+            self.motor.strafe_left_and_shoot(duration=0.30)
         elif action == "STRAFE_RIGHT":
-            self.motor.strafe_right(duration=0.32)
+            self.motor.strafe_right_and_shoot(duration=0.30)
         elif action == "JUMP_UNSTUCK":
-            self.motor.jump_unstuck()
+            self.motor.jump_shot_unstuck()
 
     def calculate_reward(self, prev_hp: float, curr_hp: float,
                          prev_mp: float, curr_mp: float,
@@ -681,7 +739,7 @@ class AionNexusAutonomousGamer:
                 node_id = f"aion2_mastery_kill_{kills}"
                 self.kg.nodes[node_id] = {
                     "type": "EVOLUTIONARY_MILESTONE",
-                    "label": f"AION 2 Autonome Kampferfahrung: {kills} Kills",
+                    "label": f"AION 2 Autonomous Combat Experience: {kills} Kills",
                     "avg_ttk": round(avg_ttk, 2),
                     "exploration_rate": self.brain.epsilon,
                     "states_known": len(self.brain.q_table),
@@ -700,18 +758,18 @@ class AionNexusAutonomousGamer:
 
     def run(self):
         self.motor.focus_game()
-        time.sleep(0.4)
+        time.sleep(0.3)
 
-        msg = f"Aion Nexus autonomes Lernen & Questing aktiv! Modus: {self.hotkeys.mode}."
+        msg = f"Aion Nexus autonomous learning & questing active! Mode: {self.hotkeys.mode}."
         self.speech.speak(msg, force=True)
-        AionLogger.log(f"=== AION NEXUS SESSION GESTARTET (Modus: {self.hotkeys.mode}) ===")
+        AionLogger.log(f"=== AION NEXUS SESSION STARTED (Mode: {self.hotkeys.mode}) ===")
 
         print("\n" + "="*80)
         print("  🧠 AION NEXUS — SOVEREIGN MULTI-DOMAIN AUTONOMOUS AGENT (AION 2)")
-        print(f"  • Modus: {self.hotkeys.mode}  ([F8] drücken zum Wechseln: QUEST <-> FARM)")
-        print(f"  • GUI & Live-Logs: Starte 'aion2-gaming-gui' für Steuerungsfenster!")
-        print(f"  • Kills bisher: {self.brain.total_kills} | Q-Zustände: {len(self.brain.q_table)}")
-        print("  🎮 PAUSE: Drücke jederzeit [F10] oder [Pause] im Spiel zum Pausieren!")
+        print(f"  • Mode: {self.hotkeys.mode}  (Press [F8] to toggle: QUEST <-> FARM)")
+        print(f"  • GUI & Live Logs: Run 'aion2-gaming-gui' for control window!")
+        print(f"  • Kills so far: {self.brain.total_kills} | Q-States: {len(self.brain.q_table)}")
+        print("  🎮 PAUSE: Press [F10] or [Pause] in-game at any time for manual takeover!")
         print("="*80 + "\n")
 
         current_action = "L_AUTO_SHOT"
@@ -725,15 +783,15 @@ class AionNexusAutonomousGamer:
                 if self.hotkeys.check_pause_toggle():
                     if self.hotkeys.paused:
                         self.motor.stop_movement()
-                        self.speech.speak("Aion pausiert! Tobias steuert jetzt selbst.", force=True)
-                        AionLogger.log("[PAUSE] Aion pausiert — manuelle Steuerung aktiviert.")
+                        self.speech.speak("Aion paused! Manual control engaged.", force=True)
+                        AionLogger.log("[PAUSE] Aion paused — manual control activated.")
                     else:
-                        self.speech.speak(f"Aion übernimmt wieder! Modus: {self.hotkeys.mode}", force=True)
-                        AionLogger.log(f"[RESUME] Aion übernimmt wieder (Modus: {self.hotkeys.mode}).")
+                        self.speech.speak(f"Aion resuming! Mode: {self.hotkeys.mode}", force=True)
+                        AionLogger.log(f"[RESUME] Aion resuming (Mode: {self.hotkeys.mode}).")
 
                 if self.hotkeys.check_mode_toggle():
-                    self.speech.speak(f"Modus gewechselt zu {self.hotkeys.mode}!", force=True)
-                    AionLogger.log(f"[MODE TOGGLE] Neuer Modus: {self.hotkeys.mode}")
+                    self.speech.speak(f"Mode switched to {self.hotkeys.mode}!", force=True)
+                    AionLogger.log(f"[MODE TOGGLE] New Mode: {self.hotkeys.mode}")
 
                 # 2. Vision Perception
                 hp = self.vision.get_player_hp()
@@ -744,7 +802,7 @@ class AionNexusAutonomousGamer:
                 self._write_status_telemetry(hp, mp, target_hp, current_action, reward)
 
                 if self.hotkeys.paused:
-                    sys.stdout.write(f"\r  ⏸️  [PAUSE-MODUS] Tobias steuert | HP: {hp:5.1f}% | MP: {mp:5.1f}% | [F10/Pause zum Weiterspielen]   ")
+                    sys.stdout.write(f"\r  ⏸️  [PAUSE MODE] Manual Control | HP: {hp:5.1f}% | MP: {mp:5.1f}% | [F10/Pause to Resume]   ")
                     sys.stdout.flush()
                     time.sleep(0.12)
                     continue
@@ -753,15 +811,15 @@ class AionNexusAutonomousGamer:
 
                 # Emergency Potions
                 if 0.0 < hp < 40.0:
-                    self.motor.press_key(KEY_POTION_HP, delay=90)
-                    time.sleep(0.15)
+                    self.motor.press_key(KEY_POTION_HP, delay=80)
+                    time.sleep(0.12)
                 if 0.0 < mp < 20.0:
-                    self.motor.press_key(KEY_POTION_MP, delay=90)
-                    time.sleep(0.15)
+                    self.motor.press_key(KEY_POTION_MP, delay=80)
+                    time.sleep(0.12)
 
                 # --- TARGET COMBAT VS QUEST / ROAM ---
                 if target_hp is None:
-                    # Target just died!
+                    # Mob just defeated!
                     if self.combat_start > 0:
                         duration = time.time() - self.combat_start
                         self.kills += 1
@@ -776,74 +834,99 @@ class AionNexusAutonomousGamer:
                         self.brain.save_memory()
 
                         avg_ttk = sum(self.brain.combat_durations[-10:]) / max(1, len(self.brain.combat_durations[-10:]))
-                        log_msg = f"⭐ Kill #{self.kills} besiegt in {duration:.1f}s (Avg TTK: {avg_ttk:.1f}s) | Q-Update: +{reward:.1f}"
+                        log_msg = f"⭐ Kill #{self.kills} defeated in {duration:.1f}s (Avg TTK: {avg_ttk:.1f}s) | Q-Update: +{reward:.1f}"
                         print(f"\n[AION NEXUS] {log_msg}")
                         AionLogger.log(log_msg)
 
                         if self.kills % 3 == 0:
-                            self.speech.speak(f"Kill Nummer {self.kills}! Durchschnittliche Kampfzeit: {avg_ttk:.1f} Sekunden.")
+                            self.speech.speak(f"Kill number {self.kills}! Average TTK: {avg_ttk:.1f} seconds.")
                             self.record_evolution_milestone(self.kills, avg_ttk)
 
-                        # Loot corpse
-                        self.motor.walk_forward(duration=0.85)
+                        # Quick loot
+                        self.motor.walk_forward(duration=0.6)
                         self.motor.loot()
-                        self.motor.step_back(duration=0.4)
+                        self.motor.step_back(duration=0.3)
 
                         self.combat_start = 0.0
                         self.last_target_hp = None
 
+                        # IMMEDIATE CHAIN-TARGET ACQUISITION: Check next pack mob!
+                        self.motor.press_key(KEY_TARGET, delay=60)
+                        time.sleep(0.15)
+                        chain_target = self.vision.get_target_hp()
+                        if chain_target is not None:
+                            AionLogger.log(f"[CHAIN TARGET] Instantly locked next mob! HP: {chain_target:.1f}%")
+                            target_hp = chain_target
+                            continue
+
                         if self.hotkeys.mode == "QUEST":
-                            time.sleep(0.3)
+                            time.sleep(0.2)
                             self.motor.click_quest_tracker()
                             self.last_quest_click = time.time()
 
-                    # NO TARGET: QUEST OR FARM LOGIC
+                    # NO ACTIVE TARGET: PROACTIVE SCANNING
                     now = time.time()
 
                     if self.hotkeys.mode == "QUEST":
-                        # Auto-Pathing Click
-                        if (now - self.last_quest_click) > 7.0:
-                            msg = "[QUEST] 📜 Klicke Quest Tracker für Auto-Lauf..."
+                        # 1. Proactive Tab Scan for Quest Mobs!
+                        if (now - self.last_tab_scan) > 0.35:
+                            self.motor.press_key(KEY_TARGET, delay=60)
+                            self.last_tab_scan = now
+                            time.sleep(0.12)
+                            scanned_target = self.vision.get_target_hp()
+                            if scanned_target is not None:
+                                AionLogger.log(f"[QUEST TARGET FOUND] Mob locked via Tab! HP: {scanned_target:.1f}%")
+                                target_hp = scanned_target
+                                continue
+
+                        # 2. Auto-Pathing Click (keep character moving towards objective)
+                        if (now - self.last_quest_click) > 5.0:
+                            msg = "[QUEST] 📜 Clicking Quest Tracker for auto-pathing..."
                             sys.stdout.write(f"\r{msg}                                  ")
                             sys.stdout.flush()
-                            AionLogger.log("[QUEST] Auto-Pathing Klick auf Quest-Tracker")
+                            AionLogger.log("[QUEST] Auto-Pathing click on Quest Tracker")
                             self.motor.click_quest_tracker()
                             self.last_quest_click = now
 
-                        # NPC Dialogue Advance
+                        # 3. NPC Dialogue / Interaction Advance
                         if (now - self.last_npc_interact) > 2.5:
-                            msg = "[QUEST] 💬 Prüfe NPC-Interaktion / Dialog ([F] / [Space])..."
+                            msg = "[QUEST] 💬 Checking NPC Interaction / Dialogue ([F] / [Space])..."
                             sys.stdout.write(f"\r{msg}                                  ")
                             sys.stdout.flush()
                             self.motor.interact_npc()
                             self.last_npc_interact = now
 
-                        time.sleep(0.18)
+                        time.sleep(0.15)
 
                     else:
-                        # FARM SCOUTING: Tab target
-                        sys.stdout.write(f"\r[FARM SCOUT] Suche Gegner mit [Tab]... (Versuch {self.roam_count+1}) [Kills: {self.kills}]   ")
+                        # FARM SCOUTING: Proactive Tab Scan
+                        sys.stdout.write(f"\r[FARM SCOUT] Scanning target with [Tab]... (Try {self.roam_count+1}) [Kills: {self.kills}]   ")
                         sys.stdout.flush()
-                        self.motor.press_key(KEY_TARGET, delay=70)
-                        time.sleep(0.28)
-                        self.roam_count += 1
+                        self.motor.press_key(KEY_TARGET, delay=60)
+                        time.sleep(0.15)
+                        scanned_target = self.vision.get_target_hp()
+                        if scanned_target is not None:
+                            AionLogger.log(f"[FARM TARGET FOUND] Mob locked via Tab! HP: {scanned_target:.1f}%")
+                            target_hp = scanned_target
+                            continue
 
+                        self.roam_count += 1
                         if self.roam_count >= 3:
                             # Natural roaming with slight angle turns
                             side = random.choice([KEY_LEFT, KEY_RIGHT])
                             subprocess.run(["xdotool", "key", side], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                            self.motor.walk_forward(duration=0.55)
+                            self.motor.walk_forward(duration=0.5)
                             self.roam_count = 0
-                            time.sleep(0.2)
+                            time.sleep(0.15)
 
                 else:
-                    # ACTIVE TARGET IN SIGHT!
+                    # ACTIVE ENEMY LOCKED IN SIGHT!
                     self.roam_count = 0
                     now = time.time()
                     if self.combat_start == 0.0:
                         self.combat_start = now
-                        self.speech.speak("Ziel erfasst! Kampfeinsatz & Kiting gestartet.")
-                        AionLogger.log(f"[COMBAT START] Ziel anvisiert! Start-HP: {target_hp:.1f}%")
+                        self.speech.speak("Target locked! Engaging combat & tactical kiting.")
+                        AionLogger.log(f"[COMBAT START] Target locked! Initial HP: {target_hp:.1f}%")
 
                     # Stuck detection: target HP not changing for > 7s
                     if self.last_observed_target_hp is None or abs(target_hp - self.last_observed_target_hp) > 2.0:
@@ -856,11 +939,15 @@ class AionNexusAutonomousGamer:
                     state = self.brain._state_key(hp, mp, target_hp, in_melee)
                     current_action = self.brain.choose_action(state, mp, is_stuck=is_stuck)
 
-                    # Execute chosen action
+                    # Execute chosen offensive action
                     self.execute_action(current_action)
 
+                    # Continuous baseline attack: if MP > 20%, also weave in heavy shot occasionally
+                    if mp > 25.0 and random.random() < 0.25:
+                        self.motor.shoot_right()
+
                     # Observe consequence
-                    time.sleep(0.18)
+                    time.sleep(0.12)
                     new_hp = self.vision.get_player_hp()
                     new_mp = self.vision.get_player_mp()
                     new_target = self.vision.get_target_hp()
@@ -876,7 +963,7 @@ class AionNexusAutonomousGamer:
                     q_val = self.brain.q_table.get(state, {}).get(current_action, 0.0)
                     mode_str = f"[{self.hotkeys.mode}]"
                     stuck_str = " ⚠️[STUCK]" if is_stuck else ""
-                    status = (f"\r{mode_str} Ziel: {target_hp:4.1f}% | Action: {current_action:13s}{stuck_str} | "
+                    status = (f"\r{mode_str} Target: {target_hp:4.1f}% | Action: {current_action:14s}{stuck_str} | "
                               f"Q: {q_val:5.2f} (R: {reward:+4.1f}) | Kills: {self.kills} | HP: {hp:4.0f}% MP: {mp:4.0f}%")
                     sys.stdout.write(status)
                     sys.stdout.flush()
@@ -888,12 +975,12 @@ class AionNexusAutonomousGamer:
             except KeyboardInterrupt:
                 break
             except Exception:
-                time.sleep(0.25)
+                time.sleep(0.2)
 
         self.brain.save_memory()
-        self.speech.speak(f"Aion Nexus beendet. {self.kills} Kills im neuronalen Modell verankert!", force=True)
-        AionLogger.log(f"=== AION NEXUS SESSION BEENDET ({self.kills} Kills) ===")
-        print("\n\n[Aion Nexus] Beendet. Gedächtnis gesichert.\n")
+        self.speech.speak(f"Aion Nexus finished. {self.kills} Kills reinforced in neural policy!", force=True)
+        AionLogger.log(f"=== AION NEXUS SESSION FINISHED ({self.kills} Kills) ===")
+        print("\n\n[Aion Nexus] Finished. Memory secured.\n")
 
 
 if __name__ == "__main__":
