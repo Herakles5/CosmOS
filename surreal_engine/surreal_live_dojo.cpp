@@ -16,6 +16,7 @@
 #include "surreal_hybrid_renderer.hpp"
 #include "surreal_aion_link.hpp"
 #include "surreal_game_master.hpp"
+#include "surreal_paths.hpp"
 #include <iostream>
 #include <vector>
 #include <chrono>
@@ -59,15 +60,18 @@ static void TriggerNativeImagePicker() {
                 res.pop_back();
             }
             if (code == 0 && !res.empty()) {
-                std::string escaped = "'";
-                for (char c : res) {
-                    if (c == '\'') escaped += "'\\''";
-                    else escaped += c;
+                std::string scriptPath = surreal::paths::ResolveScript("surreal_generator_gui.py");
+                std::error_code ec;
+                if (std::filesystem::exists(scriptPath, ec)) {
+                    std::string displayPfx = surreal::paths::HasDisplayEnv() ? "" : "DISPLAY=:0 ";
+                    std::string genCmd = displayPfx + "python3 " + surreal::paths::ShellEscapeSingle(scriptPath) +
+                                         " " + surreal::paths::ShellEscapeSingle(res) + " 2>/dev/null";
+                    int ret = system(genCmd.c_str());
+                    (void)ret;
+                } else {
+                    std::lock_guard<std::mutex> lock(g_imagePathMutex);
+                    g_pendingImagePath = res;
                 }
-                escaped += "'";
-                std::string genCmd = "DISPLAY=:0 python3 /root/coding/MeinOS/surreal_engine/scripts/surreal_generator_gui.py " + escaped + " 2>/dev/null";
-                int ret = system(genCmd.c_str());
-                (void)ret;
             }
         }
         g_imagePickerRunning.store(false);
@@ -81,10 +85,14 @@ static void TriggerNativeSettingsDialog() {
     }
     g_settingsGuiRunning.store(true);
     std::thread([]() {
-        const char* scriptPath = "/root/coding/MeinOS/surreal_engine/scripts/surreal_settings_gui.py";
-        std::string cmd = std::string("DISPLAY=:0 python3 ") + scriptPath + " 2>/dev/null";
-        int ret = system(cmd.c_str());
-        (void)ret;
+        std::string scriptPath = surreal::paths::ResolveScript("surreal_settings_gui.py");
+        std::error_code ec;
+        if (std::filesystem::exists(scriptPath, ec)) {
+            std::string displayPfx = surreal::paths::HasDisplayEnv() ? "" : "DISPLAY=:0 ";
+            std::string cmd = displayPfx + "python3 " + surreal::paths::ShellEscapeSingle(scriptPath) + " 2>/dev/null";
+            int ret = system(cmd.c_str());
+            (void)ret;
+        }
         g_settingsGuiRunning.store(false);
     }).detach();
 }
@@ -274,7 +282,7 @@ static void SyncRuntimeSettings(
 
 // List of dancing models & avatars available for fast swapping
 static const std::vector<std::pair<std::string, std::string>> g_availableAvatars = {
-    {"mia", "/root/coding/MeinOS/avatar/scene.gltf"},
+    {"mia", "avatar/scene.gltf"},
     {"wednesday", "assets/models/wednesday_gangnam_style.glb"},
     {"miku", "assets/models/miku_-_dance_animation.glb"},
     {"stormtrooper", "assets/models/dancing_stormtrooper.glb"},
@@ -297,14 +305,12 @@ static bool SetPlayerAvatar(
     Surreal::SurrealEngine& engine,
     Surreal::SkeletalMeshInstance& character,
     Surreal::EntityID avatarEntity,
-    Surreal::SurrealEditor& editor)
+    Surreal::SurrealEditor& editor,
+    Surreal::SurrealHybridRenderer* renderer = nullptr)
 {
-    std::string actualPath = glbPath;
-    if (!std::filesystem::exists(actualPath)) {
-        actualPath = "/root/coding/Surreal-engine-Game-editor/" + glbPath;
-    }
-    if (!std::filesystem::exists(actualPath)) {
-        actualPath = "/root/coding/MeinOS/surreal_engine/" + glbPath;
+    std::string actualPath = surreal::paths::ResolveAsset(glbPath);
+    if ((glbPath == "avatar/scene.gltf" || glbPath == "mia") && !std::filesystem::exists(actualPath)) {
+        actualPath = surreal::paths::GetDefaultAvatarPath();
     }
 
     Surreal::SkeletalMeshInstance newChar;
@@ -314,7 +320,11 @@ static bool SetPlayerAvatar(
         return false;
     }
 
+    std::shared_ptr<Surreal::SurrealMesh> prevMesh = character.activeDeformedMesh;
     character = std::move(newChar);
+    if (renderer && prevMesh && prevMesh != character.activeDeformedMesh) {
+        renderer->DestroyMeshWithTextures(prevMesh.get());
+    }
 
     // Auto-calculate humanoid scale to normalize to ~1.45m tall (realistic city proportions)
     character.activeDeformedMesh->CalculateBounds();
@@ -458,6 +468,7 @@ int main(int argc, char* argv[]) {
     floorRenderer.material.albedo = Surreal::ColorRGB(1.0f, 1.0f, 1.0f);
     floorRenderer.material.metallic = 0.15f;
     floorRenderer.material.roughness = 0.65f;
+    floorRenderer.material.allowWetPuddles = true;
     engine.world.meshRenderers[floorEntity] = floorRenderer;
 
     // Soft Real-Time Planar Contact Shadow Disc Mesh
@@ -482,9 +493,10 @@ int main(int argc, char* argv[]) {
 
             Surreal::TransformComponent& pt = engine.world.transforms[platEntity];
             pt.position = obs.aabb.Center();
+            pt.scale = obs.aabb.Extents() * 2.0f;
 
             Surreal::MeshRendererComponent platRenderer;
-            platRenderer.mesh = Surreal::SurrealTerrainBuilder::CreateBox(obs.aabb.Extents() * 2.0f, obs.color);
+            platRenderer.mesh = Surreal::SurrealTerrainBuilder::CreateBox(Surreal::Vec3(1.0f, 1.0f, 1.0f), obs.color);
             platRenderer.material.albedo = obs.color;
             platRenderer.material.metallic = 0.35f;
             platRenderer.material.roughness = 0.40f;
@@ -493,7 +505,7 @@ int main(int argc, char* argv[]) {
     }
 
     // 3. Load 3D Skeletal Avatar Character
-    const std::string modelPath = "/root/coding/MeinOS/avatar/scene.gltf";
+    const std::string modelPath = surreal::paths::GetDefaultAvatarPath();
     std::cout << "[*] Loading 3D Avatar into Live Dojo from " << modelPath << "...\n";
 
     Surreal::SkeletalMeshInstance character;
@@ -525,6 +537,12 @@ int main(int argc, char* argv[]) {
 
     // 4. Initialize Interactive World Editor
     Surreal::SurrealEditor editor;
+    editor.onMeshEvicted = [&](const std::shared_ptr<Surreal::SurrealMesh>& evicted) {
+        if (evicted && evicted != character.activeDeformedMesh &&
+            evicted != shadowDiscMesh && evicted != floorRenderer.mesh) {
+            hybridRenderer.DestroyMeshWithTextures(evicted.get());
+        }
+    };
 
     // Aion Nexus <-> Evolution Engine link (non-blocking, optional)
     Surreal::AionLink aionLink;
@@ -534,10 +552,7 @@ int main(int argc, char* argv[]) {
     Surreal::SurrealGameMaster gameMaster;
 
     // Initialize Aion In-Game AI Player Character (Co-Op Partner & Competitor)
-    std::string aionAvatarPath = "assets/models/miku_-_dance_animation.glb";
-    if (!std::filesystem::exists(aionAvatarPath)) {
-        aionAvatarPath = "/root/coding/Surreal-engine-Game-editor/assets/models/miku_-_dance_animation.glb";
-    }
+    std::string aionAvatarPath = surreal::paths::ResolveAsset("assets/models/miku_-_dance_animation.glb");
     if (!std::filesystem::exists(aionAvatarPath)) {
         aionAvatarPath = modelPath;
     }
@@ -573,17 +588,15 @@ int main(int argc, char* argv[]) {
         platEd.color = obstacles[i].color;
         platEd.metallic = 0.35f;
         platEd.roughness = 0.40f;
+        platEd.presetType = Surreal::ModelPresetType::CRATE;
         editor.entities.push_back(platEd);
     }
 
     // Multi-District Seoul Metropolis Environment (Connected Multi-Block Boulevard)
     if (loadCity) {
-        std::string cityPath = "assets/models/Seoul_City_PBR.glb";
+        std::string cityPath = surreal::paths::ResolveAsset("assets/models/Seoul_City_PBR.glb");
         if (!std::filesystem::exists(cityPath)) {
-            cityPath = "/root/coding/MeinOS/surreal_engine/assets/models/Seoul_City_PBR.glb";
-        }
-        if (!std::filesystem::exists(cityPath)) {
-            cityPath = "/root/Downloads/seoul_city__gameready__render__blender__pbr.glb";
+            cityPath = surreal::paths::ResolveAsset("seoul_city__gameready__render__blender__pbr.glb");
         }
         Surreal::SkeletalMeshInstance cityInst;
         if (Surreal::SurrealSkeletalLoader::LoadSkeletalModel(cityPath, cityInst)) {
@@ -614,6 +627,7 @@ int main(int argc, char* argv[]) {
                 cmr.material.albedo = Surreal::ColorRGB(1.0f, 1.0f, 1.0f);
                 cmr.material.metallic = 0.20f;
                 cmr.material.roughness = 0.50f;
+                cmr.material.allowWetPuddles = true;
                 engine.world.meshRenderers[cityEntity] = cmr;
 
                 Surreal::EditableEntity cityEd;
@@ -690,7 +704,7 @@ int main(int argc, char* argv[]) {
 
     // Always auto-spawn the 5 MEOVV Adaptive 3D Rubber-Suit figures (Ella, Gawon, Sooin, Anna, Narin)
     {
-        std::string groupImg = rigGroupPath.empty() ? "/root/Downloads/meovv_nobg.png" : rigGroupPath;
+        std::string groupImg = surreal::paths::DefaultRigGroupImage(rigGroupPath);
         editor.AutoSegmentGroupIntoFigures(groupImg, engine.world, obstacles);
         if (!rigGroupPath.empty()) {
             showSkeletonDebug = true;
@@ -711,7 +725,7 @@ int main(int argc, char* argv[]) {
                 break;
             }
         }
-        SetPlayerAvatar(targetPath, engine, character, avatarEntity, editor);
+        SetPlayerAvatar(targetPath, engine, character, avatarEntity, editor, &hybridRenderer);
     }
 
     editor.selectedIndex = static_cast<int>(editor.entities.size() - 1);
@@ -1017,6 +1031,12 @@ int main(int argc, char* argv[]) {
                         } else {
                             editor.SetStatus(isFs ? "[✓] Windowed Mode [F11]" : "[✓] Fullscreen Mode [F11]", 2.5f);
                         }
+                    } else if ((mod & KMOD_CTRL) && (sym == SDLK_z || sym == SDLK_y)) {
+                        if (sym == SDLK_y || (mod & KMOD_SHIFT)) {
+                            editor.Redo(engine.world, obstacles);
+                        } else {
+                            editor.Undo(engine.world, obstacles);
+                        }
                     } else if (sym == SDLK_F9) {
                         hybridRenderer.ToggleBackend();
                         editor.SetStatus("Switched Backend: " + hybridRenderer.GetBackendName(), 3.5f);
@@ -1032,11 +1052,15 @@ int main(int argc, char* argv[]) {
                         TriggerNativeImagePicker();
                         editor.SetStatus("[📸] Opening image file dialog...", 3.0f);
                     } else if (sym == SDLK_F4) {
-                        editor.AutoSegmentGroupIntoFigures("/root/Downloads/meovv_nobg.png", engine.world, obstacles);
+                        editor.AutoSegmentGroupIntoFigures(surreal::paths::DefaultRigGroupImage(), engine.world, obstacles);
                         showSkeletonDebug = true;
                     } else if (sym == SDLK_F2) {
                         TriggerNativeSettingsDialog();
                         editor.SetStatus("[⚙] Opening Graphics & Engine Settings...", 3.0f);
+                    }
+
+                    if ((mod & KMOD_CTRL) && (sym == SDLK_z || sym == SDLK_y)) {
+                        continue;
                     }
 
                     // --- PLAY MODE CONTROLS ---
@@ -1074,7 +1098,7 @@ int main(int argc, char* argv[]) {
                                 if (nearestName.find("MEOVV_") != std::string::npos || nearestName.find("meovv") != std::string::npos) {
                                     editor.CycleAllMeovvAnimations();
                                 } else if (!targetPath.empty()) {
-                                    SetPlayerAvatar(targetPath, engine, character, avatarEntity, editor);
+                                    SetPlayerAvatar(targetPath, engine, character, avatarEntity, editor, &hybridRenderer);
                                     editor.SetStatus("[★ DANCE DUET ★] Synchronized dance with " + nearestName + "!", 4.0f);
                                 } else {
                                     editor.CycleAllMeovvAnimations();
@@ -1116,7 +1140,7 @@ int main(int argc, char* argv[]) {
                                 } else {
                                     g_currentAvatarIndex = (g_currentAvatarIndex + 1) % g_availableAvatars.size();
                                 }
-                                SetPlayerAvatar(g_availableAvatars[g_currentAvatarIndex].second, engine, character, avatarEntity, editor);
+                                SetPlayerAvatar(g_availableAvatars[g_currentAvatarIndex].second, engine, character, avatarEntity, editor, &hybridRenderer);
                                 break;
                             }
                             case SDLK_r:
@@ -1400,10 +1424,10 @@ int main(int argc, char* argv[]) {
 
                                 // Rotation [R] / [T]
                                 case SDLK_r:
-                                    editor.RotateSelected(0.2618f, engine.world);
+                                    editor.RotateSelected(0.2618f, engine.world, &obstacles);
                                     break;
                                 case SDLK_t:
-                                    editor.RotateSelected(-0.2618f, engine.world);
+                                    editor.RotateSelected(-0.2618f, engine.world, &obstacles);
                                     break;
 
                                 // Focus Camera on Selected Figure [F]
@@ -1449,7 +1473,7 @@ int main(int argc, char* argv[]) {
                                     TriggerNativeImagePicker();
                                     editor.SetStatus("[📸] Opening image file dialog...", 3.0f);
                                 } else if (btn.id == "rig_group") {
-                                    editor.AutoSegmentGroupIntoFigures("/root/Downloads/meovv_nobg.png", engine.world, obstacles);
+                                    editor.AutoSegmentGroupIntoFigures(surreal::paths::DefaultRigGroupImage(), engine.world, obstacles);
                                     showSkeletonDebug = true;
                                 } else if (btn.id == "settings") {
                                     TriggerNativeSettingsDialog();
@@ -1590,7 +1614,9 @@ int main(int argc, char* argv[]) {
                 constexpr float CHAR_RADIUS = 0.22f;
 
                 for (const auto& obs : obstacles) {
-                    if (charPos.y < obs.topY - 0.12f) {
+                    const float charBottom = charPos.y;
+                    const float charTop = charPos.y + 1.55f;
+                    if (charBottom < obs.topY - 0.12f && charTop > obs.aabb.min.y + 0.05f) {
                         if (nextPos.x >= obs.aabb.min.x - CHAR_RADIUS && nextPos.x <= obs.aabb.max.x + CHAR_RADIUS &&
                             charPos.z >= obs.aabb.min.z - CHAR_RADIUS && charPos.z <= obs.aabb.max.z + CHAR_RADIUS)
                         {
@@ -1686,11 +1712,20 @@ int main(int argc, char* argv[]) {
         Surreal::Mat4 vpMat = engine.GetProjectionMatrix() * engine.GetViewMatrix();
         Surreal::Frustum camFrustum = Surreal::Frustum::FromViewProjection(vpMat);
 
-        // --- 2. Skeletal Animation Update (with Gen 4833/4834 Topological Frustum & Cadence Pruning) ---
+        // --- 2. Skeletal Animation Update (GPU Matrix Skinning in OpenGL mode, CPU AVX2 when Software fallback active) ---
         if (!animPaused || isBenchmarkRunning) {
             auto tSkinStart = std::chrono::high_resolution_clock::now();
-            character.Update(dt);
-            editor.UpdateAnimations(dt, &engine.world, &camFrustum, &engine.cameraPos);
+            const bool useGpuSkin = (hybridRenderer.backend == Surreal::RenderBackend::GPU_OPENGL &&
+                                     hybridRenderer.isGLInitialized &&
+                                     character.HasSkinData());
+            if (!character.hasFootBaseOffset || !character.staticAttributesInitialized) {
+                character.Update(dt, true);
+            } else {
+                character.Update(dt, !useGpuSkin);
+            }
+            const bool glActive = (hybridRenderer.backend == Surreal::RenderBackend::GPU_OPENGL &&
+                                   hybridRenderer.isGLInitialized);
+            editor.UpdateAnimations(dt, &engine.world, &camFrustum, &engine.cameraPos, !glActive);
             auto tSkinEnd = std::chrono::high_resolution_clock::now();
             lastSkinningMs = std::chrono::duration<float, std::milli>(tSkinEnd - tSkinStart).count();
         }
@@ -1714,32 +1749,45 @@ int main(int argc, char* argv[]) {
             // --- GPU HARDWARE OPENGL 4.6 PIPELINE ---
             const auto& curSky = skyProfiles[currentSkyProfile % 4];
 
-            // 1. Directional Shadow Depth Pass (2048x2048 PCF Shadow Map)
+            // 1. Directional Shadow Depth Pass (3-Cascade CSM 2048x2048x3 PCF Shadow Map Array)
             if (shadowsEnabled && hybridRenderer.shaderQuality >= 1) {
-                hybridRenderer.BeginShadowPass(engine.world.sunLight.direction, charPos);
-                for (auto entityID : engine.world.entities) {
-                    auto itMr = engine.world.meshRenderers.find(entityID);
-                    auto itTr = engine.world.transforms.find(entityID);
-                    if (itMr == engine.world.meshRenderers.end() || itTr == engine.world.transforms.end()) continue;
-                    const auto& mesh = itMr->second.mesh;
-                    if (!mesh || mesh->vertices.empty()) continue;
-                    // Skip flat ground plane in shadow caster pass to avoid self-shadowing acne
-                    if (entityID == floorEntity) continue;
+                Surreal::Vec3 camFwd = (engine.cameraTarget - engine.cameraPos).Normalized();
+                hybridRenderer.BeginShadowPass(engine.world.sunLight.direction, charPos, camFwd);
+                const int numCascades = (hybridRenderer.shaderQuality >= 2) ? Surreal::SurrealHybridRenderer::NUM_SHADOW_CASCADES : 2;
+                for (int cascade = 0; cascade < numCascades; ++cascade) {
+                    if (cascade > 0 && !hybridRenderer.BeginShadowCascade(cascade)) continue;
+                    for (auto entityID : engine.world.entities) {
+                        auto itMr = engine.world.meshRenderers.find(entityID);
+                        auto itTr = engine.world.transforms.find(entityID);
+                        if (itMr == engine.world.meshRenderers.end() || itTr == engine.world.transforms.end()) continue;
+                        const auto& mesh = itMr->second.mesh;
+                        if (!mesh || mesh->vertices.empty()) continue;
+                        // Skip flat ground plane in shadow caster pass to avoid self-shadowing acne
+                        if (entityID == floorEntity) continue;
+                        // Outer cascade skips small fine-detail meshes to keep GPU shadow fill fast
+                        if (cascade == 2 && mesh->vertices.size() < 200) continue;
 
-                    Surreal::Mat4 worldMat = itTr->second.GetWorldMatrix();
-                    bool isDyn = (entityID == avatarEntity) || (editor.animatedEntities.find(entityID) != editor.animatedEntities.end());
-                    bool upVBO = false;
-                    if (entityID == avatarEntity) {
-                        upVBO = character.dirtyGPUUpload;
-                        character.dirtyGPUUpload = false;
-                    } else if (isDyn) {
+                        Surreal::Mat4 worldMat = itTr->second.GetWorldMatrix();
+                        if (entityID == avatarEntity && character.HasSkinData()) {
+                            hybridRenderer.RenderSkinnedMeshShadow(character, worldMat);
+                            continue;
+                        }
                         auto itA = editor.animatedEntities.find(entityID);
                         if (itA != editor.animatedEntities.end() && itA->second) {
-                            upVBO = itA->second->dirtyGPUUpload;
-                            itA->second->dirtyGPUUpload = false;
+                            if (itA->second->HasSkinData()) {
+                                hybridRenderer.RenderSkinnedMeshShadow(*itA->second, worldMat);
+                            } else {
+                                bool upVBO = itA->second->dirtyGPUUpload;
+                                itA->second->dirtyGPUUpload = false;
+                                hybridRenderer.RenderMeshShadow(mesh, worldMat, true, upVBO);
+                            }
+                            continue;
                         }
+                        bool isDyn = (entityID == avatarEntity);
+                        bool upVBO = isDyn ? character.dirtyGPUUpload : false;
+                        if (isDyn) character.dirtyGPUUpload = false;
+                        hybridRenderer.RenderMeshShadow(mesh, worldMat, isDyn, upVBO);
                     }
-                    hybridRenderer.RenderMeshShadow(mesh, worldMat, isDyn, upVBO);
                 }
                 hybridRenderer.EndShadowPass();
             } else {
@@ -1834,11 +1882,11 @@ int main(int argc, char* argv[]) {
                         engine.culledMeshlets += std::max<uint32_t>(1u, static_cast<uint32_t>(mesh->meshlets.size()));
                         continue;
                     }
-                    // Adaptive City-Block Distance Culling for high-FPS target (Fast & Balanced modes)
+                    // Adaptive City-Block Distance Culling (preserves skyline continuity down the boulevard)
                     if (entityID != floorEntity && entityID != avatarEntity && mesh->vertices.size() > 15000 &&
                         editor.animatedEntities.find(entityID) == editor.animatedEntities.end()) {
                         float blockDist = (itTr->second.position - engine.cameraPos).Length();
-                        float cullDist = (hybridRenderer.shaderQuality == 0) ? 16.5f : ((hybridRenderer.shaderQuality == 1) ? 26.0f : 60.0f);
+                        float cullDist = (hybridRenderer.shaderQuality == 0) ? 120.0f : ((hybridRenderer.shaderQuality == 1) ? 190.0f : 320.0f);
                         if (blockDist > cullDist) {
                             engine.culledMeshlets += std::max<uint32_t>(1u, static_cast<uint32_t>(mesh->meshlets.size()));
                             continue;
@@ -1847,19 +1895,26 @@ int main(int argc, char* argv[]) {
                 }
                 engine.renderedMeshlets += std::max<uint32_t>(1u, static_cast<uint32_t>(mesh->meshlets.size()));
 
+                if (entityID == avatarEntity && character.HasSkinData()) {
+                    hybridRenderer.RenderSkinnedMesh(character, worldMat, vpMat, itMr->second.material);
+                    continue;
+                }
+                auto itAnim = editor.animatedEntities.find(entityID);
+                if (itAnim != editor.animatedEntities.end() && itAnim->second && itAnim->second->HasSkinData()) {
+                    hybridRenderer.RenderSkinnedMesh(*itAnim->second, worldMat, vpMat, itMr->second.material);
+                    continue;
+                }
+
                 bool isDynamic = false;
                 bool uploadVBO = false;
                 if (entityID == avatarEntity) {
                     isDynamic = true;
                     uploadVBO = character.dirtyGPUUpload;
                     character.dirtyGPUUpload = false;
-                } else {
-                    auto itAnim = editor.animatedEntities.find(entityID);
-                    if (itAnim != editor.animatedEntities.end() && itAnim->second) {
-                        isDynamic = true;
-                        uploadVBO = itAnim->second->dirtyGPUUpload;
-                        itAnim->second->dirtyGPUUpload = false;
-                    }
+                } else if (itAnim != editor.animatedEntities.end() && itAnim->second) {
+                    isDynamic = true;
+                    uploadVBO = itAnim->second->dirtyGPUUpload;
+                    itAnim->second->dirtyGPUUpload = false;
                 }
                 hybridRenderer.RenderMesh(mesh, worldMat, vpMat, itMr->second.material, isDynamic, uploadVBO);
             }
@@ -1921,6 +1976,9 @@ int main(int argc, char* argv[]) {
 
             // Render 3D Game Master Beacons & Energy Cores
             gameMaster.Render3D(hybridRenderer, vpMat, engine.world.sunLight.direction);
+
+            // Resolve HDR + half-res Bloom + ACES/sRGB tone-mapping before HUD overlay
+            hybridRenderer.EndHDRScenePass();
 
             // Draw HUD into transparent buffer (cached at ~20 Hz in Play Mode to eliminate 8.3 MB/frame CPU clear + PCIe upload bottleneck)
             bool refreshHudPixels = (totalFramesRendered % 3 == 0) ||

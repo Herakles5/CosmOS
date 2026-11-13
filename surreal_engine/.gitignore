@@ -9,6 +9,8 @@ test_surreal_interactive
 test_texture_inspect
 test_surreal_gltf
 test_surreal_benchmark
+test_surreal_suite
+build/
 *.o
 *.so
 vk_layer/build/

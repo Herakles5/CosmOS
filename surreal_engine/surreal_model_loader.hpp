@@ -10,6 +10,7 @@
 #include "surreal_math.hpp"
 #include "surreal_meshlet.hpp"
 #include "surreal_pbr.hpp"
+#include "surreal_gltf.hpp"
 #include <vector>
 #include <string>
 #include <sstream>
@@ -446,6 +447,10 @@ public:
         bool success = false;
         if (ext == ".obj") {
             success = LoadOBJ(path, outMesh, tint);
+        } else if (ext == ".gltf" || ext == ".glb") {
+            PBRMaterial mat;
+            outMesh = SurrealGLTFLoader::LoadCombinedMesh(path, &mat);
+            success = (outMesh != nullptr);
         }
 
         if (success && outMesh && !outMesh->vertices.empty()) {
@@ -456,7 +461,7 @@ public:
                 for (auto& v : outMesh->vertices) {
                     v.position.y -= minY;
                 }
-                outMesh->CalculateBounds();
+                outMesh->BuildClusters();
             }
         }
         return success;

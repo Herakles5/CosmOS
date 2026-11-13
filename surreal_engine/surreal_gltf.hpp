@@ -7,8 +7,15 @@
  * ============================================================================
  */
 
-#define CGLTF_IMPLEMENTATION
-#include "cgltf.h"
+#if !defined(CGLTF_H_INCLUDED__)
+#  if !defined(SURREAL_EXTERNAL_THIRD_PARTY_IMPL) && !defined(CGLTF_IMPLEMENTATION)
+#    define CGLTF_IMPLEMENTATION
+#    include "cgltf.h"
+#    undef CGLTF_IMPLEMENTATION
+#  else
+#    include "cgltf.h"
+#  endif
+#endif
 #include "surreal_math.hpp"
 #include "surreal_pbr.hpp"
 #include "surreal_meshlet.hpp"
@@ -17,6 +24,7 @@
 #include <memory>
 #include <iostream>
 #include <cstring>
+#include <filesystem>
 
 namespace Surreal {
 
@@ -39,17 +47,22 @@ public:
         cgltf_options options;
         std::memset(&options, 0, sizeof(cgltf_options));
 
+        // Resolve symlinks so relative .bin/texture URIs inside .gltf load from real target folder
+        std::error_code ec;
+        std::filesystem::path can = std::filesystem::canonical(filepath, ec);
+        const std::string resolvedPath = ec ? filepath : can.string();
+
         cgltf_data* data = nullptr;
-        cgltf_result result = cgltf_parse_file(&options, filepath.c_str(), &data);
+        cgltf_result result = cgltf_parse_file(&options, resolvedPath.c_str(), &data);
 
         if (result != cgltf_result_success) {
-            std::cerr << "[SurrealGLTF] Failed to parse glTF: " << filepath << " (Code " << result << ")\n";
+            std::cerr << "[SurrealGLTF] Failed to parse glTF: " << resolvedPath << " (Code " << result << ")\n";
             return false;
         }
 
-        result = cgltf_load_buffers(&options, data, filepath.c_str());
+        result = cgltf_load_buffers(&options, data, resolvedPath.c_str());
         if (result != cgltf_result_success) {
-            std::cerr << "[SurrealGLTF] Failed to load binary buffers for: " << filepath << "\n";
+            std::cerr << "[SurrealGLTF] Failed to load binary buffers for: " << resolvedPath << "\n";
             cgltf_free(data);
             return false;
         }
@@ -78,14 +91,16 @@ public:
                 gMat.emissive_factor[1],
                 gMat.emissive_factor[2]
             );
+            mat.doubleSided = (gMat.double_sided != 0);
+            mat.alphaCutoff = gMat.alpha_cutoff;
+            if (gMat.alpha_mode == cgltf_alpha_mode_mask) mat.alphaMode = PBRMaterial::AlphaMode::MASK_MODE;
+            else if (gMat.alpha_mode == cgltf_alpha_mode_blend) mat.alphaMode = PBRMaterial::AlphaMode::BLEND_MODE;
+            else mat.alphaMode = PBRMaterial::AlphaMode::OPAQUE_MODE;
 
             materials[i] = mat;
         }
 
-        // Parse Meshes & Primitives
-        for (cgltf_size mIdx = 0; mIdx < data->meshes_count; ++mIdx) {
-            const cgltf_mesh& gMesh = data->meshes[mIdx];
-
+        auto appendMeshPrimitives = [&](const cgltf_mesh& gMesh, const Mat4& nodeWorld, const std::string& baseName) {
             for (cgltf_size pIdx = 0; pIdx < gMesh.primitives_count; ++pIdx) {
                 const cgltf_primitive& prim = gMesh.primitives[pIdx];
                 if (prim.type != cgltf_primitive_type_triangles) continue;
@@ -100,7 +115,6 @@ public:
                     }
                 }
 
-                // Attributes
                 const cgltf_accessor* posAcc = nullptr;
                 const cgltf_accessor* normAcc = nullptr;
                 const cgltf_accessor* uvAcc = nullptr;
@@ -116,7 +130,6 @@ public:
 
                 if (!posAcc) continue;
 
-                // Read Vertices
                 mesh->vertices.resize(posAcc->count);
                 for (cgltf_size v = 0; v < posAcc->count; ++v) {
                     float pos[3] = {0, 0, 0};
@@ -145,30 +158,66 @@ public:
                     }
                 }
 
-                // Read Indices
                 if (prim.indices) {
                     mesh->indices.resize(prim.indices->count);
                     for (cgltf_size idx = 0; idx < prim.indices->count; ++idx) {
                         mesh->indices[idx] = static_cast<uint32_t>(cgltf_accessor_read_index(prim.indices, idx));
                     }
                 } else {
-                    // Non-indexed: generate sequential indices
                     mesh->indices.resize(posAcc->count);
                     for (uint32_t idx = 0; idx < posAcc->count; ++idx) {
                         mesh->indices[idx] = idx;
                     }
                 }
 
-                // Partition into Surreal Nanite-style Meshlets
+                SubMesh sub;
+                sub.indexOffset = 0;
+                sub.indexCount = static_cast<uint32_t>(mesh->indices.size());
+                sub.albedo = primMat.albedo;
+                sub.emissive = primMat.emissive;
+                sub.metallic = primMat.metallic;
+                sub.roughness = primMat.roughness;
+                sub.alphaMode = primMat.alphaMode;
+                sub.alphaCutoff = primMat.alphaCutoff;
+                sub.doubleSided = primMat.doubleSided;
+                mesh->submeshes.push_back(sub);
+
                 mesh->BuildClusters();
 
                 GLTFModelNode node;
-                node.name = gMesh.name ? gMesh.name : ("Mesh_" + std::to_string(mIdx));
+                node.name = baseName;
                 node.mesh = mesh;
                 node.material = primMat;
-                node.localTransform = Mat4::Identity();
+                node.localTransform = nodeWorld;
 
                 outNodes.push_back(node);
+            }
+        };
+
+        // Traverse scene graph nodes first so hierarchical world transforms are preserved
+        bool loadedAnyNodeMesh = false;
+        for (cgltf_size nIdx = 0; nIdx < data->nodes_count; ++nIdx) {
+            const cgltf_node* gNode = &data->nodes[nIdx];
+            if (!gNode->mesh) continue;
+            loadedAnyNodeMesh = true;
+            float lm[16];
+            cgltf_node_transform_world(gNode, lm);
+            Mat4 nodeWorld = Mat4::Identity();
+            for (int r = 0; r < 4; ++r) {
+                for (int c = 0; c < 4; ++c) {
+                    nodeWorld.m[r][c] = lm[c * 4 + r];
+                }
+            }
+            std::string nName = gNode->name ? gNode->name : (gNode->mesh->name ? gNode->mesh->name : ("Node_" + std::to_string(nIdx)));
+            appendMeshPrimitives(*gNode->mesh, nodeWorld, nName);
+        }
+
+        // Fallback if glTF contains unattached meshes without scene nodes
+        if (!loadedAnyNodeMesh) {
+            for (cgltf_size mIdx = 0; mIdx < data->meshes_count; ++mIdx) {
+                const cgltf_mesh& gMesh = data->meshes[mIdx];
+                std::string mName = gMesh.name ? gMesh.name : ("Mesh_" + std::to_string(mIdx));
+                appendMeshPrimitives(gMesh, Mat4::Identity(), mName);
             }
         }
 
@@ -177,7 +226,7 @@ public:
     }
 
     /**
-     * Helper to load a glTF file and merge all primitives into a single SurrealMesh
+     * Helper to load a glTF file and merge all primitives into a single SurrealMesh (baking node transforms)
      */
     static std::shared_ptr<SurrealMesh> LoadCombinedMesh(
         const std::string& filepath,
@@ -192,21 +241,31 @@ public:
             *outFirstMaterial = nodes[0].material;
         }
 
-        if (nodes.size() == 1) {
-            return nodes[0].mesh;
-        }
-
-        // Merge multiple primitives into one consolidated mesh
         auto combined = std::make_shared<SurrealMesh>();
         uint32_t vertexBase = 0;
 
         for (const auto& node : nodes) {
+            Mat4 normMat = node.localTransform.InverseTranspose3x3();
             for (const auto& v : node.mesh->vertices) {
-                combined->vertices.push_back(v);
+                Vertex3D tv = v;
+                tv.position = node.localTransform.TransformPoint(v.position);
+                tv.normal = normMat.TransformDirection(v.normal).Normalized();
+                combined->vertices.push_back(tv);
             }
+            SubMesh sub;
+            sub.indexOffset = static_cast<uint32_t>(combined->indices.size());
+            sub.indexCount = static_cast<uint32_t>(node.mesh->indices.size());
+            sub.albedo = node.material.albedo;
+            sub.emissive = node.material.emissive;
+            sub.metallic = node.material.metallic;
+            sub.roughness = node.material.roughness;
+            sub.alphaMode = node.material.alphaMode;
+            sub.alphaCutoff = node.material.alphaCutoff;
+            sub.doubleSided = node.material.doubleSided;
             for (uint32_t idx : node.mesh->indices) {
                 combined->indices.push_back(vertexBase + idx);
             }
+            combined->submeshes.push_back(sub);
             vertexBase += static_cast<uint32_t>(node.mesh->vertices.size());
         }
 
