@@ -1,20 +1,13 @@
 {
   "agent": "AION_NEXUS_AUTONOMOUS_GAMER",
   "model": "MULTI_DOMAIN_REINFORCEMENT_POLICY_V4_AGGRESSIVE",
-  "last_updated": "2026-11-10 21:12:30",
-  "total_kills": 190,
-  "total_damage_dealt": 1190.9,
-  "total_damage_taken": 1084.4,
-  "epsilon": 0.0763,
+  "last_updated": "2026-11-10 21:39:11",
+  "total_kills": 197,
+  "total_damage_dealt": 1202.5,
+  "total_damage_taken": 1169.3,
+  "epsilon": 0.0721,
   "states_learned": 22,
   "combat_durations": [
-    68.62,
-    70.69,
-    72.35,
-    74.2,
-    76.21,
-    77.89,
-    79.73,
     81.8,
     83.55,
     85.32,
@@ -57,7 +50,14 @@
     111.25,
     113.03,
     115.02,
-    117.2
+    117.2,
+    0.89,
+    3.03,
+    5.38,
+    10.86,
+    14.59,
+    19.69,
+    21.99
   ],
   "q_table": {
     "full_high_high_melee": {
@@ -131,7 +131,7 @@
       "SKILL_E": 0.0,
       "SKILL_R": 0.0,
       "STRAFE_LEFT": 0.0,
-      "STRAFE_RIGHT": 1.6787
+      "STRAFE_RIGHT": -5.2004
     },
     "low_high_high_melee": {
       "L_AUTO_SHOT": 4.5037,
@@ -141,7 +141,7 @@
       "SKILL_2": 1.5658,
       "SKILL_4": 6.1865,
       "TACTICAL_KITE": 0.8863,
-      "STRAFE_RIGHT": 15.3107,
+      "STRAFE_RIGHT": 20.0678,
       "JUMP_UNSTUCK": 2.0318,
       "STRAFE_LEFT": 1.3188,
       "SKILL_5": 5.2258,
