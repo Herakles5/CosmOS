@@ -38,4 +38,7 @@ bool cosmos_ac_handle_rdmsr(cosmos_hypervisor* hv, cosmos_vcpu* vcpu, uint32_t m
 // Prepares VMCS fields for maximum stealth operation
 void cosmos_ac_configure_vmcs_stealth(cosmos_hypervisor* hv, cosmos_vcpu* vcpu);
 
+// Initializes the 4KB VMX MSR bitmap for trapped virtualization MSRs
+void cosmos_ac_init_msr_bitmap(uint8_t* msr_bitmap);
+
 #endif // COSMOS_ANTI_CHEAT_H

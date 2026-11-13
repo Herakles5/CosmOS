@@ -91,3 +91,30 @@ void cosmos_ac_configure_vmcs_stealth(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) 
     
     AC_LOG("VMCS stealth configuration verified and managed by core.");
 }
+
+static inline void msr_bitmap_set_rw(uint8_t* msr_bitmap, uint32_t msr) {
+    uint32_t read_offset = 0;
+    uint32_t write_offset = 2048;
+    uint32_t idx = msr;
+
+    if (msr >= 0xC0000000U && msr <= 0xC0001FFFU) {
+        read_offset = 1024;
+        write_offset = 3072;
+        idx = msr - 0xC0000000U;
+    } else if (msr > 0x1FFFU) {
+        return;
+    }
+
+    msr_bitmap[read_offset + (idx >> 3)] |= (uint8_t)(1U << (idx & 7U));
+    msr_bitmap[write_offset + (idx >> 3)] |= (uint8_t)(1U << (idx & 7U));
+}
+
+void cosmos_ac_init_msr_bitmap(uint8_t* msr_bitmap) {
+    if (!msr_bitmap) return;
+
+    // Trap reads/writes to IA32_FEATURE_CONTROL and VMX capability MSRs (0x480..0x491)
+    msr_bitmap_set_rw(msr_bitmap, IA32_FEATURE_CONTROL);
+    for (uint32_t msr = IA32_VMX_BASIC; msr <= 0x0491U; ++msr) {
+        msr_bitmap_set_rw(msr_bitmap, msr);
+    }
+}

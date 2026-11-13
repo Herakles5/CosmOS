@@ -36,6 +36,10 @@ static void* ept_alloc_page(uint64_t* out_phys) {
     return p;
 }
 
+static inline void* cosmos_phys_to_virt(uint64_t phys_addr) {
+    return (void*)phys_addr;
+}
+
 #define EPT_LOG(fmt, ...) printf("[EPT] " fmt "\n", ##__VA_ARGS__)
 
 #else
@@ -266,34 +270,42 @@ int cosmos_hv_handle_ept_violation(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
  *  - Isolate GPU VRAM
  * ============================================================================ */
 
-// Change access permissions of a single 2MB page in EPT
+// Change access permissions of a single page in EPT (2MB or split 4KB)
 int cosmos_ept_set_page_flags(cosmos_hypervisor* hv, uint64_t guest_phys, uint64_t new_flags) {
     if (!hv || !hv->ept_pml4_virt) return -1;
-    
+
     uint64_t* pml4 = (uint64_t*)hv->ept_pml4_virt;
-    
+
     // PML4 Index
     uint64_t pml4_idx = ept_pml4_index(guest_phys);
     if (!(pml4[pml4_idx] & EPT_READ)) return -2;  // PML4 entry not present
-    
+
     // PDPT
-    uint64_t* pdpt = (uint64_t*)(pml4[pml4_idx] & EPT_ADDR_MASK);
+    uint64_t* pdpt = (uint64_t*)cosmos_phys_to_virt(pml4[pml4_idx] & EPT_ADDR_MASK);
     uint64_t pdpt_idx = ept_pdpt_index(guest_phys);
     if (!(pdpt[pdpt_idx] & EPT_READ)) return -3;  // PDPT entry not present
-    
-    // PD (contains our 2MB large pages)
-    uint64_t* pd = (uint64_t*)(pdpt[pdpt_idx] & EPT_ADDR_MASK);
+
+    // PD (contains 2MB large pages or split 4KB page table pointers)
+    uint64_t* pd = (uint64_t*)cosmos_phys_to_virt(pdpt[pdpt_idx] & EPT_ADDR_MASK);
     uint64_t pd_idx = ept_pd_index(guest_phys);
-    
-    // Retain physical address, change only flags
-    uint64_t phys_addr = pd[pd_idx] & 0x000FFFFFFFE00000ULL;
-    pd[pd_idx] = phys_addr | EPT_LARGE_PAGE | new_flags;
-    
+    if (!(pd[pd_idx] & EPT_READ)) return -4;
+
+    if (pd[pd_idx] & EPT_LARGE_PAGE) {
+        uint64_t phys_addr = pd[pd_idx] & 0x000FFFFFFFE00000ULL;
+        pd[pd_idx] = phys_addr | EPT_LARGE_PAGE | new_flags;
+    } else {
+        uint64_t* pt = (uint64_t*)cosmos_phys_to_virt(pd[pd_idx] & EPT_ADDR_MASK);
+        uint64_t pt_idx = ept_pt_index(guest_phys);
+        if (!(pt[pt_idx] & EPT_READ)) return -5;
+        uint64_t phys_addr = pt[pt_idx] & EPT_ADDR_MASK;
+        pt[pt_idx] = phys_addr | new_flags;
+    }
+
     // Invalidate TLB for this EPT translation
     extern void cosmos_invept(uint64_t type, uint64_t eptp);
     uint64_t eptp = ept_make_eptp(hv->ept_pml4_phys);
     cosmos_invept(1, eptp);  // Single-context invalidation
-    
+
     return 0;
 }
 

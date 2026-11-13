@@ -51,6 +51,10 @@ static void hv_free_page(void* ptr) {
     if (ptr) munmap(ptr, 4096);
 }
 
+static void hv_free_pages(void* ptr, uint64_t size) {
+    if (ptr) munmap(ptr, size);
+}
+
 #define HV_LOG(fmt, ...) printf("[COSMOS-HV] " fmt "\n", ##__VA_ARGS__)
 
 #else
@@ -72,12 +76,24 @@ static void hv_free_page(void* ptr) {
     cosmos_free_page(ptr);
 }
 
+static void hv_free_pages(void* ptr, uint64_t size) {
+    (void)ptr;
+    (void)size;
+    // Bare-metal / LKM kernel interface exposes single-page cosmos_free_page() only.
+}
+
 // Bare metal printf and memset (already present in CosmOS kernel)
 extern "C" int printf(const char* fmt, ...);
 extern "C" void* memset(void*, int, unsigned long);
 extern "C" void* memcpy(void*, const void*, unsigned long);
 #define HV_LOG(fmt, ...) printf("[COSMOS-HV] " fmt "\n", ##__VA_ARGS__)
 
+#endif
+
+#ifdef COSMOS_HV_DEBUG_EXITS
+#define HV_EXIT_LOG(fmt, ...) HV_LOG(fmt, ##__VA_ARGS__)
+#else
+#define HV_EXIT_LOG(fmt, ...) do { } while (0)
 #endif
 
 /* ============================================================================
@@ -306,6 +322,7 @@ int cosmos_hv_enable_vmx(cosmos_hypervisor* hv, uint32_t cpu_id) {
     result = cosmos_vmclear(&vcpu->vmcs_phys);
     if (result != 0) {
         HV_LOG("CPU %u: ERROR: VMCLEAR failed!", cpu_id);
+        cosmos_hv_disable_vmx(hv, cpu_id);
         return -5;
     }
     
@@ -313,6 +330,7 @@ int cosmos_hv_enable_vmx(cosmos_hypervisor* hv, uint32_t cpu_id) {
     result = cosmos_vmptrld(&vcpu->vmcs_phys);
     if (result != 0) {
         HV_LOG("CPU %u: ERROR: VMPTRLD failed!", cpu_id);
+        cosmos_hv_disable_vmx(hv, cpu_id);
         return -6;
     }
     
@@ -325,9 +343,6 @@ int cosmos_hv_enable_vmx(cosmos_hypervisor* hv, uint32_t cpu_id) {
         HV_LOG("CPU %u: WARNING: Could not allocate MSR bitmap", cpu_id);
     } else {
         memset(vcpu->msr_bitmap, 0, 4096);
-        // Specifically target only the MSRs we want to intercept
-        // Set intercept bits for VMX MSRs
-        extern void cosmos_ac_init_msr_bitmap(uint8_t* msr_bitmap);
         cosmos_ac_init_msr_bitmap(vcpu->msr_bitmap);
         HV_LOG("CPU %u: MSR bitmap initialized (VMX intercepts active)", cpu_id);
     }
@@ -392,9 +407,15 @@ void cosmos_hv_disable_vmx(cosmos_hypervisor* hv, uint32_t cpu_id) {
         hv_free_page(vcpu->msr_bitmap);
         vcpu->msr_bitmap = nullptr;
     }
+    if (vcpu->host_cr3_region) {
+        hv_free_page(vcpu->host_cr3_region);
+        vcpu->host_cr3_region = nullptr;
+        vcpu->host_cr3_phys = 0;
+    }
     if (vcpu->host_stack) {
-        // Free host stack
+        hv_free_pages(vcpu->host_stack, HOST_STACK_SIZE);
         vcpu->host_stack = nullptr;
+        vcpu->host_stack_phys = 0;
     }
     
     HV_LOG("CPU %u: VMX disabled and resources freed", cpu_id);
@@ -545,19 +566,23 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
     cosmos_vmwrite(VMCS_HOST_TR_SEL, cosmos_read_tr());
     
     // --- Robust Host CR3 ---
-    // If we use `cosmos_read_cr3()`, we take the CR3 of the process currently
-    // running on the CPU (e.g. insmod). When that process terminates,
-    // its CR3 is freed, and the next VM-Exit triggers a Triple Fault!
-    // Solution: We copy the upper 256 entries (kernel space) of the current CR3 into
-    // a NEW page directory that stays permanently in memory.
-    vcpu->host_cr3_region = cosmos_alloc_page_aligned(&vcpu->host_cr3_phys);
+    // Copy the upper 256 kernel-space PML4 entries into a persistent page table so
+    // VM-Exits do not depend on the launching process's transient user CR3.
+    uint64_t host_cr3_val = cosmos_read_cr3();
+#ifndef __linux__
+    vcpu->host_cr3_region = hv_alloc_page(&vcpu->host_cr3_phys);
+    if (!vcpu->host_cr3_region) {
+        HV_LOG("CPU %u: ERROR: Could not allocate Host CR3 page!", cpu_id);
+        return -2;
+    }
     memset(vcpu->host_cr3_region, 0, 4096);
-    // Copy kernel space (upper half of PML4, 2048 bytes from offset 2048)
     memcpy((uint8_t*)vcpu->host_cr3_region + 2048, (uint8_t*)cosmos_get_current_pml4() + 2048, 2048);
-    
+    host_cr3_val = vcpu->host_cr3_phys;
+#endif
+
     // Host Control Registers
     cosmos_vmwrite(VMCS_HOST_CR0, cosmos_read_cr0());
-    cosmos_vmwrite(VMCS_HOST_CR3, vcpu->host_cr3_phys); // Use our safe CR3
+    cosmos_vmwrite(VMCS_HOST_CR3, host_cr3_val);
     cosmos_vmwrite(VMCS_HOST_CR4, cosmos_read_cr4());
     
     // Stealth: Hide VMXE from guest
@@ -699,175 +724,254 @@ int cosmos_hv_setup_vmcs(cosmos_hypervisor* hv, uint32_t cpu_id) {
 }
 
 /* ============================================================================
- *  Phase 1.3: STEALTH VM-EXIT HANDLERS
- *
- *  These handlers make the hypervisor invisible to anti-cheat software.
+ *  Phase 1.3: VM-EXIT HELPERS & HANDLERS
  * ============================================================================ */
 
-/* --- CPUID Stealth Handler ---
- * 
- * Anti-Cheat checks:
- *   CPUID.1:ECX[31] = Hypervisor Present Bit
- *   CPUID.0x40000000 = Hypervisor Vendor String
- *   CPUID.0x40000001+ = Hypervisor Features
- *
- * We spoof ALL of these responses!
- */
+static inline void inject_guest_exception(uint32_t vector, bool has_error_code, uint32_t error_code) {
+    uint32_t info = (1U << 31) | (3U << 8) | (vector & 0xFFU);
+    if (has_error_code) {
+        info |= (1U << 11);
+        cosmos_vmwrite(VMCS_ENTRY_EXCEPTION_ERRCODE, error_code);
+    }
+    cosmos_vmwrite(VMCS_ENTRY_INT_INFO, info);
+}
+
+static inline bool is_vmx_msr(uint32_t msr) {
+    return (msr >= IA32_VMX_BASIC && msr <= 0x0491U);
+}
+
+static void transfer_guest_gpr(cosmos_vcpu* vcpu, uint32_t reg, uint64_t* val, bool is_write) {
+    if (reg == 4) {
+        if (is_write) cosmos_vmwrite(VMCS_GUEST_RSP, *val);
+        else cosmos_vmread(VMCS_GUEST_RSP, val);
+        return;
+    }
+#define COSMOS_GPR_CASE(idx, field) \
+    case idx: if (is_write) vcpu->guest_regs.field = *val; else *val = vcpu->guest_regs.field; break
+    switch (reg) {
+        COSMOS_GPR_CASE(0, rax);  COSMOS_GPR_CASE(1, rcx);  COSMOS_GPR_CASE(2, rdx);
+        COSMOS_GPR_CASE(3, rbx);  COSMOS_GPR_CASE(5, rbp);  COSMOS_GPR_CASE(6, rsi);
+        COSMOS_GPR_CASE(7, rdi);  COSMOS_GPR_CASE(8, r8);   COSMOS_GPR_CASE(9, r9);
+        COSMOS_GPR_CASE(10, r10); COSMOS_GPR_CASE(11, r11); COSMOS_GPR_CASE(12, r12);
+        COSMOS_GPR_CASE(13, r13); COSMOS_GPR_CASE(14, r14); COSMOS_GPR_CASE(15, r15);
+        default: if (!is_write) *val = 0; break;
+    }
+#undef COSMOS_GPR_CASE
+}
+
+static uint64_t read_guest_gpr(cosmos_vcpu* vcpu, uint32_t reg) {
+    uint64_t val = 0;
+    transfer_guest_gpr(vcpu, reg, &val, false);
+    return val;
+}
+
+static void write_guest_gpr(cosmos_vcpu* vcpu, uint32_t reg, uint64_t val) {
+    transfer_guest_gpr(vcpu, reg, &val, true);
+}
+
+/* --- CPUID Handler --- */
 void cosmos_hv_handle_cpuid(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
     uint32_t leaf    = (uint32_t)vcpu->guest_regs.rax;
     uint32_t subleaf = (uint32_t)vcpu->guest_regs.rcx;
-    
+
     uint32_t eax, ebx, ecx, edx;
-    
-    // Execute real CPUID (we are in host/root mode)
     cosmos_cpuid(leaf, subleaf, &eax, &ebx, &ecx, &edx);
-    
-    switch (leaf) {
-        case 0x01:
-            // ★ STEALTH: Clear Hypervisor Present Bit! ★
-            ecx &= ~CPUID_1_ECX_HYPERVISOR;
-            
-            // Optional: Also clear VMX bit (so guest doesn't attempt nested virtualization)
-            if (hv->stealth_mode) {
-                ecx &= ~CPUID_1_ECX_VMX;
-            }
-            break;
-            
-        case 0x40000000:
-            // ★ STEALTH: Return no hypervisor signature! ★
-            // Normally a hypervisor returns its name here
-            // (e.g. "KVMKVMKVM\0\0\0" or "Microsoft Hv").
-            // We return 0 = "no hypervisor present".
-            eax = 0;
-            ebx = 0;
-            ecx = 0;
-            edx = 0;
-            break;
-            
-        case 0x40000001:
-        case 0x40000002:
-        case 0x40000003:
-        case 0x40000004:
-        case 0x40000005:
-        case 0x40000006:
-            // ★ STEALTH: Set all hypervisor info leaves to 0 ★
-            eax = 0;
-            ebx = 0;
-            ecx = 0;
-            edx = 0;
-            break;
-            
-        default:
-            // All other CPUID leaves: pass through real values
-            break;
+
+    if (hv->stealth_mode) {
+        switch (leaf) {
+            case 0x01:
+                ecx &= ~(CPUID_1_ECX_HYPERVISOR | CPUID_1_ECX_VMX);
+                break;
+
+            case 0x40000000:
+            case 0x40000001:
+            case 0x40000002:
+            case 0x40000003:
+            case 0x40000004:
+            case 0x40000005:
+            case 0x40000006:
+                eax = 0;
+                ebx = 0;
+                ecx = 0;
+                edx = 0;
+                break;
+
+            default:
+                break;
+        }
     }
-    
-    // Write results to guest registers
+
     vcpu->guest_regs.rax = eax;
     vcpu->guest_regs.rbx = ebx;
     vcpu->guest_regs.rcx = ecx;
     vcpu->guest_regs.rdx = edx;
 }
 
-/* --- RDTSC Stealth Handler ---
- *
- * Anti-Cheat measures the execution duration of certain instructions.
- * A VM-Exit costs ~1000-3000 extra clock cycles.
- * If we do not compensate TSC, anti-cheat detects the time gap
- * and discovers the hypervisor.
- *
- * Solution: Adjust TSC offset to hide VM-Exit overhead.
- */
+/* --- RDTSC Handler --- */
 void cosmos_hv_handle_rdtsc(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
-    uint64_t real_tsc = cosmos_rdtsc();
-    
-    // Compensate TSC by VM-Exit overhead
-    // The offset is dynamically adjusted based on measured VM-Exit latency
-    real_tsc += vcpu->tsc_offset;
-    
-    vcpu->guest_regs.rax = (uint32_t)(real_tsc & 0xFFFFFFFF);
-    vcpu->guest_regs.rdx = (uint32_t)(real_tsc >> 32);
+    (void)hv;
+    uint64_t vmcs_tsc_off = 0;
+    if (cosmos_vmread(VMCS_TSC_OFFSET, &vmcs_tsc_off) == 0) {
+        vcpu->tsc_offset = (int64_t)vmcs_tsc_off;
+    }
+    uint64_t guest_tsc = cosmos_rdtsc() + (uint64_t)vcpu->tsc_offset;
+
+    vcpu->guest_regs.rax = (uint32_t)(guest_tsc & 0xFFFFFFFFULL);
+    vcpu->guest_regs.rdx = (uint32_t)(guest_tsc >> 32);
 }
 
-/* --- RDMSR Stealth Handler ---
- *
- * Anti-Cheat reads certain MSRs to search for hypervisors:
- * - IA32_VMX_BASIC: Exists only when VMX is active
- * - IA32_DEBUGCTL: Can reveal breakpoints
- * - IA32_TSC_AUX: Processor ID
- */
-void cosmos_hv_handle_rdmsr(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
+// Returns true when GUEST_RIP should advance; false when an exception (#GP) was injected.
+static bool hv_handle_rdmsr_ex(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
     uint32_t msr = (uint32_t)vcpu->guest_regs.rcx;
     uint64_t value = 0;
-    
-    switch (msr) {
-        // ★ STEALTH: Hide VMX-related MSRs ★
-        case IA32_VMX_BASIC:
-        case IA32_VMX_PINBASED_CTLS:
-        case IA32_VMX_PROCBASED_CTLS:
-        case IA32_VMX_EXIT_CTLS:
-        case IA32_VMX_ENTRY_CTLS:
-        case IA32_VMX_MISC:
-        case IA32_VMX_CR0_FIXED0:
-        case IA32_VMX_CR0_FIXED1:
-        case IA32_VMX_CR4_FIXED0:
-        case IA32_VMX_CR4_FIXED1:
-        case IA32_VMX_VMCS_ENUM:
-        case IA32_VMX_PROCBASED_CTLS2:
-        case IA32_VMX_EPT_VPID_CAP:
-        case IA32_VMX_TRUE_PINBASED_CTLS:
-        case IA32_VMX_TRUE_PROCBASED_CTLS:
-        case IA32_VMX_TRUE_EXIT_CTLS:
-        case IA32_VMX_TRUE_ENTRY_CTLS:
-            if (hv->stealth_mode) {
-                // Inject General Protection Fault (#GP)
-                cosmos_vmwrite(VMCS_ENTRY_INT_INFO, (1U << 31) | (1U << 11) | (3U << 8) | 13U);
-                cosmos_vmwrite(VMCS_ENTRY_EXCEPTION_ERRCODE, 0);
-                value = 0;
-            } else {
-                value = cosmos_rdmsr(msr);
-            }
-            break;
-            
-        default:
-            // Anti-Cheat Hardening MSR Filter
-            if (hv->stealth_mode && cosmos_ac_handle_rdmsr(hv, vcpu, msr, &value)) {
-                // Handled by anti-cheat module
-                break;
-            }
-            // All other MSRs: pass through real value
-            value = cosmos_rdmsr(msr);
-            break;
+
+    if (is_vmx_msr(msr)) {
+        if (hv->stealth_mode) {
+            inject_guest_exception(13, true, 0);
+            return false;
+        }
+        value = cosmos_rdmsr(msr);
+    } else if (hv->stealth_mode && cosmos_ac_handle_rdmsr(hv, vcpu, msr, &value)) {
+        // Handled by anti-cheat / policy MSR filter
+    } else {
+        value = cosmos_rdmsr(msr);
     }
-    
-    vcpu->guest_regs.rax = (uint32_t)(value & 0xFFFFFFFF);
+
+    vcpu->guest_regs.rax = (uint32_t)(value & 0xFFFFFFFFULL);
     vcpu->guest_regs.rdx = (uint32_t)(value >> 32);
+    return true;
 }
 
-/* --- WRMSR Handler --- */
-void cosmos_hv_handle_wrmsr(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
+void cosmos_hv_handle_rdmsr(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
+    (void)hv_handle_rdmsr_ex(hv, vcpu);
+}
+
+// Returns true when GUEST_RIP should advance; false when an exception (#GP) was injected.
+static bool hv_handle_wrmsr_ex(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
+    (void)hv;
     uint32_t msr = (uint32_t)vcpu->guest_regs.rcx;
     uint64_t value = ((uint64_t)(uint32_t)vcpu->guest_regs.rdx << 32) |
                      (uint32_t)vcpu->guest_regs.rax;
-    
-    switch (msr) {
-        // VMX MSRs: ignore in stealth mode
-        case IA32_VMX_BASIC:
-        case IA32_VMX_PINBASED_CTLS:
-        case IA32_VMX_PROCBASED_CTLS:
-            if (hv->stealth_mode) {
-                // Inject General Protection Fault (#GP)
-                cosmos_vmwrite(VMCS_ENTRY_INT_INFO, (1U << 31) | (1U << 11) | (3U << 8) | 13U);
-                cosmos_vmwrite(VMCS_ENTRY_EXCEPTION_ERRCODE, 0);
-                return;
-            }
-            break;
-            
-        default:
-            // Pass through
-            cosmos_wrmsr(msr, value);
-            break;
+
+    // VMX capability MSRs are strictly read-only on x86; writing in root mode would #GP the host.
+    if (is_vmx_msr(msr)) {
+        inject_guest_exception(13, true, 0);
+        return false;
     }
+
+    // Writing to a locked IA32_FEATURE_CONTROL MSR faults with #GP(0) on bare hardware.
+    if (msr == IA32_FEATURE_CONTROL &&
+        (cosmos_rdmsr(IA32_FEATURE_CONTROL) & FEATURE_CONTROL_LOCKED)) {
+        inject_guest_exception(13, true, 0);
+        return false;
+    }
+
+    cosmos_wrmsr(msr, value);
+    return true;
+}
+
+void cosmos_hv_handle_wrmsr(cosmos_hypervisor* hv, cosmos_vcpu* vcpu) {
+    (void)hv_handle_wrmsr_ex(hv, vcpu);
+}
+
+static bool handle_cr_access_exit(cosmos_hypervisor* hv, cosmos_vcpu* vcpu, uint64_t qual) {
+    uint32_t cr = (uint32_t)(qual & 0xFU);
+    uint32_t access_type = (uint32_t)((qual >> 4) & 3U);
+    uint32_t reg = (uint32_t)((qual >> 8) & 0xFU);
+
+    if (access_type == 0) { // MOV to CR
+        uint64_t val = read_guest_gpr(vcpu, reg);
+        if (cr == 0) {
+            uint64_t cr0_fixed0 = cosmos_rdmsr(IA32_VMX_CR0_FIXED0);
+            uint64_t cr0_fixed1 = cosmos_rdmsr(IA32_VMX_CR0_FIXED1);
+            uint64_t hw_cr0 = (val | cr0_fixed0) & cr0_fixed1;
+            cosmos_vmwrite(VMCS_CR0_READ_SHADOW, val);
+            cosmos_vmwrite(VMCS_GUEST_CR0, hw_cr0);
+        } else if (cr == 3) {
+            cosmos_vmwrite(VMCS_GUEST_CR3, val);
+        } else if (cr == 4) {
+            if (hv->stealth_mode && (val & CR4_VMXE)) {
+                inject_guest_exception(13, true, 0);
+                return false;
+            }
+            uint64_t cr4_fixed0 = cosmos_rdmsr(IA32_VMX_CR4_FIXED0);
+            uint64_t cr4_fixed1 = cosmos_rdmsr(IA32_VMX_CR4_FIXED1);
+            uint64_t hw_cr4 = ((val | CR4_VMXE) | cr4_fixed0) & cr4_fixed1;
+            cosmos_vmwrite(VMCS_CR4_READ_SHADOW, hv->stealth_mode ? (val & ~CR4_VMXE) : val);
+            cosmos_vmwrite(VMCS_GUEST_CR4, hw_cr4);
+        }
+        return true;
+    }
+
+    if (access_type == 1) { // MOV from CR
+        uint64_t val = 0;
+        if (cr == 0) cosmos_vmread(VMCS_CR0_READ_SHADOW, &val);
+        else if (cr == 3) cosmos_vmread(VMCS_GUEST_CR3, &val);
+        else if (cr == 4) cosmos_vmread(VMCS_CR4_READ_SHADOW, &val);
+        write_guest_gpr(vcpu, reg, val);
+        return true;
+    }
+
+    if (access_type == 2) { // CLTS
+        uint64_t guest_cr0 = 0, shadow_cr0 = 0;
+        cosmos_vmread(VMCS_GUEST_CR0, &guest_cr0);
+        cosmos_vmread(VMCS_CR0_READ_SHADOW, &shadow_cr0);
+        cosmos_vmwrite(VMCS_GUEST_CR0, guest_cr0 & ~CR0_TS);
+        cosmos_vmwrite(VMCS_CR0_READ_SHADOW, shadow_cr0 & ~CR0_TS);
+        return true;
+    }
+
+    if (access_type == 3) { // LMSW
+        uint64_t lmsw_src = (qual >> 16) & 0xFULL;
+        uint64_t guest_cr0 = 0, shadow_cr0 = 0;
+        cosmos_vmread(VMCS_GUEST_CR0, &guest_cr0);
+        cosmos_vmread(VMCS_CR0_READ_SHADOW, &shadow_cr0);
+
+        uint64_t pe_keep = (guest_cr0 & CR0_PE);
+        uint64_t new_shadow = (shadow_cr0 & ~0xFULL) | lmsw_src | pe_keep;
+        uint64_t cr0_fixed0 = cosmos_rdmsr(IA32_VMX_CR0_FIXED0);
+        uint64_t cr0_fixed1 = cosmos_rdmsr(IA32_VMX_CR0_FIXED1);
+        uint64_t new_hw = (((guest_cr0 & ~0xFULL) | lmsw_src | pe_keep) | cr0_fixed0) & cr0_fixed1;
+
+        cosmos_vmwrite(VMCS_CR0_READ_SHADOW, new_shadow);
+        cosmos_vmwrite(VMCS_GUEST_CR0, new_hw);
+        return true;
+    }
+
+    return true;
+}
+
+static bool handle_xsetbv_exit(cosmos_vcpu* vcpu) {
+    uint64_t guest_cr4 = 0;
+    cosmos_vmread(VMCS_GUEST_CR4, &guest_cr4);
+    if ((guest_cr4 & CR4_OSXSAVE) == 0) {
+        inject_guest_exception(6, false, 0);
+        return false;
+    }
+
+    uint32_t ecx = (uint32_t)vcpu->guest_regs.rcx;
+    uint32_t eax = (uint32_t)vcpu->guest_regs.rax;
+    uint32_t edx = (uint32_t)vcpu->guest_regs.rdx;
+    if (ecx != 0) {
+        inject_guest_exception(13, true, 0);
+        return false;
+    }
+
+    uint64_t new_xcr0 = ((uint64_t)edx << 32) | eax;
+    uint32_t a = 0, b = 0, c = 0, d = 0;
+    cosmos_cpuid(0x0D, 0, &a, &b, &c, &d);
+    uint64_t supported_xcr0 = ((uint64_t)d << 32) | a;
+
+    // Intel SDM XSETBV: bit 0 (x87) must be 1, AVX (bit 2) requires SSE (bit 1), no unsupported bits
+    if ((new_xcr0 & 1ULL) == 0 ||
+        ((new_xcr0 & (1ULL << 2)) && !(new_xcr0 & (1ULL << 1))) ||
+        (new_xcr0 & ~supported_xcr0) != 0) {
+        inject_guest_exception(13, true, 0);
+        return false;
+    }
+
+    __asm__ __volatile__("xsetbv" : : "c"(ecx), "a"(eax), "d"(edx));
+    return true;
 }
 
 /* ============================================================================
@@ -887,175 +991,99 @@ cosmos_hypervisor* cosmos_hv_get_global(void) {
 
 extern "C" int cosmos_vmexit_handler(vmx_guest_regs* guest_regs) {
     cosmos_hypervisor* hv = &g_hypervisor;
-    
-    // Retrieve correct CPU ID as we are multicore capable!
-    // Linux GS-Base pointer is active in guest and vmexit_stub
-    // runs on regular Linux stack, so smp_processor_id() is safe!
+
     extern unsigned int cosmos_get_cpu_id(void);
     uint32_t cpu_id = cosmos_get_cpu_id();
+    if (cpu_id >= 256) return 1;
     cosmos_vcpu* vcpu = &hv->vcpus[cpu_id];
-    
+
     // Copy guest registers
     vcpu->guest_regs = *guest_regs;
-    
-    // Capture TSC at VM-Exit (for stealth compensation)
+
+    // Capture TSC at VM-Exit
     uint64_t exit_tsc = cosmos_rdtsc();
-    
+
     // Read exit reason from VMCS
     uint64_t exit_reason_raw = 0;
     cosmos_vmread(VMCS_EXIT_REASON, &exit_reason_raw);
     uint32_t exit_reason = (uint32_t)(exit_reason_raw & 0xFFFF);
-    
+
     // Exit Qualification (additional info)
     uint64_t exit_qualification = 0;
     cosmos_vmread(VMCS_EXIT_QUALIFICATION, &exit_qualification);
-    
-    // Guest RIP for instruction length
+
+    // Guest RIP and instruction length
     uint64_t guest_rip = 0;
     uint64_t instr_len = 0;
     cosmos_vmread(VMCS_GUEST_RIP, &guest_rip);
     cosmos_vmread(VMCS_EXIT_INSTR_LENGTH, &instr_len);
-    
-    int action = 0; // 0 = resume, 1 = abort
+
+    int action = 0; // 0 = resume, non-zero = abort
+    bool advance_rip = false;
+
     switch (exit_reason) {
         case VMEXIT_CPUID:
             cosmos_hv_handle_cpuid(hv, vcpu);
-            // Advance RIP (CPUID is 2 bytes: 0F A2)
-            cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
+            advance_rip = true;
             break;
-            
 
         case VMEXIT_RDTSC:
             cosmos_hv_handle_rdtsc(hv, vcpu);
-            cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
+            advance_rip = true;
             break;
-            
+
         case VMEXIT_RDTSCP:
             cosmos_hv_handle_rdtsc(hv, vcpu);
-            // RDTSCP also sets ECX = IA32_TSC_AUX
             vcpu->guest_regs.rcx = cosmos_rdmsr(IA32_TSC_AUX);
-            cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
+            advance_rip = true;
             break;
-            
+
         case VMEXIT_RDMSR:
-            cosmos_hv_handle_rdmsr(hv, vcpu);
-            cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
+            advance_rip = hv_handle_rdmsr_ex(hv, vcpu);
             break;
-            
+
         case VMEXIT_WRMSR:
-            cosmos_hv_handle_wrmsr(hv, vcpu);
-            cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
+            advance_rip = hv_handle_wrmsr_ex(hv, vcpu);
             break;
-            
+
         case VMEXIT_EPT_VIOLATION:
             if (cosmos_hv_handle_ept_violation(hv, vcpu) != 0) {
-                HV_LOG("CRITICAL: EPT Violation @ GPA=0x%llX, RIP=0x%llX. Aborting!",
+                HV_LOG("CRITICAL: EPT Violation @ qual=0x%llX, RIP=0x%llX. Aborting!",
                        (unsigned long long)exit_qualification,
                        (unsigned long long)guest_rip);
                 action = exit_reason | 0x10000;
             }
             break;
-            
+
         case VMEXIT_HLT:
-            // HLT: Guest wants to halt → allow continuation
-            cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
+            advance_rip = true;
             break;
-            
+
         case VMEXIT_VMCALL:
-            // Hypercall from CosmOS (for internal communication)
             if (vcpu->guest_regs.rax == 0x1337) {
-                // EPT TLB Flush (Hypercall)
                 extern void _Z13cosmos_inveptmm(unsigned long type, unsigned long desc);
                 _Z13cosmos_inveptmm(2, 0); // Global INVEPT
-                HV_LOG("CPU %u: VMCALL 0x1337 (EPT Flush)", cpu_id);
+                HV_EXIT_LOG("CPU %u: VMCALL 0x1337 (EPT Flush)", cpu_id);
             } else {
-                HV_LOG("VMCALL: RAX=0x%llX", (unsigned long long)vcpu->guest_regs.rax);
+                HV_EXIT_LOG("VMCALL: RAX=0x%llX", (unsigned long long)vcpu->guest_regs.rax);
             }
-            cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
+            advance_rip = true;
             break;
-            
+
         case VMEXIT_CR_ACCESS:
-            {
-                uint64_t qual = exit_qualification;
-                uint32_t cr = qual & 0xF;
-                uint32_t access_type = (qual >> 4) & 3;
-                uint32_t reg = (qual >> 8) & 0xF;
-                
-                uint64_t val = 0;
-                if (access_type == 0) { // MOV to CR
-                    switch(reg) {
-                        case 0: val = vcpu->guest_regs.rax; break;
-                        case 1: val = vcpu->guest_regs.rcx; break;
-                        case 2: val = vcpu->guest_regs.rdx; break;
-                        case 3: val = vcpu->guest_regs.rbx; break;
-                        case 4: cosmos_vmread(VMCS_GUEST_RSP, &val); break;
-                        case 5: val = vcpu->guest_regs.rbp; break;
-                        case 6: val = vcpu->guest_regs.rsi; break;
-                        case 7: val = vcpu->guest_regs.rdi; break;
-                        case 8: val = vcpu->guest_regs.r8; break;
-                        case 9: val = vcpu->guest_regs.r9; break;
-                        case 10: val = vcpu->guest_regs.r10; break;
-                        case 11: val = vcpu->guest_regs.r11; break;
-                        case 12: val = vcpu->guest_regs.r12; break;
-                        case 13: val = vcpu->guest_regs.r13; break;
-                        case 14: val = vcpu->guest_regs.r14; break;
-                        case 15: val = vcpu->guest_regs.r15; break;
-                    }
-                    if (cr == 0) {
-                        cosmos_vmwrite(VMCS_GUEST_CR0, val);
-                        cosmos_vmwrite(VMCS_CR0_READ_SHADOW, val);
-                    } else if (cr == 3) {
-                        cosmos_vmwrite(VMCS_GUEST_CR3, val);
-                    } else if (cr == 4) {
-                        cosmos_vmwrite(VMCS_CR4_READ_SHADOW, val);
-                        cosmos_vmwrite(VMCS_GUEST_CR4, val | CR4_VMXE);
-                    }
-                } else if (access_type == 1) { // MOV from CR
-                    if (cr == 0) cosmos_vmread(VMCS_CR0_READ_SHADOW, &val);
-                    else if (cr == 3) cosmos_vmread(VMCS_GUEST_CR3, &val);
-                    else if (cr == 4) cosmos_vmread(VMCS_CR4_READ_SHADOW, &val);
-                    
-                    if (reg == 4) cosmos_vmwrite(VMCS_GUEST_RSP, val);
-                    else {
-                        switch(reg) {
-                            case 0: vcpu->guest_regs.rax = val; break;
-                            case 1: vcpu->guest_regs.rcx = val; break;
-                            case 2: vcpu->guest_regs.rdx = val; break;
-                            case 3: vcpu->guest_regs.rbx = val; break;
-                            case 5: vcpu->guest_regs.rbp = val; break;
-                            case 6: vcpu->guest_regs.rsi = val; break;
-                            case 7: vcpu->guest_regs.rdi = val; break;
-                            case 8: vcpu->guest_regs.r8 = val; break;
-                            case 9: vcpu->guest_regs.r9 = val; break;
-                            case 10: vcpu->guest_regs.r10 = val; break;
-                            case 11: vcpu->guest_regs.r11 = val; break;
-                            case 12: vcpu->guest_regs.r12 = val; break;
-                            case 13: vcpu->guest_regs.r13 = val; break;
-                            case 14: vcpu->guest_regs.r14 = val; break;
-                            case 15: vcpu->guest_regs.r15 = val; break;
-                        }
-                    }
-                }
-            }
-            cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
+            advance_rip = handle_cr_access_exit(hv, vcpu, exit_qualification);
             break;
-            
+
         case VMEXIT_XSETBV:
-            {
-                uint32_t ecx = (uint32_t)vcpu->guest_regs.rcx;
-                uint32_t eax = (uint32_t)vcpu->guest_regs.rax;
-                uint32_t edx = (uint32_t)vcpu->guest_regs.rdx;
-                __asm__ __volatile__("xsetbv" : : "c"(ecx), "a"(eax), "d"(edx));
-            }
-            cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
+            advance_rip = handle_xsetbv_exit(vcpu);
             break;
-            
+
         case VMEXIT_INVD:
         case VMEXIT_WBINVD:
             __asm__ __volatile__("wbinvd");
-            cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
+            advance_rip = true;
             break;
-            
+
         case VMEXIT_VMCLEAR:
         case VMEXIT_VMPTRLD:
         case VMEXIT_VMPTRST:
@@ -1065,17 +1093,16 @@ extern "C" int cosmos_vmexit_handler(vmx_guest_regs* guest_regs) {
         case VMEXIT_VMXON:
         case VMEXIT_VMLAUNCH:
         case VMEXIT_VMRESUME:
-            // If guest executes VMX instructions, inject #UD (Invalid Opcode)
-            cosmos_vmwrite(VMCS_ENTRY_INT_INFO, (1U << 31) | (3U << 8) | 6U); 
-            // RIP is NOT advanced on exceptions!
+            // Inject #UD (Invalid Opcode) without advancing RIP
+            inject_guest_exception(6, false, 0);
             break;
-            
+
         case VMEXIT_TRIPLE_FAULT:
-            HV_LOG("!!! TRIPLE FAULT in guest! RIP=0x%llX !!!", 
+            HV_LOG("!!! TRIPLE FAULT in guest! RIP=0x%llX !!!",
                    (unsigned long long)guest_rip);
             action = exit_reason | 0x10000;
             break;
-            
+
         default:
             HV_LOG("Unhandled VM-Exit: reason=%u, qual=0x%llX, RIP=0x%llX. ABORT!",
                    exit_reason,
@@ -1084,24 +1111,30 @@ extern "C" int cosmos_vmexit_handler(vmx_guest_regs* guest_regs) {
             action = exit_reason | 0x10000;
             break;
     }
-    
-    // TSC Stealth: Hide time spent in VM-Exit
+
+    if (action == 0 && advance_rip) {
+        cosmos_vmwrite(VMCS_GUEST_RIP, guest_rip + instr_len);
+    }
+
+    // Update TSC offset to account for VM-Exit duration
     if (action == 0) {
         uint64_t new_exit_tsc = cosmos_rdtsc();
         if (hv->stealth_mode) {
-            // Standard cost for VM-Exits
             uint64_t simulated_cost = (exit_reason == VMEXIT_CPUID) ? VMEXIT_COST_CYCLES_CPUID : VMEXIT_COST_CYCLES_RDMSR;
             cosmos_ac_hide_vmexit_time(vcpu, exit_tsc, new_exit_tsc, simulated_cost);
+            uint64_t synced_off = 0;
+            if (cosmos_vmread(VMCS_TSC_OFFSET, &synced_off) == 0) {
+                vcpu->tsc_offset = (int64_t)synced_off;
+            }
         } else {
-            // Old TSC stealth (naive)
             uint64_t exit_cost = new_exit_tsc - exit_tsc;
             vcpu->tsc_offset -= (int64_t)exit_cost;
             cosmos_vmwrite(VMCS_TSC_OFFSET, (uint64_t)vcpu->tsc_offset);
         }
     }
-    
+
     // Write back registers (restored by assembly stub)
     *guest_regs = vcpu->guest_regs;
-    
+
     return action;
 }
