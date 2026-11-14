@@ -28,6 +28,7 @@ $(THIRD_PARTY_OBJ): surreal_third_party.cpp cgltf.h stb_image.h
 $(TARGET_STUDIO): $(SRCS_STUDIO) $(THIRD_PARTY_OBJ) *.hpp
 	@echo "[BUILD] Compiling Surreal 3D Studio..."
 	$(CXX) $(CXXFLAGS) $(SRCS_STUDIO) $(THIRD_PARTY_OBJ) $(LDFLAGS) -o $(TARGET_STUDIO)
+	@cp -f $(TARGET_STUDIO) surreal_live_dojo
 	@echo "[✓] $(TARGET_STUDIO) built successfully."
 
 $(TARGET_BENCH): $(SRCS_BENCH) $(THIRD_PARTY_OBJ) *.hpp
@@ -35,7 +36,7 @@ $(TARGET_BENCH): $(SRCS_BENCH) $(THIRD_PARTY_OBJ) *.hpp
 	$(CXX) $(CXXFLAGS) $(SRCS_BENCH) $(THIRD_PARTY_OBJ) $(LDFLAGS) -o $(TARGET_BENCH)
 	@echo "[✓] $(TARGET_BENCH) built successfully."
 
-$(TARGET_PHOTO): $(SRCS_PHOTO) $(THIRD_PARTY_OBJ) surreal_image3d.hpp surreal_engine.hpp
+$(TARGET_PHOTO): $(SRCS_PHOTO) $(THIRD_PARTY_OBJ) *.hpp
 	@echo "[BUILD] Compiling Photo-to-3D preview tool..."
 	$(CXX) $(CXXFLAGS) $(SRCS_PHOTO) $(THIRD_PARTY_OBJ) -lm -pthread -fopenmp -o $(TARGET_PHOTO)
 	@echo "[✓] $(TARGET_PHOTO) built successfully."

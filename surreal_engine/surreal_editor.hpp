@@ -135,6 +135,58 @@ public:
         onMeshEvicted(mesh);
     }
 
+    /**
+     * Unified photo loader for Catalog [L], Image Picker [F3], Level Load [F7],
+     * and CLI --photo: dresses cut-out characters over a proportionally adapted
+     * 3D skeleton, falling back to a relief plate for non-character photos.
+     */
+    static bool BuildPhotoPlacementAsset(
+        const std::string& fullPath,
+        const std::string& cleanName,
+        const Image3DOptions& opt,
+        size_t animSeed,
+        std::shared_ptr<SurrealMesh>& outMesh,
+        std::shared_ptr<SkeletalMeshInstance>& outSkel,
+        std::string* outInfoMsg = nullptr)
+    {
+        outMesh.reset();
+        outSkel.reset();
+
+        bool tryCostume = (opt.mode != 1);
+        if (tryCostume && opt.mode != 2) {
+            int iw = 0, ih = 0, ich = 0;
+            unsigned char* rgba = stbi_load(fullPath.c_str(), &iw, &ih, &ich, 4);
+            if (rgba && iw > 0 && ih > 0) {
+                tryCostume = SurrealAutoRigger::ShouldBuildAsCostumedCharacter(rgba, iw, ih);
+            }
+            if (rgba) stbi_image_free(rgba);
+        }
+
+        if (tryCostume) {
+            auto fig = SurrealAutoRigger::BuildSingleRubberSuitCharacter(fullPath, cleanName, opt, animSeed);
+            if (fig.mesh && !fig.mesh->vertices.empty()) {
+                outMesh = fig.mesh;
+                outSkel = fig.skeletal;
+                if (outInfoMsg) {
+                    size_t nJoints = outSkel ? outSkel->joints.size() : 0;
+                    *outInfoMsg = "3D Kostuem-Rigg (" + std::to_string(nJoints) + " Bones)";
+                }
+                return true;
+            }
+        }
+
+        Image3DInfo info;
+        outMesh = SurrealImage3D::BuildFromFile(fullPath, opt, &info);
+        if (outMesh && !outMesh->vertices.empty()) {
+            if (outInfoMsg) {
+                *outInfoMsg = info.plateMode ? "Plate: Solid Relief" : "Cutout Model";
+            }
+            return true;
+        }
+        if (outInfoMsg) *outInfoMsg = info.error;
+        return false;
+    }
+
     EditorSnapshot CaptureSnapshot(const SurrealWorld& world, const std::string& label = "") const {
         EditorSnapshot snap;
         snap.selectedIndex = selectedIndex;
@@ -406,7 +458,9 @@ public:
                 lower.find("monk") != std::string::npos ||
                 lower.find("dragon") != std::string::npos ||
                 lower.find("swimsuit") != std::string::npos ||
-                lower.find("solar") != std::string::npos);
+                lower.find("solar") != std::string::npos ||
+                lower.find("studio") != std::string::npos ||
+                lower.find("rigged") != std::string::npos);
     }
 
     static bool IsAvatarModel(const std::string& name) {
@@ -627,13 +681,14 @@ public:
         bool isPhoto = IsImageFile(file);
         if (isPhoto) {
             Image3DOptions opt;
-            Image3DInfo info;
-            placementMesh = SurrealImage3D::BuildFromFile(file.fullPath, opt, &info);
-            loaded = (placementMesh != nullptr);
+            std::string infoMsg;
+            loaded = BuildPhotoPlacementAsset(
+                file.fullPath, GetCleanName(file.filename), opt, entities.size(),
+                placementMesh, placementSkeletal, &infoMsg);
             placementMetallic = 0.05f;   // matte, so the picture colours stay faithful
             placementRoughness = 0.85f;
             if (!loaded) {
-                SetStatus("[-] Photo->3D: " + info.error, 5.0f);
+                SetStatus("[-] Photo->3D: " + infoMsg, 5.0f);
                 return;
             }
         } else if (file.extension == ".obj") {
@@ -673,13 +728,14 @@ public:
                 scaleFactor = 1.0f; // Photo->3D meshes are already built at ~1.8 m
             } else if (isEnvironment) {
                 scaleFactor = 1.0f; // Keep real-world 1:1 scale for cities & environments!
-            } else if (IsDanceModel(file.filename) || IsAvatarModel(file.filename)) {
+            } else if (placementSkeletal || IsDanceModel(file.filename) || IsAvatarModel(file.filename)) {
                 // Humanoid / creature characters: normalize height to ~1.45m tall (or ~2.40m for dragon)
                 float charHeight = placementMesh->worldBounds.max.y - placementMesh->worldBounds.min.y;
                 float targetH = 1.45f;
                 std::string lowerFn = file.filename;
                 for (char& c : lowerFn) c = tolower(c);
                 if (lowerFn.find("dragon") != std::string::npos) targetH = 2.40f;
+                else if (lowerFn.find("studio") != std::string::npos || lowerFn.find("rigged") != std::string::npos) targetH = 1.68f;
                 if (charHeight > 0.0001f) {
                     scaleFactor = targetH / charHeight;
                 } else {
@@ -721,20 +777,13 @@ public:
         bool loaded = false;
         bool isPhoto = IsImageFile(file);
         if (isPhoto) {
-            auto rubberFig = SurrealAutoRigger::BuildSingleRubberSuitCharacter(
-                file.fullPath, GetCleanName(file.filename), userOpt, entities.size());
-            if (rubberFig.mesh && !rubberFig.mesh->vertices.empty()) {
-                placementMesh = rubberFig.mesh;
-                placementSkeletal = rubberFig.skeletal;
-                loaded = true;
-            } else {
-                Image3DInfo info;
-                placementMesh = SurrealImage3D::BuildFromFile(file.fullPath, userOpt, &info);
-                loaded = (placementMesh != nullptr);
-                if (!loaded) {
-                    SetStatus("[-] Photo->3D: " + info.error, 5.0f);
-                    return false;
-                }
+            std::string infoMsg;
+            loaded = BuildPhotoPlacementAsset(
+                file.fullPath, GetCleanName(file.filename), userOpt, entities.size(),
+                placementMesh, placementSkeletal, &infoMsg);
+            if (!loaded) {
+                SetStatus("[-] Photo->3D: " + infoMsg, 5.0f);
+                return false;
             }
             placementMetallic = 0.05f;
             placementRoughness = 0.85f;
@@ -774,12 +823,15 @@ public:
                 scaleFactor = 1.0f;
             } else if (isEnvironment) {
                 scaleFactor = 1.0f;
-            } else if (IsDanceModel(file.filename) || IsAvatarModel(file.filename)) {
+            } else if (placementSkeletal || IsDanceModel(file.filename) || IsAvatarModel(file.filename)) {
                 float charHeight = placementMesh->worldBounds.max.y - placementMesh->worldBounds.min.y;
                 float targetH = 1.45f;
                 std::string lowerFn = file.filename;
                 for (char& c : lowerFn) c = tolower(c);
                 if (lowerFn.find("dragon") != std::string::npos) targetH = 2.40f;
+                else if (lowerFn.find("studio") != std::string::npos || lowerFn.find("rigged") != std::string::npos) {
+                    targetH = std::clamp(userOpt.heightMeters, 0.8f, 4.0f);
+                }
                 if (charHeight > 0.0001f) {
                     scaleFactor = targetH / charHeight;
                 } else {
@@ -1772,7 +1824,9 @@ public:
                     } else if (lowerExt == ".png" || lowerExt == ".jpg" || lowerExt == ".jpeg" ||
                                lowerExt == ".bmp" || lowerExt == ".webp" || lowerExt == ".tga") {
                         Image3DOptions opt;
-                        loadedMesh = SurrealImage3D::BuildFromFile(resolved, opt, nullptr);
+                        BuildPhotoPlacementAsset(
+                            resolved, GetCleanName(std::filesystem::path(resolved).filename().string()),
+                            opt, entities.size(), loadedMesh, loadedSkeletal);
                     } else {
                         SurrealModelLoader::LoadCustomFile(resolved, loadedMesh, col);
                     }

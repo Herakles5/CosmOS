@@ -25,4 +25,6 @@ assets/models/*.gltf
 assets/models/source/
 assets/models/textures/
 assets/models/Seoul_City_*.glb
+assets/models/studio3d/*.glb
+meovv_*_nobg*.png
 surreal-photo3d
