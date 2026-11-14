@@ -27,132 +27,12 @@ gi.require_version('Gdk', '3.0')
 gi.require_version('GdkPixbuf', '2.0')
 gi.require_version('Pango', '1.0')
 from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Pango
+from surreal_gtk_theme import apply_black_gold_theme
 
 REQUEST_FILE = "/tmp/surreal_generator_request.json"
 STUDIO_STATUS_FILE = "/tmp/surreal_studio_status.json"
 STUDIO_CONFIG_PATH = os.path.expanduser("~/.config/aion_surreal_studio.json")
 MESH_EXTS = (".glb", ".gltf", ".obj", ".fbx")
-
-CSS_DATA = b"""
-window {
-    background-color: #070b14;
-    color: #dce3ed;
-    font-family: 'Monospace', 'DejaVu Sans Mono', sans-serif;
-    font-size: 13px;
-}
-headerbar {
-    background: #04070e;
-    border-bottom: 2px solid #00ffcc;
-    color: #00ffcc;
-}
-.cyber-card {
-    background-color: #0b1322;
-    border: 1px solid #16263e;
-    border-radius: 6px;
-    padding: 10px 14px;
-    margin-bottom: 6px;
-}
-.cyber-title {
-    color: #00ffcc;
-    font-weight: bold;
-    font-size: 12px;
-    margin-bottom: 4px;
-}
-.btn-generate {
-    background: linear-gradient(135deg, #00ffcc 0%, #0088cc 100%);
-    color: #070b14;
-    border: 2px solid #00ffcc;
-    border-radius: 6px;
-    padding: 12px 18px;
-    font-weight: bold;
-    font-size: 14px;
-}
-.btn-generate:hover {
-    background: linear-gradient(135deg, #ff007f 0%, #9900ff 100%);
-    border-color: #ffffff;
-    color: #ffffff;
-}
-.btn-pick {
-    background-color: #111a2a;
-    color: #00ffcc;
-    border: 1px solid #00ffcc;
-    border-radius: 4px;
-    padding: 6px 12px;
-    font-size: 11px;
-}
-.btn-pick:hover {
-    background-color: #1a2c48;
-    color: #ff007f;
-    border-color: #ff007f;
-}
-.btn-ai-isolate {
-    background: linear-gradient(135deg, #0d3840 0%, #0088cc 100%);
-    color: #ffffff;
-    border: 1px solid #00ffcc;
-    border-radius: 4px;
-    padding: 8px 12px;
-    font-size: 12px;
-    font-weight: bold;
-}
-.btn-ai-isolate:hover {
-    background: linear-gradient(135deg, #ff007f 0%, #00ffcc 100%);
-    color: #070b14;
-}
-progressbar progress {
-    background-color: #00ffcc;
-    border-radius: 4px;
-}
-progressbar trough {
-    background-color: #111a2a;
-    border: 1px solid #223854;
-    border-radius: 4px;
-    min-height: 14px;
-}
-scale highlight {
-    background-color: #00ffcc;
-}
-scale slider {
-    background-color: #ff007f;
-    min-width: 16px;
-    min-height: 16px;
-    border-radius: 8px;
-    border: 1px solid #ffffff;
-}
-combobox button {
-    background-color: #0f1c2e;
-    color: #00ffcc;
-    border: 1px solid #00ffcc;
-    border-radius: 4px;
-    padding: 4px 8px;
-}
-checkbutton {
-    color: #dce3ed;
-    font-size: 12px;
-    padding: 3px 0;
-}
-checkbutton check {
-    background-color: #111a2a;
-    border: 1px solid #00ffcc;
-    border-radius: 4px;
-    color: #00ffcc;
-}
-checkbutton check:checked {
-    background-color: #00ffcc;
-    color: #070b14;
-}
-.btn-cancel {
-    background-color: #1c1420;
-    color: #8899aa;
-    border: 1px solid #334455;
-    border-radius: 4px;
-    padding: 6px 14px;
-}
-.btn-cancel:hover {
-    background-color: #2a1b24;
-    color: #ff5577;
-    border-color: #ff5577;
-}
-"""
 
 class SurrealGeneratorWindow(Gtk.Window):
     def __init__(self, initial_image_path=None):
@@ -162,14 +42,8 @@ class SurrealGeneratorWindow(Gtk.Window):
         self.set_keep_above(True)
         self.set_border_width(12)
 
-        # Apply CSS
-        css_provider = Gtk.CssProvider()
-        css_provider.load_from_data(CSS_DATA)
-        Gtk.StyleContext.add_provider_for_screen(
-            Gdk.Screen.get_default(),
-            css_provider,
-            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
+        # Apply High-Contrast Black & Gold / Yellow CSS Theme
+        self._css_provider = apply_black_gold_theme()
 
         self.current_image_path = initial_image_path
         if not self.current_image_path or not os.path.exists(self.current_image_path):
@@ -199,7 +73,7 @@ class SurrealGeneratorWindow(Gtk.Window):
 
         # Header Title
         lbl_head = Gtk.Label()
-        lbl_head.set_markup("<span size='large' weight='bold' color='#00ffcc'>✨ AION SURREAL 3D // STUDIO 3D &amp; AUTO-RIG</span>")
+        lbl_head.set_markup("<span size='large' weight='bold' color='#ffd700'>✨ AION SURREAL 3D // STUDIO 3D &amp; AUTO-RIG</span>")
         lbl_head.set_xalign(0.0)
         main_box.pack_start(lbl_head, False, False, 2)
 
@@ -211,7 +85,7 @@ class SurrealGeneratorWindow(Gtk.Window):
 
         ci_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         ci_title = Gtk.Label()
-        ci_title.set_markup("<span color='#00ffcc' weight='bold'>[ 🖼️ SOURCE IMAGE OR STATIC 3D MESH (.GLB/.OBJ) ]</span>")
+        ci_title.set_markup("<span color='#ffd700' weight='bold'>[ 🖼️ SOURCE IMAGE OR STATIC 3D MESH (.GLB/.OBJ) ]</span>")
         ci_title.set_xalign(0.0)
         ci_top.pack_start(ci_title, True, True, 0)
 
@@ -255,7 +129,7 @@ class SurrealGeneratorWindow(Gtk.Window):
         card_mode.get_style_context().add_class("cyber-card")
 
         cm_title = Gtk.Label()
-        cm_title.set_markup("<span color='#00ffcc' weight='bold'>[ 🌟 3D MODEL TYPE &amp; RECONSTRUCTION MODE ]</span>")
+        cm_title.set_markup("<span color='#ffd700' weight='bold'>[ 🌟 3D MODEL TYPE &amp; RECONSTRUCTION MODE ]</span>")
         cm_title.set_xalign(0.0)
         card_mode.pack_start(cm_title, False, False, 0)
 
@@ -354,7 +228,7 @@ class SurrealGeneratorWindow(Gtk.Window):
         card_params.get_style_context().add_class("cyber-card")
 
         cp_title = Gtk.Label()
-        cp_title.set_markup("<span color='#00ffcc' weight='bold'>[ 📐 3D GEOMETRY &amp; DEPTH TUNING ]</span>")
+        cp_title.set_markup("<span color='#ffd700' weight='bold'>[ 📐 3D GEOMETRY &amp; DEPTH TUNING ]</span>")
         cp_title.set_xalign(0.0)
         card_params.pack_start(cp_title, False, False, 0)
 
@@ -364,7 +238,7 @@ class SurrealGeneratorWindow(Gtk.Window):
         lbl_depth.set_xalign(0.0)
         row_depth.pack_start(lbl_depth, True, True, 0)
         self.lbl_depth_val = Gtk.Label()
-        self.lbl_depth_val.set_markup("<span color='#00ffcc'>45%</span>")
+        self.lbl_depth_val.set_markup("<span color='#ffe875'>45%</span>")
         row_depth.pack_end(self.lbl_depth_val, False, False, 0)
         card_params.pack_start(row_depth, False, False, 0)
 
@@ -380,7 +254,7 @@ class SurrealGeneratorWindow(Gtk.Window):
         lbl_rel.set_xalign(0.0)
         row_rel.pack_start(lbl_rel, True, True, 0)
         self.lbl_rel_val = Gtk.Label()
-        self.lbl_rel_val.set_markup("<span color='#ffcc00'>35%</span>")
+        self.lbl_rel_val.set_markup("<span color='#ffd700'>35%</span>")
         row_rel.pack_end(self.lbl_rel_val, False, False, 0)
         card_params.pack_start(row_rel, False, False, 0)
 
@@ -396,7 +270,7 @@ class SurrealGeneratorWindow(Gtk.Window):
         lbl_h.set_xalign(0.0)
         row_h.pack_start(lbl_h, True, True, 0)
         self.lbl_h_val = Gtk.Label()
-        self.lbl_h_val.set_markup("<span color='#00ff88'>1.80 m</span>")
+        self.lbl_h_val.set_markup("<span color='#ffe875'>1.80 m</span>")
         row_h.pack_end(self.lbl_h_val, False, False, 0)
         card_params.pack_start(row_h, False, False, 0)
 
@@ -412,7 +286,7 @@ class SurrealGeneratorWindow(Gtk.Window):
         lbl_pass.set_xalign(0.0)
         row_pass.pack_start(lbl_pass, True, True, 0)
         self.lbl_pass_val = Gtk.Label()
-        self.lbl_pass_val.set_markup("<span color='#00ffcc'><b>1440x Passes</b></span>")
+        self.lbl_pass_val.set_markup("<span color='#ffd700'><b>1440x Passes</b></span>")
         row_pass.pack_end(self.lbl_pass_val, False, False, 0)
         card_params.pack_start(row_pass, False, False, 0)
 
@@ -443,7 +317,7 @@ class SurrealGeneratorWindow(Gtk.Window):
         card_act.get_style_context().add_class("cyber-card")
 
         self.lbl_status = Gtk.Label()
-        self.lbl_status.set_markup("<span color='#00ffcc'>Ready to generate high-precision 3D model.</span>")
+        self.lbl_status.set_markup("<span color='#ffe875'>Ready to generate high-precision 3D model.</span>")
         self.lbl_status.set_xalign(0.0)
         self.configure_wrap_label(self.lbl_status, 62)
         card_act.pack_start(self.lbl_status, False, False, 0)
@@ -515,7 +389,7 @@ class SurrealGeneratorWindow(Gtk.Window):
 
     def make_key_row(self, parent_box, label_text, initial_val):
         lbl = Gtk.Label()
-        lbl.set_markup(f"<span size='small' color='#99bbdd'>{GLib.markup_escape_text(label_text)}</span>")
+        lbl.set_markup(f"<span size='small' color='#e5ca6b'>{GLib.markup_escape_text(label_text)}</span>")
         lbl.set_xalign(0.0)
         parent_box.pack_start(lbl, False, False, 0)
         entry = Gtk.Entry()
@@ -556,17 +430,17 @@ class SurrealGeneratorWindow(Gtk.Window):
 
     def load_image_preview(self):
         if not self.current_image_path or not os.path.exists(self.current_image_path):
-            self.lbl_filename.set_markup("<span color='#ff5577'>No image or 3D mesh selected</span>")
+            self.lbl_filename.set_markup("<span color='#ff6b6b'>No image or 3D mesh selected</span>")
             return
 
         fname = os.path.basename(self.current_image_path)
-        self.lbl_filename.set_markup(f"<b>File:</b> <span color='#00ffcc'>{GLib.markup_escape_text(fname)}</span>")
+        self.lbl_filename.set_markup(f"<b>File:</b> <span color='#ffd700'>{GLib.markup_escape_text(fname)}</span>")
 
         if self.is_current_mesh():
             sz_kb = os.path.getsize(self.current_image_path) / 1024.0
             sz_txt = f"{sz_kb / 1024.0:.2f} MB" if sz_kb >= 1024.0 else f"{sz_kb:.1f} KB"
             self.lbl_details.set_markup(
-                f"<b>Static 3D Mesh:</b> <span color='#00ff88'>{sz_txt}</span> | Ready for local Blender Auto-Rigging + Mixamo Dance"
+                f"<b>Static 3D Mesh:</b> <span color='#ffe875'>{sz_txt}</span> | Ready for local Blender Auto-Rigging + Mixamo Dance"
             )
             self.img_widget.set_from_icon_name("applications-graphics", Gtk.IconSize.DIALOG)
             self.btn_ai_isolate.set_sensitive(False)
@@ -582,7 +456,7 @@ class SurrealGeneratorWindow(Gtk.Window):
             orig_w, orig_h = pixbuf.get_width(), pixbuf.get_height()
             has_alpha = pixbuf.get_has_alpha()
 
-            alpha_str = "<span color='#00ff88'>Alpha Transparency Detected</span>" if has_alpha else "<span color='#ffaa00'>Full Picture (No Alpha — Studio Mode runs rembg)</span>"
+            alpha_str = "<span color='#5cff8d'>Alpha Transparency Detected</span>" if has_alpha else "<span color='#ffd700'>Full Picture (No Alpha — Studio Mode runs rembg)</span>"
             haze_tip = ""
             if has_alpha:
                 try:
@@ -591,10 +465,10 @@ class SurrealGeneratorWindow(Gtk.Window):
                     arr_a = np.array(Image.open(self.current_image_path).convert("RGBA"))[:, :, 3]
                     fg = arr_a >= 16
                     if np.any(fg) and float(np.mean(arr_a[fg] < 180)) > 0.25:
-                        haze_tip = "\n<span color='#ff9944' size='small'>⚠ Warnung: Stark halbtransparente Figur (z.B. doppeltes _nobg) — Original-Cutout ohne Nebel liefert viel sauberere Beine!</span>"
+                        haze_tip = "\n<span color='#ffb347' size='small'>⚠ Warnung: Stark halbtransparente Figur (z.B. doppeltes _nobg) — Original-Cutout ohne Nebel liefert viel sauberere Beine!</span>"
                 except Exception:
                     pass
-            narrow_tip = "\n<span color='#ffcc00' size='small'>💡 Hinweis: Schmaler Bildausschnitt (&lt;260px) – fuer beste Gesichter &amp; Haende ein klares Front-Foto oder fertige .glb nutzen.</span>" if orig_w < 260 else ""
+            narrow_tip = "\n<span color='#ffe875' size='small'>💡 Hinweis: Schmaler Bildausschnitt (&lt;260px) – fuer beste Gesichter &amp; Haende ein klares Front-Foto oder fertige .glb nutzen.</span>" if orig_w < 260 else ""
             self.lbl_details.set_markup(f"<b>Resolution:</b> {orig_w}x{orig_h} px | {alpha_str}{haze_tip}{narrow_tip}")
 
             # Default to Studio AI 3D + Mixamo Auto-Rig for true 360° studio characters
@@ -613,12 +487,12 @@ class SurrealGeneratorWindow(Gtk.Window):
             thumb = pixbuf.scale_simple(tw, th, GdkPixbuf.InterpType.BILINEAR)
             self.img_widget.set_from_pixbuf(thumb)
         except Exception as e:
-            self.lbl_details.set_markup(f"<span color='#ff5577'>Preview error: {GLib.markup_escape_text(str(e))}</span>")
+            self.lbl_details.set_markup(f"<span color='#ff6b6b'>Preview error: {GLib.markup_escape_text(str(e))}</span>")
 
     def on_ai_isolate_clicked(self, btn):
         if not self.current_image_path or not os.path.exists(self.current_image_path):
             return
-        self.lbl_status.set_markup("<span color='#ffcc00'>🤖 Checking image background / running AI Subject Isolation...</span>")
+        self.lbl_status.set_markup("<span color='#ffe875'>🤖 Checking image background / running AI Subject Isolation...</span>")
         self.btn_ai_isolate.set_sensitive(False)
 
         def worker():
@@ -653,16 +527,16 @@ class SurrealGeneratorWindow(Gtk.Window):
         self.cb_mode.set_active_id(prev_mode)
         if skipped:
             self.lbl_status.set_markup(
-                "<span color='#00ffcc'><b>[✓] Bereits freigestellt!</b> Transparenter Hintergrund erkannt — erneutes rembg uebersprungen um Kleidung zu schuetzen.</span>"
+                "<span color='#ffe875'><b>[✓] Bereits freigestellt!</b> Transparenter Hintergrund erkannt — erneutes rembg uebersprungen um Kleidung zu schuetzen.</span>"
             )
         else:
             self.lbl_status.set_markup(
-                "<span color='#00ff88'><b>[✓] AI Isolation Complete!</b> Foreground cutout ready without changing Studio mode.</span>"
+                "<span color='#5cff8d'><b>[✓] AI Isolation Complete!</b> Foreground cutout ready without changing Studio mode.</span>"
             )
 
     def on_isolate_failed(self, err):
         self.btn_ai_isolate.set_sensitive(True)
-        self.lbl_status.set_markup(f"<span color='#ff5577'>[-] AI Isolation error: {err}</span>")
+        self.lbl_status.set_markup(f"<span color='#ff6b6b'>[-] AI Isolation error: {err}</span>")
 
     def on_pick_another_image(self, btn):
         dialog = Gtk.FileChooserDialog(
@@ -698,23 +572,23 @@ class SurrealGeneratorWindow(Gtk.Window):
 
         if mid == "0":
             self.lbl_mode_desc.set_markup(
-                "<span size='small' color='#00ffcc'>★ <b>True Studio AI 3D Mesh + Local Blender Mixamo Auto-Rig:</b> "
+                "<span size='small' color='#ffe875'>★ <b>True Studio AI 3D Mesh + Local Blender Mixamo Auto-Rig:</b> "
                 "Reconstructs a complete 360° high-poly character (face, hair, outfit front &amp; back), "
                 "rigs 22 Mixamo humanoid joints locally (zero local VRAM), and exports an animated dancing <b>.glb</b>. "
                 "Also accepts external static <b>.glb/.obj</b> meshes from Meshy/Tripo/Hunyuan web!</span>"
             )
         elif mid == "1":
             self.lbl_mode_desc.set_markup(
-                "<span size='small' color='#88bbdd'>✔ Preserves <b>100% of the image</b> (Offline CPU). Faces, clothes &amp; scene "
+                "<span size='small' color='#e5ca6b'>✔ Preserves <b>100% of the image</b> (Offline CPU). Faces, clothes &amp; scene "
                 "are extruded with 3D volume, rounded chamfer rim, and a sturdy ground pedestal.</span>"
             )
         elif mid == "2":
             self.lbl_mode_desc.set_markup(
-                "<span size='small' color='#88bbdd'>✔ Creates a <b>watertight standalone 3D cutout figure</b> (Offline CPU) standing on its feet.</span>"
+                "<span size='small' color='#e5ca6b'>✔ Creates a <b>watertight standalone 3D cutout figure</b> (Offline CPU) standing on its feet.</span>"
             )
         elif mid == "3":
             self.lbl_mode_desc.set_markup(
-                "<span size='small' color='#ff007f'>✔ Creates a massive 3D Cyberpunk neon billboard with luminous border "
+                "<span size='small' color='#ffd700'>✔ Creates a massive 3D Cyberpunk neon billboard with luminous border "
                 "and architectural support pylons.</span>"
             )
 
@@ -723,25 +597,25 @@ class SurrealGeneratorWindow(Gtk.Window):
 
     def on_depth_changed(self, scale):
         val = int(scale.get_value())
-        self.lbl_depth_val.set_markup(f"<span color='#00ffcc'>{val}%</span>")
+        self.lbl_depth_val.set_markup(f"<span color='#ffe875'>{val}%</span>")
 
     def on_relief_changed(self, scale):
         val = int(scale.get_value())
-        self.lbl_rel_val.set_markup(f"<span color='#ffcc00'>{val}%</span>")
+        self.lbl_rel_val.set_markup(f"<span color='#ffd700'>{val}%</span>")
 
     def on_height_changed(self, scale):
         val = scale.get_value()
-        self.lbl_h_val.set_markup(f"<span color='#00ff88'>{val:.2f} m</span>")
+        self.lbl_h_val.set_markup(f"<span color='#ffe875'>{val:.2f} m</span>")
 
     def on_passes_changed(self, scale):
         val = int(scale.get_value())
-        self.lbl_pass_val.set_markup(f"<span color='#00ffcc'><b>{val}x Passes</b></span>")
+        self.lbl_pass_val.set_markup(f"<span color='#ffd700'><b>{val}x Passes</b></span>")
 
     def on_generate_clicked(self, btn):
         if self.is_generating:
             return
         if not self.current_image_path or not os.path.exists(self.current_image_path):
-            self.lbl_status.set_markup("<span color='#ff5577'>[-] Please select an image or 3D mesh first.</span>")
+            self.lbl_status.set_markup("<span color='#ff6b6b'>[-] Please select an image or 3D mesh first.</span>")
             return
 
         self.is_generating = True
@@ -791,7 +665,7 @@ class SurrealGeneratorWindow(Gtk.Window):
             "--status-file", STUDIO_STATUS_FILE,
             "--notify-engine",
         ]
-        self.lbl_status.set_markup("<span color='#00ffcc'>🚀 Launching Studio AI 3D + Local Blender Auto-Rig pipeline...</span>")
+        self.lbl_status.set_markup("<span color='#ffe875'>🚀 Launching Studio AI 3D + Local Blender Auto-Rig pipeline...</span>")
         self.studio_proc = subprocess.Popen(cmd)
         GLib.timeout_add(250, self.poll_studio_progress)
 
@@ -810,28 +684,28 @@ class SurrealGeneratorWindow(Gtk.Window):
             state = st.get("state", "running")
             self.progress_bar.set_fraction(max(0.05, min(1.0, prog)))
             if state == "done":
-                self.lbl_status.set_markup(f"<span color='#00ff88'><b>[✓] {msg}</b></span>")
+                self.lbl_status.set_markup(f"<span color='#5cff8d'><b>[✓] {msg}</b></span>")
                 self.progress_bar.set_fraction(1.0)
                 GLib.timeout_add(500, lambda: (self.close(), False)[1])
                 return False
             elif state == "error":
-                self.lbl_status.set_markup(f"<span color='#ff5577'><b>[-] {msg}</b></span>")
+                self.lbl_status.set_markup(f"<span color='#ff6b6b'><b>[-] {msg}</b></span>")
                 self.is_generating = False
                 self.btn_gen.set_sensitive(True)
                 return False
             else:
-                self.lbl_status.set_markup(f"<span color='#00ffcc'>{msg}</span>")
+                self.lbl_status.set_markup(f"<span color='#ffe875'>{msg}</span>")
 
         if self.studio_proc:
             rc = self.studio_proc.poll()
             if rc is not None:
                 if rc == 0:
                     self.progress_bar.set_fraction(1.0)
-                    self.lbl_status.set_markup("<span color='#00ff88'><b>[✓] Studio 3D Model ready! Loading into Dojo...</b></span>")
+                    self.lbl_status.set_markup("<span color='#5cff8d'><b>[✓] Studio 3D Model ready! Loading into Dojo...</b></span>")
                     GLib.timeout_add(500, lambda: (self.close(), False)[1])
                     return False
                 if not st or st.get("state") != "error":
-                    self.lbl_status.set_markup(f"<span color='#ff5577'><b>[-] Studio 3D worker exited with code {rc}</b></span>")
+                    self.lbl_status.set_markup(f"<span color='#ff6b6b'><b>[-] Studio 3D worker exited with code {rc}</b></span>")
                 self.is_generating = False
                 self.btn_gen.set_sensitive(True)
                 return False
@@ -847,27 +721,27 @@ class SurrealGeneratorWindow(Gtk.Window):
 
         if self.progress_val < 0.25:
             self.lbl_status.set_markup(
-                f"<span color='#00ffcc'>🧠 [Pass {cur_pass}/{self.target_passes}] AI Saliency &amp; Anatomical Depth Profiling...</span>"
+                f"<span color='#ffe875'>🧠 [Pass {cur_pass}/{self.target_passes}] AI Saliency &amp; Anatomical Depth Profiling...</span>"
             )
             return True
         elif self.progress_val < 0.60:
             self.lbl_status.set_markup(
-                f"<span color='#00ffcc'>🧹 [Pass {cur_pass}/{self.target_passes}] Geometry Smoothing: Ironing Polygon Peaks &amp; Folds...</span>"
+                f"<span color='#ffe875'>🧹 [Pass {cur_pass}/{self.target_passes}] Geometry Smoothing: Ironing Polygon Peaks &amp; Folds...</span>"
             )
             return True
         elif self.progress_val < 0.90:
             self.lbl_status.set_markup(
-                f"<span color='#00ffcc'>🎨 [Pass {cur_pass}/{self.target_passes}] 360° Texture Painting: Hair Cascade &amp; Inpainting...</span>"
+                f"<span color='#ffe875'>🎨 [Pass {cur_pass}/{self.target_passes}] 360° Texture Painting: Hair Cascade &amp; Inpainting...</span>"
             )
             return True
         elif self.progress_val < 0.99:
             self.lbl_status.set_markup(
-                f"<span color='#00ffcc'>✨ [Pass {cur_pass}/{self.target_passes}] Final Polish &amp; Watertight Mesh Sealing...</span>"
+                f"<span color='#ffe875'>✨ [Pass {cur_pass}/{self.target_passes}] Final Polish &amp; Watertight Mesh Sealing...</span>"
             )
             return True
         else:
             self.lbl_status.set_markup(
-                f"<span color='#00ff88'><b>[✓] 3D Model perfected after {self.target_passes} passes! Placing into scene...</b></span>"
+                f"<span color='#5cff8d'><b>[✓] 3D Model perfected after {self.target_passes} passes! Placing into scene...</b></span>"
             )
             self.finish_generation()
             return False
