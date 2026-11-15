@@ -18,6 +18,7 @@ __pycache__/
 *.bak
 *.bak_*
 *.v4_backup.json
+*.v5_backup.json
 test_avatar
 test_dump_mat
 test_dump_pixels

@@ -1,0 +1,22 @@
+{
+  "agent": "AION_NEXUS_V6_WORKFLOW_MEMORY",
+  "last_updated": "2026-11-15 14:27:29",
+  "total_quests_progressed": 0,
+  "total_multi_mob_survivals": 3,
+  "hotbar_profile": {
+    "hotbar_version": "V6_2",
+    "locked_or_empty": [
+      "SKILL_4",
+      "SKILL_5"
+    ],
+    "ready_baselines": {},
+    "hp_potion_key": "x",
+    "mp_potion_key": "F2"
+  },
+  "obstacle_escapes": {
+    "left": 0.0,
+    "right": 0.0
+  },
+  "quest_workflows": {},
+  "episodes": []
+}
