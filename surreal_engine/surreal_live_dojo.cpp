@@ -126,6 +126,7 @@ static void DrawRoleBasedSkeletonOverlay(
     drawNode(footR, 3, 0xFF66FF88);
 }
 static std::atomic<bool> g_settingsGuiRunning(false);
+static std::atomic<bool> g_smashCatsRunning(false);
 static std::mutex g_imagePathMutex;
 static std::string g_pendingImagePath = "";
 static std::atomic<bool> g_studioAutoSpawnPending{false};
@@ -226,6 +227,34 @@ static void TriggerNativeSettingsDialog() {
             (void)ret;
         }
         g_settingsGuiRunning.store(false);
+    }).detach();
+}
+
+static void LaunchSmashCatsExternal(Surreal::SurrealEditor& editor) {
+    if (g_smashCatsRunning.load()) {
+        editor.SetStatus("[*] Smash Cats 3D: Surreal Edition is already running!", 3.0f);
+        return;
+    }
+    std::error_code ec;
+    std::string binPath = (surreal::paths::GetExecutableDir() / "surreal-smash-cats").string();
+    if (!std::filesystem::exists(binPath, ec)) {
+        if (std::filesystem::exists("/usr/local/bin/smash-cats", ec)) {
+            binPath = "/usr/local/bin/smash-cats";
+        } else if (std::filesystem::exists("/root/coding/MeinOS/run_smash_cats.sh", ec)) {
+            binPath = "/root/coding/MeinOS/run_smash_cats.sh";
+        } else {
+            editor.SetStatus("[!] surreal-smash-cats binary not found (run make surreal-smash-cats)", 4.0f);
+            return;
+        }
+    }
+    g_smashCatsRunning.store(true);
+    editor.SetStatus("[>] Launching Smash Cats 3D: Surreal Edition...", 3.5f);
+    std::thread([binPath]() {
+        std::string displayPfx = surreal::paths::HasDisplayEnv() ? "" : "DISPLAY=:0 ";
+        std::string cmd = displayPfx + surreal::paths::ShellEscapeSingle(binPath) + " >/dev/null 2>&1";
+        int ret = system(cmd.c_str());
+        (void)ret;
+        g_smashCatsRunning.store(false);
     }).detach();
 }
 
@@ -1257,6 +1286,8 @@ int main(int argc, char* argv[]) {
                     } else if (sym == SDLK_F2) {
                         TriggerNativeSettingsDialog();
                         editor.SetStatus("[⚙] Opening Graphics & Engine Settings...", 3.0f);
+                    } else if (sym == SDLK_F8) {
+                        LaunchSmashCatsExternal(editor);
                     }
 
                     if ((mod & KMOD_CTRL) && (sym == SDLK_z || sym == SDLK_y)) {
@@ -1684,6 +1715,8 @@ int main(int argc, char* argv[]) {
                                     editor.SaveLevel("scene_level.json");
                                 } else if (btn.id == "load") {
                                     editor.LoadLevel("scene_level.json", engine.world, obstacles);
+                                } else if (btn.id == "smash_cats") {
+                                    LaunchSmashCatsExternal(editor);
                                 }
                                 break;
                             }

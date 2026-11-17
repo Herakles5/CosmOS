@@ -1031,6 +1031,18 @@ extern _50 run_pong_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked);
 extern _50 run_blobby_engine(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked);
 extern _50 run_holyspirit(_43 wx, _43 wy, _43 ww, _43 wh, _44 blocked);
 extern "C" void run_smash_cats_engine(int wx, int wy, int ww, int wh, bool is_blocked);
+#ifdef __linux__
+static inline void launch_smash_cats_surreal(const char* extra_args) {
+    char cmd[512];
+    if (access("/root/coding/MeinOS/run_smash_cats.sh", X_OK) == 0) {
+        snprintf(cmd, sizeof(cmd), "/root/coding/MeinOS/run_smash_cats.sh %s >/dev/null 2>&1 &", extra_args ? extra_args : "");
+    } else {
+        snprintf(cmd, sizeof(cmd), "smash-cats %s >/dev/null 2>&1 &", extra_args ? extra_args : "");
+    }
+    int _rc = system(cmd);
+    (void)_rc;
+}
+#endif
 extern _50 browser_handle_keyboard(_43 key_scancode, _184 ascii);
 _50 run_emulator_engine(_43, _43, _43, _43, _44);
 
@@ -7718,7 +7730,7 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
     str_cpy(windows[10].title, "GERAETE MGR"); windows[10].x=100; windows[10].y=80; windows[10].w=600; windows[10].h=300; windows[10].color=0x111111;
     str_cpy(windows[11].title, "ARCADE: PONG"); windows[11].x=200; windows[11].y=150; windows[11].w=600; windows[11].h=300; windows[11].color=0x112211;
     str_cpy(windows[12].title, "ARCADE: BLOBBY"); windows[12].x=250; windows[12].y=100; windows[12].w=600; windows[12].h=300; windows[12].color=0x4488FF;
-    str_cpy(windows[14].title, "SMASH CATS 3D"); windows[14].x=250; windows[14].y=100; windows[14].w=600; windows[14].h=300; windows[14].color=0x4488FF;
+    str_cpy(windows[14].title, "SMASH CATS"); windows[14].x=250; windows[14].y=100; windows[14].w=640; windows[14].h=350; windows[14].color=0x4488FF;
     str_cpy(windows[15].title, "HYBRID KERNEL"); windows[15].x=0; windows[15].y=300; windows[15].w=600; windows[15].h=300; windows[15].color=0x000088;
 	
     /// BARE METAL FIX: Populate all Oracle telemetry state variables on startup!
@@ -8111,25 +8123,36 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
 					_15(key_new AND key_scancode EQ 0x43) { // 0x43 = F9
 						_15(windows[14].open EQ _86) {
 							// Window is closed -> OPEN!
-							windows[14].id = 14;   
-							windows[14].w = 800;   
-							windows[14].h = 600;   
-							windows[14].x = (screen_w - 800) / 2; // Zentriert  
-							windows[14].y = (screen_h - 600) / 2;   
+							windows[14].id = 14;
+#ifdef __linux__
+							windows[14].w = 640;
+							windows[14].h = 350;
+							str_cpy(windows[14].title, "SMASH CATS");
+#else
+							windows[14].w = 800;
+							windows[14].h = 600;
+							str_cpy(windows[14].title, "Super Smash Cats 3D");
+#endif
+							windows[14].x = (screen_w - windows[14].w) / 2; // Zentriert
+							windows[14].y = (screen_h - windows[14].h) / 2;   
 							
 							// FOCUS & VISIBILITY STATE SYNCHRONIZATION
 							// Mark window officially visible and bring to top of z-order!
 							windows[14].open = _128;
 							windows[14].minimized = _86;
 							windows[14].color = 0x4488FF;
-							str_cpy(windows[14].title, "Super Smash Cats 3D");
 							
 							os_app_x = windows[14].x;
 							os_app_y = windows[14].y + 35;
 							os_app_w = windows[14].w;
 							os_app_h = windows[14].h - 35;
 							
+#ifdef __linux__
+							// Do not auto-launch arena yet; let user pick in Launcher Window
+							app_window_active = _86;
+#else
 							app_window_active = _128; 
+#endif
 							focus_window(14);
 						} _41 {
 							// Window is open -> CLOSE!
@@ -9256,14 +9279,87 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 run_blobby_engine(wx, wy, ww, wh, blocked);
             }
             /// =========================================================
-            /// APP: SUPER SMASH CATS 3D (ID 14)
+            /// APP: SMASH CATS 3D — SURREAL EDITION (ID 14)
             /// =========================================================
             _15(win->id EQ 14) {
                 os_app_x = wx; os_app_y = wy; os_app_w = ww; os_app_h = wh;
-                app_window_active = _128; 
-                
-                // REQUIRED PLACEMENT: Prevents blank canvas rendering!
+#ifdef __linux__
+                app_window_active = _86;
+                // Keep y >= wy + 34 so CosmOS titlebar (MIN / FULL / X) stays completely visible & clickable!
+                DrawRoundedRect(wx + 6, wy + 34, ww - 12, wh - 40, 8, 0x0A1020);
+                TextC(wx + ww / 2, wy + 52, "SMASH CATS 3D : SURREAL EDITION", 0x00FFCC, _128);
+                TextC(wx + ww / 2, wy + 72, "Waehle Arena, Klasse oder Renderer:", 0x88CCFF, _128);
+
+                // Additional explicit top-right Close [X] button inside client area
+                bool hClose = is_over_rect(mouse_x, mouse_y, wx + ww - 84, wy + 40, 70, 22);
+                DrawRoundedRect(wx + ww - 84, wy + 40, 70, 22, 4, hClose ? 0xDD3344 : 0x882233);
+                TextC(wx + ww - 49, wy + 44, "CLOSE [X]", 0xFFFFFF, _128);
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND hClose) {
+                    windows[14].open = _86;
+                    app_window_active = _86;
+                    input_cooldown = 20;
+                }
+
+                Text(wx + 24, wy + 96,  "Steuerung:", 0xFFCC44, _128);
+                Text(wx + 24, wy + 114, "  WASD/Pfeile : Laufen | SPACE x1/2/3 : Sprung / Flip / Slam", 0xDDEEFF, _128);
+                Text(wx + 24, wy + 132, "  LMB / J     : Kombo  | RMB tap / F  : Heavy Spin Kick", 0xDDEEFF, _128);
+                Text(wx + 24, wy + 150, "  [1/2/3] Monk / CyberCat / Lioness   | [V] Seoul PBR City", 0xDDEEFF, _128);
+                Text(wx + 24, wy + 168, "  [F9] GPU <-> CPU AVX2 Hot-Switch    | [C] Fell-Farbe", 0xDDEEFF, _128);
+
+                int btnW = (ww - 64) / 2;
+                int btnY1 = wy + 196;
+                int btnY2 = wy + 238;
+                int btnY3 = wy + 280;
+
+                bool h1 = is_over_rect(mouse_x, mouse_y, wx + 22, btnY1, btnW, 32);
+                DrawRoundedRect(wx + 22, btnY1, btnW, 32, 6, h1 ? 0x00CC99 : 0x008866);
+                TextC(wx + 22 + btnW / 2, btnY1 + 9, "CYBER ARENA (KITTEN MONK)", 0xFFFFFF, _128);
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND h1) {
+                    launch_smash_cats_surreal("--arena cyber --class monk");
+                    windows[14].open = _86;
+                    input_cooldown = 25;
+                }
+
+                bool h2 = is_over_rect(mouse_x, mouse_y, wx + 42 + btnW, btnY1, btnW, 32);
+                DrawRoundedRect(wx + 42 + btnW, btnY1, btnW, 32, 6, h2 ? 0xFF9922 : 0xCC6611);
+                TextC(wx + 42 + btnW + btnW / 2, btnY1 + 9, "SEOUL PBR CITY ARENA", 0xFFFFFF, _128);
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND h2) {
+                    launch_smash_cats_surreal("--arena seoul");
+                    windows[14].open = _86;
+                    input_cooldown = 25;
+                }
+
+                bool h3 = is_over_rect(mouse_x, mouse_y, wx + 22, btnY2, btnW, 32);
+                DrawRoundedRect(wx + 22, btnY2, btnW, 32, 6, h3 ? 0x11BBEE : 0x0077AA);
+                TextC(wx + 22 + btnW / 2, btnY2 + 9, "PLAY AS CYBER CAT v13", 0xFFFFFF, _128);
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND h3) {
+                    launch_smash_cats_surreal("--class cybercat");
+                    windows[14].open = _86;
+                    input_cooldown = 25;
+                }
+
+                bool h4 = is_over_rect(mouse_x, mouse_y, wx + 42 + btnW, btnY2, btnW, 32);
+                DrawRoundedRect(wx + 42 + btnW, btnY2, btnW, 32, 6, h4 ? 0x3377EE : 0x2255AA);
+                TextC(wx + 42 + btnW + btnW / 2, btnY2 + 9, "PLAY AS AION LIONESS", 0xFFFFFF, _128);
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND h4) {
+                    launch_smash_cats_surreal("--class lioness");
+                    windows[14].open = _86;
+                    input_cooldown = 25;
+                }
+
+                bool h5 = is_over_rect(mouse_x, mouse_y, wx + 22, btnY3, ww - 44, 30);
+                DrawRoundedRect(wx + 22, btnY3, ww - 44, 30, 6, h5 ? 0x9944DD : 0x662299);
+                TextC(wx + ww / 2, btnY3 + 8, "LAUNCH AVX2 SOFTWARE CPU MODE (--cpu)", 0xFFFFFF, _128);
+                _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND h5) {
+                    launch_smash_cats_surreal("--cpu");
+                    windows[14].open = _86;
+                    input_cooldown = 25;
+                }
+#else
+                // Bare-metal legacy canvas renderer
+                app_window_active = _128;
                 run_smash_cats_engine(wx, wy, ww, wh, blocked);
+#endif
             }
             /// =========================================================
             /// APP: COSMOS DEFENDER (ID 10)
@@ -10049,10 +10145,19 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 
                 // Row 4
                 int row4 = row3 + 45;
-                DrawRoundedRect(col1, row4, bw, bh, 4, bm_col);
+                DrawRoundedRect(col1, row4, bw, bh, 4, 0x0088AA);
                 TextC(col1+bw/2, row4+10, "SMASH CATS 3D", 0xFFFFFF, _128); 
                 _15(input_cooldown EQ 0 AND mouse_just_pressed AND !blocked AND is_over_rect(mouse_x, mouse_y, col1, row4, bw, bh)) { 
-                    windows[14].open = _128; windows[14].minimized = _86; str_cpy(windows[14].title, "SMASH CATS 3D"); focus_window(14);
+                    windows[14].id = 14;
+                    windows[14].open = _128; windows[14].minimized = _86; str_cpy(windows[14].title, "SMASH CATS");
+                    windows[14].w = 640; windows[14].h = 350;
+                    windows[14].x = (screen_w - 640) / 2;
+                    windows[14].y = (screen_h - 350) / 2;
+                    focus_window(14);
+#ifdef __linux__
+                    // Only open Launcher Hub here; user picks Arena/Class before launching
+                    app_window_active = _86;
+#endif
                     input_cooldown = 25; windows[1].open = _86; windows[2].open = _86; 
                 }
                 

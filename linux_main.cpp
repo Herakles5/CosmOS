@@ -767,6 +767,7 @@ int main(int argc, char** argv) {
             }
             // ========== END GPU FOG RING ==========
         }
+#ifdef COSMOS_LEGACY_BARE_METAL_CATS
 		if (app_window_active) {
             // 1. Clear depth buffer to place 3D avatar in front of Cosmos desktop
             glClear(GL_DEPTH_BUFFER_BIT);
@@ -777,6 +778,7 @@ int main(int argc, char** argv) {
             // 3. Disable scissor test to avoid corrupting next frame
             glDisable(GL_SCISSOR_TEST);
         }
+#endif
 
         // DRAW AION 3D AVATAR
         draw_a3d();

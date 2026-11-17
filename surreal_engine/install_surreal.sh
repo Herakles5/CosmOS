@@ -44,6 +44,11 @@ g++ -O3 -mavx2 -mfma -fopenmp -pthread -std=c++20 -DSURREAL_EXTERNAL_THIRD_PARTY
     "${SRC_DIR}/photo3d_preview.cpp" "${SRC_DIR}/surreal_third_party.o" \
     -lm -pthread -fopenmp -o "${SRC_DIR}/surreal-photo3d"
 
+echo "[*] Building Smash Cats 3D: Surreal Edition (C++20 + AVX2 + OpenGL 4.6 + OpenMP)..."
+g++ -O3 -mavx2 -mfma -fopenmp -pthread -std=c++20 -DSURREAL_EXTERNAL_THIRD_PARTY_IMPL \
+    "${SRC_DIR}/surreal_smash_cats.cpp" "${SRC_DIR}/surreal_third_party.o" \
+    -lSDL2 -lGL -ldl -lm -fopenmp -o "${SRC_DIR}/surreal-smash-cats"
+
 # 3. Install Headers
 echo "[*] Installing C++ headers to ${PREFIX}/include/surreal/..."
 cp "${SRC_DIR}"/surreal_*.hpp "${PREFIX}/include/surreal/"
@@ -54,11 +59,17 @@ cp "${SRC_DIR}/stb_image.h" "${PREFIX}/include/surreal/"
 echo "[*] Installing binaries to ${PREFIX}/bin/..."
 install -m 755 "${SRC_DIR}/surreal_live_dojo" "${PREFIX}/bin/surreal-editor"
 install -m 755 "${SRC_DIR}/surreal_live_dojo" "${PREFIX}/bin/surreal-dojo"
+install -m 755 "${SRC_DIR}/surreal-smash-cats" "${PREFIX}/bin/surreal-smash-cats"
+install -m 755 "${SRC_DIR}/surreal-smash-cats" "${PREFIX}/bin/smash-cats"
 install -m 755 "${SRC_DIR}/test_surreal_benchmark" "${PREFIX}/bin/surreal-bench"
 install -m 755 "${SRC_DIR}/surreal-photo3d" "${PREFIX}/bin/surreal-photo3d"
 
 # 5. Install PBR Assets
 echo "[*] Linking PBR 3D Assets to ${PREFIX}/share/surreal/..."
+if [ -d "${SRC_DIR}/assets" ]; then
+    rm -rf "${PREFIX}/share/surreal/assets"
+    ln -s "$(cd "${SRC_DIR}/assets" && pwd)" "${PREFIX}/share/surreal/assets"
+fi
 AVATAR_SRC=""
 if [ -d "${SRC_DIR}/../avatar" ]; then
     AVATAR_SRC="${SRC_DIR}/../avatar"
@@ -97,6 +108,7 @@ fi
 echo "===================================================================="
 echo "  SURREAL 3D ENGINE INSTALLATION COMPLETE!"
 echo "  Run 'surreal-editor'  to launch the 3D Studio & Live Dojo"
+echo "  Run 'smash-cats'      to launch Smash Cats 3D: Surreal Edition"
 echo "  Run 'surreal-bench'   to launch the Bare-Metal AVX2 Benchmark"
 echo "  Run 'surreal-photo3d' to convert photos into 3D preview renders"
 echo "===================================================================="

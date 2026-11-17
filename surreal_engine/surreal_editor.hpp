@@ -1997,68 +1997,81 @@ public:
         TopBarButton bPhoto;
         bPhoto.id = "photo_3d";
         bPhoto.label = "+ Image->3D [F3]";
-        bPhoto.x = curX; bPhoto.y = btnY; bPhoto.w = 144; bPhoto.h = btnH;
+        bPhoto.x = curX; bPhoto.y = btnY; bPhoto.w = 132; bPhoto.h = btnH;
         bPhoto.borderColor = 0xFF00FFCC; // Cyan
         bPhoto.textColor = 0xFF00FFCC;
         bPhoto.bgColor = 0x0A1828;
         topButtons.push_back(bPhoto);
-        curX += bPhoto.w + 8;
+        curX += bPhoto.w + 6;
 
         // 2. [ 💃 Rig 3D Group ] Button
         TopBarButton bRig;
         bRig.id = "rig_group";
         bRig.label = "Rig Group [F4]";
-        bRig.x = curX; bRig.y = btnY; bRig.w = 130; bRig.h = btnH;
+        bRig.x = curX; bRig.y = btnY; bRig.w = 120; bRig.h = btnH;
         bRig.borderColor = 0xFFBF00FF; // Neon Violet
         bRig.textColor = 0xFFBF00FF;
         bRig.bgColor = 0x1A0828;
         topButtons.push_back(bRig);
-        curX += bRig.w + 8;
+        curX += bRig.w + 6;
 
         // 3. [ ⚙️ Settings ] Button
         TopBarButton bSettings;
         bSettings.id = "settings";
         bSettings.label = "Settings [F2]";
-        bSettings.x = curX; bSettings.y = btnY; bSettings.w = 126; bSettings.h = btnH;
+        bSettings.x = curX; bSettings.y = btnY; bSettings.w = 116; bSettings.h = btnH;
         bSettings.borderColor = 0xFFFF007F; // Magenta
         bSettings.textColor = 0xFFFF007F;
         bSettings.bgColor = 0x1A0D22;
         topButtons.push_back(bSettings);
-        curX += bSettings.w + 8;
+        curX += bSettings.w + 6;
 
         // 4. [ 📁 3D Catalog ] Button
         TopBarButton bCat;
         bCat.id = "catalog";
         bCat.label = "Catalog [L]";
-        bCat.x = curX; bCat.y = btnY; bCat.w = 112; bCat.h = btnH;
+        bCat.x = curX; bCat.y = btnY; bCat.w = 102; bCat.h = btnH;
         bCat.borderColor = 0xFFFFCC00; // Amber
         bCat.textColor = 0xFFFFCC00;
         bCat.bgColor = 0x1C1808;
         topButtons.push_back(bCat);
-        curX += bCat.w + 8;
+        curX += bCat.w + 6;
 
         if (screenW >= 1020) {
-            // 4. [ 💾 Save ] Button
+            // 5. [ 💾 Save ] Button
             TopBarButton bSave;
             bSave.id = "save";
             bSave.label = "Save [F6]";
-            bSave.x = curX; bSave.y = btnY; bSave.w = 96; bSave.h = btnH;
+            bSave.x = curX; bSave.y = btnY; bSave.w = 82; bSave.h = btnH;
             bSave.borderColor = 0xFF00FF88; // Neon Green
             bSave.textColor = 0xFF00FF88;
             bSave.bgColor = 0x0A2016;
             topButtons.push_back(bSave);
-            curX += bSave.w + 8;
+            curX += bSave.w + 6;
 
-            // 5. [ 📂 Load ] Button
+            // 6. [ 📂 Load ] Button
             TopBarButton bLoad;
             bLoad.id = "load";
             bLoad.label = "Load [F7]";
-            bLoad.x = curX; bLoad.y = btnY; bLoad.w = 96; bLoad.h = btnH;
+            bLoad.x = curX; bLoad.y = btnY; bLoad.w = 82; bLoad.h = btnH;
             bLoad.borderColor = 0xFF00E5FF; // Sky Blue
             bLoad.textColor = 0xFF00E5FF;
             bLoad.bgColor = 0x081C28;
             topButtons.push_back(bLoad);
-            curX += bLoad.w + 8;
+            curX += bLoad.w + 6;
+        }
+
+        if (curX + 116 < screenW - 275) {
+            // 7. [ 🐱 Smash Cats 3D ] Game Launcher
+            TopBarButton bSmash;
+            bSmash.id = "smash_cats";
+            bSmash.label = "Smash Cats[F8]";
+            bSmash.x = curX; bSmash.y = btnY; bSmash.w = 116; bSmash.h = btnH;
+            bSmash.borderColor = 0xFFFF9922; // Arcade Orange-Gold
+            bSmash.textColor = 0xFFFF9922;
+            bSmash.bgColor = 0x241408;
+            topButtons.push_back(bSmash);
+            curX += bSmash.w + 6;
         }
 
         // Render Bare-Metal Buttons

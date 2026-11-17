@@ -29,6 +29,7 @@
 #include "surreal_aion_link.hpp"
 #include "surreal_json.hpp"
 #include "surreal_paths.hpp"
+#include "surreal_smash_cats.hpp"
 
 #include <arpa/inet.h>
 #include <cassert>
@@ -947,6 +948,71 @@ static void TestStudio3DVertexColorAndCatalog() {
     }
 }
 
+void TestSmashCatsSurrealEdition() {
+    std::cout << "\n[Test 9] Smash Cats 3D: Surreal Edition (GLB Classes, Combat, Dragon Boss, CPU Render)...\n";
+    using namespace Surreal;
+
+    constexpr uint32_t W = 320, H = 200;
+    SmashCatsGame game(W, H);
+    std::vector<uint32_t> fb(W * H, 0xFF050812);
+    game.engine.AttachFramebuffer(fb.data(), W * sizeof(uint32_t));
+    game.Init(false, true);
+
+    int loadedArch = 0;
+    for (int i = 0; i < static_cast<int>(SmashEnemyKind::COUNT); ++i) {
+        if (game.archetypes[i].loaded) loadedArch++;
+    }
+    CHECK(loadedArch == 5, "Smash Cats loads all 5 rigged .glb archetypes (Monk, CyberCat, Lioness, CyberBeast, Dragon)");
+    CHECK(game.lives == 3 && game.wave == 1 && game.CountAliveEnemies() == 3 && game.spawnQueue.size() == 2 && game.obstacles.empty(),
+          "Smash Cats Wave 1 initializes open arena (no middle blocks), 3 lives, 3 vanguard + 2 queued foes");
+
+    game.SwitchClass(SmashCatClass::CYBER_CAT, true);
+    CHECK(game.playerClass == SmashCatClass::CYBER_CAT && game.playerAnim.activeDeformedMesh != nullptr,
+          "Switching playable cat to CyberCat preserves valid skinned CPU mesh");
+    game.SwitchClass(SmashCatClass::LIONESS, true);
+    CHECK(game.playerClass == SmashCatClass::LIONESS && game.playerAnim.activeDeformedMesh != nullptr,
+          "Switching playable cat to Lioness preserves valid skinned CPU mesh");
+    game.SwitchClass(SmashCatClass::KITTEN_MONK, true);
+
+    // Deterministic melee combat strike in front of player
+    game.playerYaw = 0.0f;
+    game.enemies[0].pos = game.playerPos + Vec3(0.0f, 0.0f, 1.1f);
+    game.enemies[0].hp = 2;
+    game.attackCooldown = 0.0f;
+    bool didAtk = game.TriggerAttack(true);
+    CHECK(didAtk && game.score > 0 && game.kills >= 1 && game.comboCount >= 1,
+          "Smash Cats heavy melee strike awards damage, kill count, combo, and score");
+
+    // Verify player can actually lose HP & lives (not invincible!)
+    game.invulnTimer = 0.0f;
+    game.hp = 2;
+    game.HurtPlayer(2, Vec3(0.0f, 0.0f, 1.0f));
+    CHECK(game.lives == 2 && game.hp == game.maxHp && game.invulnTimer > 0.0f,
+          "HurtPlayer properly deducts lives on fatal hit");
+
+    // Verify Wave 3 has NO Dragon Boss yet, while Wave 10 spawns Endboss Chaos Dragon
+    game.SpawnWave(3, true);
+    bool dragonAtWave3 = false;
+    for (const auto& e : game.enemies) if (e.isBoss) dragonAtWave3 = true;
+    CHECK(!dragonAtWave3, "Wave 3 stays tactical (Chaos Dragon Endboss deferred to Wave 10)");
+
+    game.SpawnWave(10, true);
+    bool hasDragonBoss = false;
+    for (const auto& e : game.enemies) {
+        if (e.alive && e.isBoss && e.kind == SmashEnemyKind::DRAGON_BOSS) hasDragonBoss = true;
+    }
+    CHECK(hasDragonBoss && !game.spawnQueue.empty(),
+          "Wave 10 spawns Chaos Dragon Endboss with escort & queued reinforcements");
+
+    CameraInputState camIn;
+    game.TriggerJumpOrAcrobatics();
+    game.Update(0.016f, Vec3(0.0f, 0.0f, 1.0f), camIn, true);
+    game.RenderSceneCPU(0.016f, fb.data(), W, H, 60.0f, "CPU TEST");
+    int litPixels = 0;
+    for (uint32_t px : fb) if (px != 0xFF050812) litPixels++;
+    CHECK(litPixels > 5000, "Smash Cats CPU AVX2 path rasterizes full 3D scene & HUD pixels");
+}
+
 int main() {
     std::cout << "====================================================================\n";
     std::cout << "  SURREAL 3D ENGINE - HEADLESS VERIFICATION SUITE\n";
@@ -960,6 +1026,7 @@ int main() {
     TestAionLinkNonBlockingSocket();
     TestPhotoCostumeOverRealSkeleton();
     TestStudio3DVertexColorAndCatalog();
+    TestSmashCatsSurrealEdition();
 
     std::cout << "\n====================================================================\n";
     std::cout << "  RESULTS: " << g_passed << " passed, " << g_failed << " failed\n";
