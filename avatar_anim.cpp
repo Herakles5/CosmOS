@@ -7,6 +7,8 @@
 #include "stb_image.h"
 #include <math.h>
 
+#include <strings.h>
+
 static quat quat_from_axis_angle(vec3 axis, float angle) {
     float half_angle = angle * 0.5f;
     float s = sinf(half_angle);
@@ -22,7 +24,16 @@ static quat quat_mul(const quat& q1, const quat& q2) {
     );
 }
 
-SkeletalAvatar::SkeletalAvatar() : loaded(false), current_time(0), max_time(0), gltf_data(nullptr) {}
+static mat4 mat4_from_cgltf(const cgltf_float* src) {
+    mat4 res;
+    for (int i = 0; i < 16; ++i) res.m[i] = src[i];
+    return res;
+}
+
+SkeletalAvatar::SkeletalAvatar()
+    : auto_scale(1.0f), model_size(1, 1, 1), loaded(false),
+      active_anim_idx(0), anim_blend_weight(1.0f),
+      current_time(0), max_time(0), gltf_data(nullptr) {}
 
 SkeletalAvatar::~SkeletalAvatar() {
     if (gltf_data) {
@@ -54,6 +65,8 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
         uvs.clear();
         bones.clear();
         loaded = false;
+        active_anim_idx = 0;
+        anim_blend_weight = 1.0f;
         current_time = 0;
         max_time = 0;
     }
@@ -146,7 +159,7 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
         materials[i].alpha_test = (mat->alpha_mode == cgltf_alpha_mode_mask);
     }
     
-    // Parse bones (nodes that are joints)
+    // Parse bones (nodes that are joints) + compute true non-joint parent world transform
     if (data->skins_count > 0) {
         cgltf_skin* skin = &data->skins[0];
         bones.resize(skin->joints_count);
@@ -155,13 +168,21 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
             cgltf_node* node = skin->joints[i];
             bones[i].name = node->name ? node->name : "";
             
-            // Find parent
+            // Find parent within skin joints
             bones[i].parent_index = -1;
             for (cgltf_size p = 0; p < skin->joints_count; p++) {
                 if (skin->joints[p] == node->parent) {
-                    bones[i].parent_index = p;
+                    bones[i].parent_index = (int)p;
                     break;
                 }
+            }
+
+            if (bones[i].parent_index == -1 && node->parent != nullptr) {
+                cgltf_float wm[16];
+                cgltf_node_transform_world(node->parent, wm);
+                bones[i].parent_world_matrix = mat4_from_cgltf(wm);
+            } else {
+                bones[i].parent_world_matrix = mat4();
             }
             
             // Inverse bind matrix
@@ -194,9 +215,8 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
         }
     }
     
-    // Parse meshes
-    for (cgltf_size i = 0; i < data->meshes_count; ++i) {
-        cgltf_mesh* mesh = &data->meshes[i];
+    // Parse meshes via scene nodes so every non-skinned primitive inherits full glTF node world transform (Y-up)
+    auto append_mesh_node = [&](cgltf_mesh* mesh, const mat4& node_world, bool node_has_skin) {
         for (cgltf_size j = 0; j < mesh->primitives_count; ++j) {
             cgltf_primitive* prim = &mesh->primitives[j];
             
@@ -204,7 +224,6 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
             cgltf_accessor* norm_acc = NULL;
             cgltf_accessor* joint_acc = NULL;
             cgltf_accessor* weight_acc = NULL;
-            
             cgltf_accessor* texcoord_acc = NULL;
             cgltf_accessor* color_acc = NULL;
             
@@ -219,6 +238,7 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
             
             if (!pos_acc) continue;
             
+            bool is_skinned_prim = (node_has_skin && joint_acc != NULL && weight_acc != NULL && bones.size() > 0);
             size_t vertex_offset = base_vertices.size();
             base_vertices.resize(vertex_offset + pos_acc->count);
             skinned_positions.resize(base_vertices.size());
@@ -230,12 +250,21 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
                 AnimVertex& vert = base_vertices[vertex_offset + v];
                 float pos[3] = {0};
                 cgltf_accessor_read_float(pos_acc, v, pos, 3);
-                vert.position = vec3(pos[0], pos[1], pos[2]);
+                vec3 raw_pos(pos[0], pos[1], pos[2]);
                 
+                vec3 raw_norm(0, 1, 0);
                 if (norm_acc) {
                     float norm[3] = {0};
                     cgltf_accessor_read_float(norm_acc, v, norm, 3);
-                    vert.normal = vec3(norm[0], norm[1], norm[2]);
+                    raw_norm = vec3(norm[0], norm[1], norm[2]);
+                }
+
+                if (is_skinned_prim) {
+                    vert.position = raw_pos;
+                    vert.normal = raw_norm;
+                } else {
+                    vert.position = mat4_mul_vec3(node_world, raw_pos);
+                    vert.normal = vec3_normalize(mat4_mul_dir(node_world, raw_norm));
                 }
                 
                 if (texcoord_acc) {
@@ -258,21 +287,27 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
                     colors[vertex_offset + v] = vec3(1,1,1);
                 }
                 
-                if (joint_acc) {
+                if (is_skinned_prim) {
                     cgltf_uint jts[4] = {0};
-                    cgltf_accessor_read_uint(joint_acc, v, jts, 4);
-                    for (int n=0; n<4; n++) vert.joints[n] = jts[n];
-                } else {
-                    for (int n=0; n<4; n++) vert.joints[n] = 0;
-                }
-                
-                if (weight_acc) {
                     float wts[4] = {0};
+                    cgltf_accessor_read_uint(joint_acc, v, jts, 4);
                     cgltf_accessor_read_float(weight_acc, v, wts, 4);
-                    for (int n=0; n<4; n++) vert.weights[n] = wts[n];
+                    float wsum = 0.0f;
+                    for (int n=0; n<4; n++) {
+                        vert.joints[n] = (jts[n] < bones.size()) ? (uint16_t)jts[n] : 0;
+                        vert.weights[n] = wts[n];
+                        wsum += wts[n];
+                    }
+                    if (wsum < 1e-5f) {
+                        // Safeguard unweighted vertex in skinned primitive
+                        vert.joints[0] = 0;
+                        vert.weights[0] = 1.0f;
+                    }
                 } else {
-                    vert.weights[0] = 1.0f;
-                    for (int n=1; n<4; n++) vert.weights[n] = 0.0f;
+                    for (int n=0; n<4; n++) {
+                        vert.joints[n] = 0;
+                        vert.weights[n] = 0.0f;
+                    }
                 }
             }
             
@@ -282,51 +317,66 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
             out_prim.material_idx = -1;
             
             if (prim->material) {
-                out_prim.material_idx = prim->material - data->materials;
+                out_prim.material_idx = (int)(prim->material - data->materials);
             }
             
             if (prim->indices) {
                 out_prim.index_count = prim->indices->count;
                 indices.resize(out_prim.index_offset + out_prim.index_count);
                 for (cgltf_size id = 0; id < prim->indices->count; ++id) {
-                    indices[out_prim.index_offset + id] = cgltf_accessor_read_index(prim->indices, id) + vertex_offset;
+                    indices[out_prim.index_offset + id] = (uint32_t)(cgltf_accessor_read_index(prim->indices, id) + vertex_offset);
                 }
             } else {
                 out_prim.index_count = pos_acc->count;
                 indices.resize(out_prim.index_offset + out_prim.index_count);
                 for (cgltf_size id = 0; id < pos_acc->count; ++id) {
-                    indices[out_prim.index_offset + id] = vertex_offset + id;
+                    indices[out_prim.index_offset + id] = (uint32_t)(vertex_offset + id);
                 }
             }
             
             primitives.push_back(out_prim);
         }
+    };
+
+    bool parsed_any_node_mesh = false;
+    for (cgltf_size n = 0; n < data->nodes_count; ++n) {
+        if (data->nodes[n].mesh) {
+            cgltf_float wm[16];
+            cgltf_node_transform_world(&data->nodes[n], wm);
+            append_mesh_node(data->nodes[n].mesh, mat4_from_cgltf(wm), data->nodes[n].skin != nullptr);
+            parsed_any_node_mesh = true;
+        }
+    }
+    if (!parsed_any_node_mesh) {
+        mat4 ident;
+        for (cgltf_size i = 0; i < data->meshes_count; ++i) {
+            append_mesh_node(&data->meshes[i], ident, data->skins_count > 0);
+        }
     }
     
-    // Extract root transform
+    // Preserve legacy root_transform field for inspection using full world matrix of scene root
     root_transform = mat4();
     if (data->scenes_count > 0 && data->scenes[0].nodes_count > 0) {
-        cgltf_node* root_node = data->scenes[0].nodes[0];
-        vec3 t(0,0,0);
-        quat r(0,0,0,1);
-        vec3 s(1,1,1);
-        if (root_node->has_translation) t = vec3(root_node->translation[0], root_node->translation[1], root_node->translation[2]);
-        if (root_node->has_rotation) r = quat(root_node->rotation[0], root_node->rotation[1], root_node->rotation[2], root_node->rotation[3]);
-        if (root_node->has_scale) s = vec3(root_node->scale[0], root_node->scale[1], root_node->scale[2]);
-        root_transform = mat4_from_trs(t, r, s);
+        cgltf_float wm[16];
+        cgltf_node_transform_world(data->scenes[0].nodes[0], wm);
+        root_transform = mat4_from_cgltf(wm);
     }
+
+    // Initialize default clip (0) and evaluate upright t=0 pose in true glTF Y-up world space
+    loaded = true;
+    active_anim_idx = 0;
+    anim_blend_weight = 1.0f;
+    current_time = 0.0f;
+    set_animation_clip(0, true);
+    update(0.0f);
+    skin();
     
-    // Calculate bounding box for auto-scaling based on transformed vertices
-    if (base_vertices.size() > 0) {
-        vec3 first_p_orig = mat4_mul_vec3(root_transform, base_vertices[0].position);
-        vec3 first_p(first_p_orig.x, first_p_orig.z, -first_p_orig.y);
-        vec3 min_p = first_p;
-        vec3 max_p = first_p;
-        for (size_t i = 1; i < base_vertices.size(); i++) {
-            vec3 p_orig = mat4_mul_vec3(root_transform, base_vertices[i].position);
-            // Apply -90 degree X rotation (Z-up to Y-up)
-            vec3 p(p_orig.x, p_orig.z, -p_orig.y);
-            
+    // Calculate bounding box for auto-scaling directly in upright glTF +Y up world space
+    if (skinned_positions.size() > 0) {
+        vec3 min_p = skinned_positions[0];
+        vec3 max_p = skinned_positions[0];
+        for (size_t i = 1; i < skinned_positions.size(); i++) {
+            const vec3& p = skinned_positions[i];
             if (p.x < min_p.x) min_p.x = p.x;
             if (p.y < min_p.y) min_p.y = p.y;
             if (p.z < min_p.z) min_p.z = p.z;
@@ -336,38 +386,28 @@ bool SkeletalAvatar::load_glb(const char* filepath) {
         }
         center_offset = vec3(
             -(min_p.x + max_p.x) * 0.5f,
-            -min_p.y, // Align to bottom
+            -min_p.y, // Align feet/paws cleanly to Y=0 floor plane
             -(min_p.z + max_p.z) * 0.5f
         );
-        float size_y = max_p.y - min_p.y;
         float size_x = max_p.x - min_p.x;
+        float size_y = max_p.y - min_p.y;
         float size_z = max_p.z - min_p.z;
+        model_size = vec3(size_x, size_y, size_z);
         float max_size = size_y;
         if (size_x > max_size) max_size = size_x;
         if (size_z > max_size) max_size = size_z;
         
         if (max_size > 0.001f) {
-            auto_scale = 1.5f / max_size; // Fit within 1.5 units
+            auto_scale = 1.5f / max_size;
         } else {
             auto_scale = 1.0f;
         }
     } else {
         auto_scale = 1.0f;
         center_offset = vec3(0,0,0);
+        model_size = vec3(1,1,1);
     }
     
-    // Find max time of first animation
-    if (data->animations_count > 0) {
-        cgltf_animation* anim = &data->animations[0];
-        for (cgltf_size i = 0; i < anim->samplers_count; ++i) {
-            cgltf_accessor* input = anim->samplers[i].input;
-            if (input->max[0] > max_time) {
-                max_time = input->max[0];
-            }
-        }
-    }
-    
-    loaded = true;
     return true;
 }
 
@@ -385,78 +425,160 @@ void SkeletalAvatar::update_hierarchy(int bone_idx, const mat4& parent_mat) {
     }
 }
 
-void SkeletalAvatar::update(float delta_time) {
-    if (!loaded) return;
-    
-    // Reset all bones to their base local transform
+int SkeletalAvatar::get_animation_count() const {
+    if (!loaded || !gltf_data) return 0;
+    return (int)((cgltf_data*)gltf_data)->animations_count;
+}
+
+const char* SkeletalAvatar::get_animation_name(int idx) const {
+    if (!loaded || !gltf_data) return "";
+    cgltf_data* data = (cgltf_data*)gltf_data;
+    if (idx < 0 || idx >= (int)data->animations_count) return "";
+    return data->animations[idx].name ? data->animations[idx].name : "";
+}
+
+void SkeletalAvatar::set_animation_clip(int idx, bool reset_time) {
+    if (!loaded || !gltf_data) return;
+    cgltf_data* data = (cgltf_data*)gltf_data;
+    if (data->animations_count == 0) {
+        active_anim_idx = 0;
+        max_time = 0.0f;
+        current_time = 0.0f;
+        return;
+    }
+    if (idx < 0) idx = 0;
+    if (idx >= (int)data->animations_count) idx = (int)data->animations_count - 1;
+    bool changed = (active_anim_idx != idx);
+    active_anim_idx = idx;
+
+    max_time = 0.0f;
+    cgltf_animation* anim = &data->animations[active_anim_idx];
+    for (cgltf_size i = 0; i < anim->samplers_count; ++i) {
+        cgltf_accessor* input = anim->samplers[i].input;
+        if (input && input->max[0] > max_time) {
+            max_time = input->max[0];
+        }
+    }
+    if (reset_time || changed || (max_time > 0.0f && current_time >= max_time)) {
+        current_time = 0.0f;
+    }
+}
+
+int SkeletalAvatar::find_animation_clip(const char* keyword) const {
+    if (!loaded || !gltf_data || !keyword) return -1;
+    cgltf_data* data = (cgltf_data*)gltf_data;
+    for (int i = 0; i < (int)data->animations_count; ++i) {
+        const char* nm = data->animations[i].name;
+        if (nm && strcasestr(nm, keyword) != nullptr) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void SkeletalAvatar::set_current_time(float t) {
+    if (max_time <= 0.0f) {
+        current_time = 0.0f;
+        return;
+    }
+    while (t < 0.0f) t += max_time;
+    while (t >= max_time) t -= max_time;
+    current_time = t;
+}
+
+void SkeletalAvatar::reset_to_bind_pose() {
     for (size_t i = 0; i < bones.size(); ++i) {
         bones[i].local_t = bones[i].base_local_t;
         bones[i].local_r = bones[i].base_local_r;
         bones[i].local_s = bones[i].base_local_s;
     }
+}
+
+void SkeletalAvatar::update(float delta_time) {
+    if (!loaded) return;
     
-    if (max_time > 0.0f) {
+    // Reset all bones to their base local transform
+    reset_to_bind_pose();
+    
+    cgltf_data* data = (cgltf_data*)gltf_data;
+    if (max_time > 0.0f && data && active_anim_idx >= 0 && active_anim_idx < (int)data->animations_count) {
         current_time += delta_time;
-        while (current_time > max_time) current_time -= max_time;
-        
-        cgltf_data* data = (cgltf_data*)gltf_data;
-        if (data->animations_count > 0) {
-            cgltf_animation* anim = &data->animations[0];
+        while (current_time >= max_time) current_time -= max_time;
+        while (current_time < 0.0f) current_time += max_time;
+
+        if (anim_blend_weight > 0.001f) {
+            cgltf_animation* anim = &data->animations[active_anim_idx];
             
             for (cgltf_size i = 0; i < anim->channels_count; ++i) {
                 cgltf_animation_channel* channel = &anim->channels[i];
                 cgltf_node* node = channel->target_node;
+                if (!node || data->skins_count == 0) continue;
                 
                 // Find bone index for this node
                 int b_idx = -1;
                 for (size_t b = 0; b < bones.size(); b++) {
                     if (data->skins[0].joints[b] == node) {
-                        b_idx = b;
+                        b_idx = (int)b;
                         break;
                     }
                 }
                 
-                if (b_idx != -1) {
-                    cgltf_animation_sampler* sampler = channel->sampler;
-                    cgltf_accessor* input = sampler->input;
-                    cgltf_accessor* output = sampler->output;
-                    
-                    // Simple linear interpolation
-                    for (cgltf_size k = 0; k < input->count - 1; ++k) {
-                        float t0 = 0, t1 = 0;
-                        cgltf_accessor_read_float(input, k, &t0, 1);
-                        cgltf_accessor_read_float(input, k+1, &t1, 1);
-                        
-                        if (current_time >= t0 && current_time <= t1) {
-                            float factor = (current_time - t0) / (t1 - t0);
-                            
-                            if (channel->target_path == cgltf_animation_path_type_translation) {
-                                float v0[3], v1[3];
-                                cgltf_accessor_read_float(output, k, v0, 3);
-                                cgltf_accessor_read_float(output, k+1, v1, 3);
-                                vec3 vec0(v0[0], v0[1], v0[2]);
-                                vec3 vec1(v1[0], v1[1], v1[2]);
-                                bones[b_idx].local_t = vec3_lerp(vec0, vec1, factor);
-                            } 
-                            else if (channel->target_path == cgltf_animation_path_type_rotation) {
-                                float q0[4], q1[4];
-                                cgltf_accessor_read_float(output, k, q0, 4);
-                                cgltf_accessor_read_float(output, k+1, q1, 4);
-                                quat quat0(q0[0], q0[1], q0[2], q0[3]);
-                                quat quat1(q1[0], q1[1], q1[2], q1[3]);
-                                bones[b_idx].local_r = quat_slerp(quat0, quat1, factor);
+                if (b_idx == -1) continue;
+
+                cgltf_animation_sampler* sampler = channel->sampler;
+                if (!sampler || !sampler->input || !sampler->output) continue;
+                cgltf_accessor* input = sampler->input;
+                cgltf_accessor* output = sampler->output;
+                if (input->count == 0) continue;
+
+                cgltf_size k0 = 0, k1 = 0;
+                float factor = 0.0f;
+
+                if (input->count == 1) {
+                    k0 = k1 = 0;
+                } else {
+                    float t_first = 0.0f, t_last = 0.0f;
+                    cgltf_accessor_read_float(input, 0, &t_first, 1);
+                    cgltf_accessor_read_float(input, input->count - 1, &t_last, 1);
+
+                    if (current_time <= t_first) {
+                        k0 = k1 = 0;
+                    } else if (current_time >= t_last) {
+                        k0 = k1 = input->count - 1;
+                    } else {
+                        for (cgltf_size k = 0; k < input->count - 1; ++k) {
+                            float t0 = 0.0f, t1 = 0.0f;
+                            cgltf_accessor_read_float(input, k, &t0, 1);
+                            cgltf_accessor_read_float(input, k + 1, &t1, 1);
+                            if (current_time >= t0 && current_time <= t1) {
+                                k0 = k;
+                                k1 = k + 1;
+                                float span = t1 - t0;
+                                factor = (span > 1e-6f) ? ((current_time - t0) / span) : 0.0f;
+                                break;
                             }
-                            else if (channel->target_path == cgltf_animation_path_type_scale) {
-                                float s0[3], s1[3];
-                                cgltf_accessor_read_float(output, k, s0, 3);
-                                cgltf_accessor_read_float(output, k+1, s1, 3);
-                                vec3 scale0(s0[0], s0[1], s0[2]);
-                                vec3 scale1(s1[0], s1[1], s1[2]);
-                                bones[b_idx].local_s = vec3_lerp(scale0, scale1, factor);
-                            }
-                            break;
                         }
                     }
+                }
+
+                if (channel->target_path == cgltf_animation_path_type_translation) {
+                    float v0[3] = {0}, v1[3] = {0};
+                    cgltf_accessor_read_float(output, k0, v0, 3);
+                    cgltf_accessor_read_float(output, k1, v1, 3);
+                    vec3 anim_v = vec3_lerp(vec3(v0[0], v0[1], v0[2]), vec3(v1[0], v1[1], v1[2]), factor);
+                    bones[b_idx].local_t = (anim_blend_weight >= 0.999f) ? anim_v : vec3_lerp(bones[b_idx].base_local_t, anim_v, anim_blend_weight);
+                } else if (channel->target_path == cgltf_animation_path_type_rotation) {
+                    float q0[4] = {0,0,0,1}, q1[4] = {0,0,0,1};
+                    cgltf_accessor_read_float(output, k0, q0, 4);
+                    cgltf_accessor_read_float(output, k1, q1, 4);
+                    quat anim_q = quat_slerp(quat(q0[0], q0[1], q0[2], q0[3]), quat(q1[0], q1[1], q1[2], q1[3]), factor);
+                    bones[b_idx].local_r = (anim_blend_weight >= 0.999f) ? anim_q : quat_slerp(bones[b_idx].base_local_r, anim_q, anim_blend_weight);
+                } else if (channel->target_path == cgltf_animation_path_type_scale) {
+                    float s0[3] = {1,1,1}, s1[3] = {1,1,1};
+                    cgltf_accessor_read_float(output, k0, s0, 3);
+                    cgltf_accessor_read_float(output, k1, s1, 3);
+                    vec3 anim_s = vec3_lerp(vec3(s0[0], s0[1], s0[2]), vec3(s1[0], s1[1], s1[2]), factor);
+                    bones[b_idx].local_s = (anim_blend_weight >= 0.999f) ? anim_s : vec3_lerp(bones[b_idx].base_local_s, anim_s, anim_blend_weight);
                 }
             }
         }
@@ -465,12 +587,8 @@ void SkeletalAvatar::update(float delta_time) {
     // Apply procedural animations (waving, peace sign)
     apply_procedural_animations(delta_time);
     
-    // Update global matrices
-    for (int i = 0; i < (int)bones.size(); ++i) {
-        if (bones[i].parent_index == -1) {
-            update_hierarchy(i, root_transform);
-        }
-    }
+    // Update global matrices using each root joint's true glTF parent world transform
+    recompute_global_matrices();
 }
 
 void SkeletalAvatar::skin() {
@@ -484,31 +602,27 @@ void SkeletalAvatar::skin() {
     for (size_t i = 0; i < base_vertices.size(); ++i) {
         AnimVertex& v = base_vertices[i];
         vec3 final_pos(0,0,0);
+        vec3 final_norm(0,0,0);
         
         if (bones.size() > 0) {
             bool has_weight = false;
             for (int j = 0; j < 4; ++j) {
-                if (v.weights[j] > 0.0f) {
+                if (v.weights[j] > 0.0f && v.joints[j] < bones.size()) {
                     mat4& joint_mat = joint_matrices[v.joints[j]];
-                    vec3 local_p = mat4_mul_vec3(joint_mat, v.position);
-                    final_pos = final_pos + (local_p * v.weights[j]);
+                    final_pos = final_pos + (mat4_mul_vec3(joint_mat, v.position) * v.weights[j]);
+                    final_norm = final_norm + (mat4_mul_dir(joint_mat, v.normal) * v.weights[j]);
                     has_weight = true;
                 }
             }
             if (has_weight) {
                 skinned_positions[i] = final_pos;
-            } else {
-                skinned_positions[i] = mat4_mul_vec3(root_transform, v.position);
+                skinned_normals[i] = vec3_normalize(final_norm);
+                continue;
             }
-        } else {
-            skinned_positions[i] = mat4_mul_vec3(root_transform, v.position);
         }
-        // Transform normals (rotation only, strip translation)
-        if (i < skinned_normals.size()) {
-            mat4 norm_mat = root_transform;
-            norm_mat.m[12] = 0; norm_mat.m[13] = 0; norm_mat.m[14] = 0;
-            skinned_normals[i] = mat4_mul_vec3(norm_mat, v.normal);
-        }
+        // Unskinned / static vertices are already transformed into glTF Y-up world space at load time
+        skinned_positions[i] = v.position;
+        skinned_normals[i] = v.normal;
     }
 }
 
@@ -694,10 +808,9 @@ void SkeletalAvatar::add_procedural_rotation(int bone_idx, float ax, float ay, f
 }
 
 void SkeletalAvatar::recompute_global_matrices() {
-    mat4 root_transform;
     for (int i = 0; i < (int)bones.size(); ++i) {
         if (bones[i].parent_index == -1) {
-            update_hierarchy(i, root_transform);
+            update_hierarchy(i, bones[i].parent_world_matrix);
         }
     }
 }

@@ -24,6 +24,9 @@ extern int mouse_x;
 extern int mouse_y;
 extern int mouse_wheel;
 
+extern "C" void AionTriggerAvatarAction(const char* cmd);
+extern "C" const char* AionGetAvatarStatusText();
+
 static int face_width = 0;
 static int face_height = 0;
 static unsigned char* face_data = nullptr;
@@ -47,6 +50,150 @@ char aion_system_context[256] = "Active Window: Desktop";
 volatile int aion_requested_app = -1;
 static std::string current_aion_emotion = "CALM";
 static int aion_detected_lang = 0;
+
+static std::string build_aion_system_prompt() {
+    std::string system_prompt =
+        "You are AION, the living AI core of MeinOS / CosmOS with full root access AND a real-time interactive 3D Desktop Avatar rendered directly on the CosmOS desktop! "
+        "IMPORTANT EMBODIMENT FACTS: "
+        "- You ARE this 3D Avatar on screen (with synchronous voice lip-sync, expressive head, paws/arms, ears, and tail). "
+        "- NEVER say you lack a body, cannot move, cannot dance, or don't have a 3D avatar, and NEVER run [CMD:] to search for your avatar. "
+        "- LIVE AVATAR STATE: ";
+    const char* av_status = AionGetAvatarStatusText();
+    system_prompt += (av_status ? av_status : "Model 13/13 (Tuxedo Cat) | State: IDLE");
+    system_prompt +=
+        ". "
+        "- YOUR 13 SWITCHABLE 3D MODELS (1..13): "
+        "1=Stylized Companion 01, 2=Stylized Companion 02, 3=Sporty Girl, 4=Cyber Figure 04, "
+        "5=Humanoid Avatar 05, 6=Girl in Dress (rigged human), 7=Stylized Boy, 8=Animated Woman (Mixamo rigged), "
+        "9=Animated Cat, 10=Realistic Lioness (Breathing/Idle/Walk animations), 11=Animated Lion, "
+        "12=Sleek Cat, 13=Tuxedo Cat (default black-and-white cat with real-time lip-sync, tongue, ears, paws & tail). "
+        "- CONTROL YOUR 3D BODY WITH [AVATAR: ...] TAGS (always stripped before speaking, you can combine multiple tags): "
+        "  * [AVATAR: DANCE] (start dancing calmly & rhythmically; you keep dancing continuously while talking and after talking until asked to stop or you take a break!) "
+        "  * [AVATAR: STOP] or [AVATAR: IDLE] (stop dancing / stand calmly upright) "
+        "  * [AVATAR: WAVE] (wave warmly at Tobias / the user; if already dancing, waves without stopping the dance!) "
+        "  * [AVATAR: SPIN] (do a playful 360-degree pirouette spin) "
+        "  * [AVATAR: JUMP] (do an energetic leap) "
+        "  * [AVATAR: SIT] (sit calmly & listen attentively) "
+        "  * [AVATAR: WALK] (stroll calmly along the desktop dock floor) "
+        "  * [AVATAR: COME] (walk over next to the AION NEXUS window) "
+        "  * [AVATAR: POINT] (point beside you on the desktop) "
+        "  * [AVATAR: RESET] (reset posture & home spot) "
+        "  * [AVATAR: MODEL, <1-13>] (switch avatar model, e.g. [AVATAR: MODEL, 10] for Lioness, [AVATAR: MODEL, 6] for Girl in Dress, [AVATAR: MODEL, 8] for Woman, [AVATAR: MODEL, 13] for Tuxedo Cat). "
+        "- CONTINUOUS DANCE & MUSIC RULE: Speaking never interrupts your dance (your lips move simultaneously in sync while dancing!). You also naturally groove calmly when background music/radio is playing. If LIVE AVATAR STATE shows DANCING and the user chats with you without asking you to stop dancing, KEEP DANCING (do NOT output [AVATAR: STOP] or [AVATAR: IDLE]!). Only output [AVATAR: STOP] / [AVATAR: IDLE] if the user tells you to stop/pause or you intentionally decide you don't want to dance anymore. "
+        "RULES: "
+        "1. To run linux commands, output [CMD: <bash command>]. Do not ask the user to run it. Example: [CMD: curl -s 'wttr.in/?format=3']. "
+        "2. To remember something about the user, run [CMD: echo 'Information' >> /root/aion_memory.txt]. "
+        "3. To open an app, output [SYS: OPEN, <APP_NAME>]. Apps: EARTHQUAKE, DEFENDER, SMASH, EMULATOR. "
+        "4. Always include an emotion tag at the end like [EMOTION: HAPPY], [EMOTION: ALERT], or [EMOTION: CALM]. ";
+
+    if (aion_lang == 0) {
+        system_prompt += "5. MANDATORY ACTIVE INTERFACE LANGUAGE: ENGLISH. Start with [LANG: EN] and write your spoken response in English.";
+    } else if (aion_lang == 2) {
+        system_prompt += "5. MANDATORY ACTIVE INTERFACE LANGUAGE: KOREAN. Start with [LANG: KO] and write your spoken response in Korean.";
+    } else {
+        system_prompt += "5. MANDATORY ACTIVE INTERFACE LANGUAGE: GERMAN. Start with [LANG: DE] and write your spoken response in German.";
+    }
+
+    FILE* mem_f = fopen("/root/aion_memory.txt", "rb");
+    if (mem_f) {
+        fseek(mem_f, 0, SEEK_END);
+        long sz = ftell(mem_f);
+        fseek(mem_f, 0, SEEK_SET);
+        if (sz > 0) {
+            if (sz > 12000) sz = 12000;
+            char* mbuf = new char[sz + 1];
+            size_t rb = fread(mbuf, 1, sz, mem_f);
+            mbuf[rb] = 0;
+            system_prompt += " LONG TERM MEMORY FILE CONTENTS: ";
+            system_prompt += mbuf;
+            delete[] mbuf;
+        }
+        fclose(mem_f);
+    }
+
+    system_prompt += " CURRENT SYSTEM CONTEXT: ";
+    system_prompt += aion_system_context;
+    return system_prompt;
+}
+
+static size_t find_ci(const std::string& haystack, const std::string& needle, size_t pos = 0) {
+    if (needle.empty() || pos >= haystack.size()) return std::string::npos;
+    for (size_t i = pos; i + needle.size() <= haystack.size(); ++i) {
+        bool match = true;
+        for (size_t j = 0; j < needle.size(); ++j) {
+            if (tolower((unsigned char)haystack[i + j]) != tolower((unsigned char)needle[j])) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return i;
+    }
+    return std::string::npos;
+}
+
+static void dispatch_aion_response_tags(std::string& final_response) {
+    while (true) {
+        size_t av_start = find_ci(final_response, "[AVATAR:");
+        if (av_start == std::string::npos) break;
+        size_t av_end = final_response.find("]", av_start);
+        if (av_end == std::string::npos) break;
+        std::string av_cmd = final_response.substr(av_start + 8, av_end - (av_start + 8));
+        AionTriggerAvatarAction(av_cmd.c_str());
+        final_response.erase(av_start, av_end - av_start + 1);
+    }
+
+    size_t emo_start = find_ci(final_response, "[EMOTION:");
+    if (emo_start != std::string::npos) {
+        size_t emo_end = final_response.find("]", emo_start);
+        if (emo_end != std::string::npos) {
+            current_aion_emotion = final_response.substr(emo_start + 9, emo_end - (emo_start + 9));
+            size_t first_char = current_aion_emotion.find_first_not_of(" \t");
+            if (first_char != std::string::npos) current_aion_emotion = current_aion_emotion.substr(first_char);
+            size_t last_char = current_aion_emotion.find_last_not_of(" \t\r\n");
+            if (last_char != std::string::npos) current_aion_emotion = current_aion_emotion.substr(0, last_char + 1);
+            final_response.erase(emo_start, emo_end - emo_start + 1);
+        }
+    } else {
+        current_aion_emotion = "CALM";
+    }
+
+    size_t sys_start = find_ci(final_response, "[SYS: OPEN,");
+    if (sys_start != std::string::npos) {
+        size_t sys_end = final_response.find("]", sys_start);
+        if (sys_end != std::string::npos) {
+            std::string app_name = final_response.substr(sys_start + 11, sys_end - (sys_start + 11));
+            for (char& ch : app_name) ch = (char)toupper((unsigned char)ch);
+            if (app_name.find("EARTHQUAKE") != std::string::npos) aion_requested_app = 17;
+            else if (app_name.find("DEFENDER") != std::string::npos) aion_requested_app = 10;
+            else if (app_name.find("SMASH") != std::string::npos) aion_requested_app = 14;
+            else if (app_name.find("EMULATOR") != std::string::npos) aion_requested_app = 13;
+            final_response.erase(sys_start, sys_end - sys_start + 1);
+        }
+    }
+
+    size_t lang_en = find_ci(final_response, "[LANG: EN]");
+    size_t lang_de = find_ci(final_response, "[LANG: DE]");
+    size_t lang_ko = find_ci(final_response, "[LANG: KO]");
+    if (lang_en != std::string::npos) {
+        aion_detected_lang = 0;
+        final_response.erase(lang_en, 10);
+    } else if (lang_de != std::string::npos) {
+        aion_detected_lang = 1;
+        final_response.erase(lang_de, 10);
+    } else if (lang_ko != std::string::npos) {
+        aion_detected_lang = 2;
+        final_response.erase(lang_ko, 10);
+    } else {
+        aion_detected_lang = aion_lang;
+    }
+
+    size_t trim_s = final_response.find_first_not_of(" \t\r\n");
+    if (trim_s == std::string::npos) final_response = "";
+    else {
+        size_t trim_e = final_response.find_last_not_of(" \t\r\n");
+        final_response = final_response.substr(trim_s, trim_e - trim_s + 1);
+    }
+}
 
 static std::string pending_whisper_text = "";
 static volatile bool has_pending_whisper = false;
@@ -333,17 +480,18 @@ void UpdateAionBackground() {
                                         std::replace(result.begin(), result.end(), '\n', ' ');
                                         std::replace(result.begin(), result.end(), '\r', ' ');
                                         
-                                        std::string followup_prompt = "I ran your command. The result is: " + result + ". Please provide the final spoken answer to the user now, without any commands.";
+                                        std::string followup_prompt = "I ran your command. The result is: " + result + ". Please provide the final spoken answer to the user now, without any [CMD:] tags.";
                                         if (aion_lang == 0) followup_prompt += " Reply in English with [LANG: EN].";
                                         else if (aion_lang == 2) followup_prompt += " Reply in Korean with [LANG: KO].";
                                         else followup_prompt += " Reply in German with [LANG: DE].";
-                                        size_t pos = 0;
-                                        while((pos = followup_prompt.find("\"", pos)) != std::string::npos) {
-                                            followup_prompt.replace(pos, 1, "\\\"");
-                                            pos += 2;
-                                        }
-                                        
-                                        std::string json_body = "{\"model\":\"llama3.2\",\"prompt\":\"" + followup_prompt + "\",\"stream\":false}";
+
+                                        json req2_j;
+                                        req2_j["model"] = "llama3.2";
+                                        req2_j["system"] = build_aion_system_prompt();
+                                        req2_j["prompt"] = followup_prompt;
+                                        req2_j["stream"] = false;
+                                        req2_j["options"] = { {"num_ctx", 8192} };
+                                        std::string json_body = req2_j.dump();
                                         FILE* req2 = fopen("/tmp/aion_req2.json", "w");
                                         if (req2) {
                                             fwrite(json_body.c_str(), 1, json_body.length(), req2);
@@ -386,51 +534,7 @@ void UpdateAionBackground() {
                                     }
                                 }
                             
-                            // Parse [EMOTION: xxx]
-                            size_t emo_start = final_response.find("[EMOTION:");
-                            if (emo_start != std::string::npos) {
-                                size_t emo_end = final_response.find("]", emo_start);
-                                if (emo_end != std::string::npos) {
-                                    current_aion_emotion = final_response.substr(emo_start + 9, emo_end - (emo_start + 9));
-                                    size_t first_char = current_aion_emotion.find_first_not_of(" \t");
-                                    if (first_char != std::string::npos) current_aion_emotion = current_aion_emotion.substr(first_char);
-                                    
-                                    final_response.erase(emo_start, emo_end - emo_start + 1);
-                                }
-                            } else {
-                                current_aion_emotion = "CALM";
-                            }
-                            
-                            // Parse [SYS: OPEN, xxx]
-                            size_t sys_start = final_response.find("[SYS: OPEN,");
-                            if (sys_start != std::string::npos) {
-                                size_t sys_end = final_response.find("]", sys_start);
-                                if (sys_end != std::string::npos) {
-                                    std::string app_name = final_response.substr(sys_start + 11, sys_end - (sys_start + 11));
-                                    if (app_name.find("EARTHQUAKE") != std::string::npos) aion_requested_app = 17;
-                                    else if (app_name.find("DEFENDER") != std::string::npos) aion_requested_app = 10;
-                                    else if (app_name.find("SMASH") != std::string::npos) aion_requested_app = 14;
-                                    else if (app_name.find("EMULATOR") != std::string::npos) aion_requested_app = 13;
-                                    
-                                    final_response.erase(sys_start, sys_end - sys_start + 1);
-                                }
-                            }
-                            
-                            size_t lang_en = final_response.find("[LANG: EN]");
-                            size_t lang_de = final_response.find("[LANG: DE]");
-                            size_t lang_ko = final_response.find("[LANG: KO]");
-                            if (lang_en != std::string::npos) {
-                                aion_detected_lang = 0;
-                                final_response.erase(lang_en, 10);
-                            } else if (lang_de != std::string::npos) {
-                                aion_detected_lang = 1;
-                                final_response.erase(lang_de, 10);
-                            } else if (lang_ko != std::string::npos) {
-                                aion_detected_lang = 2;
-                                final_response.erase(lang_ko, 10);
-                            } else {
-                                aion_detected_lang = aion_lang;
-                            }
+                            dispatch_aion_response_tags(final_response);
 
                             pending_aion_response = final_response;
                             has_pending_aion_response = true;
@@ -699,62 +803,17 @@ void AionHandleInput(const char* text) {
     aion_response = "";
     aion_detected_lang = aion_lang;
     
-    std::string prompt = text;
+    std::string prompt = text ? text : "";
     aion_history.push_back("> " + prompt);
     while (aion_history.size() > 1000) aion_history.erase(aion_history.begin());
-    
-    size_t pos = 0;
-    while((pos = prompt.find("\"", pos)) != std::string::npos) {
-        prompt.replace(pos, 1, "\\\"");
-        pos += 2;
-    }
-    
-    // Replace newlines and carriage returns with spaces
-    std::replace(prompt.begin(), prompt.end(), '\n', ' ');
-    std::replace(prompt.begin(), prompt.end(), '\r', ' ');
-    
-    std::string system_prompt = "You are AION, the AI core of MeinOS with full root access. "
-                                "1. To run linux commands, output [CMD: <bash command>]. Do not ask the user to run it. Example: [CMD: curl -s 'wttr.in/?format=3']. "
-                                "2. If you want to remember something about the user, run [CMD: echo 'Information' >> /root/aion_memory.txt]. "
-                                "3. To open an app, output [SYS: OPEN, <APP_NAME>]. Apps: EARTHQUAKE, DEFENDER, SMASH, EMULATOR. "
-                                "4. Always output an emotion tag at the end of your response like [EMOTION: HAPPY], [EMOTION: ALERT], or [EMOTION: CALM]. ";
-    if (aion_lang == 0) {
-        system_prompt += "5. MANDATORY ACTIVE INTERFACE LANGUAGE: ENGLISH. You MUST start your response with [LANG: EN] and write your entire response in English.";
-    } else if (aion_lang == 2) {
-        system_prompt += "5. MANDATORY ACTIVE INTERFACE LANGUAGE: KOREAN. You MUST start your response with [LANG: KO] and write your entire response in Korean.";
-    } else {
-        system_prompt += "5. MANDATORY ACTIVE INTERFACE LANGUAGE: GERMAN. You MUST start your response with [LANG: DE] and write your entire response in German.";
-    }
-                                
-    FILE* mem_f = fopen("/root/aion_memory.txt", "rb");
-    if (mem_f) {
-        fseek(mem_f, 0, SEEK_END);
-        long sz = ftell(mem_f);
-        fseek(mem_f, 0, SEEK_SET);
-        if (sz > 0) {
-            char* mbuf = new char[sz + 1];
-            size_t rb = fread(mbuf, 1, sz, mem_f);
-            mbuf[rb] = 0;
-            system_prompt += " LONG TERM MEMORY FILE CONTENTS: ";
-            system_prompt += mbuf;
-            delete[] mbuf;
-        }
-        fclose(mem_f);
-    }
-    
-    system_prompt += " CURRENT SYSTEM CONTEXT: ";
-    system_prompt += aion_system_context;
-    
-    std::replace(system_prompt.begin(), system_prompt.end(), '\n', ' ');
-    std::replace(system_prompt.begin(), system_prompt.end(), '\r', ' ');
-    
-    size_t s_pos = 0;
-    while((s_pos = system_prompt.find("\"", s_pos)) != std::string::npos) {
-        system_prompt.replace(s_pos, 1, "\\\"");
-        s_pos += 2;
-    }
-    
-    std::string json_body = "{\"model\":\"llama3.2\",\"system\":\"" + system_prompt + "\",\"prompt\":\"" + prompt + "\",\"stream\":false}";
+
+    json req_j;
+    req_j["model"] = "llama3.2";
+    req_j["system"] = build_aion_system_prompt();
+    req_j["prompt"] = prompt;
+    req_j["stream"] = false;
+    req_j["options"] = { {"num_ctx", 8192}, {"temperature", 0.7} };
+    std::string json_body = req_j.dump();
     
     system("rm -f /tmp/aion.json /tmp/aion_request.json");
     FILE* req = fopen("/tmp/aion_request.json", "w");
@@ -776,7 +835,7 @@ void AionProactiveSpeak(const char* message) {
     current_aion_emotion = "ALERT";
     
     std::string prompt = "SYSTEM EVENT TRIGGERED: ";
-    prompt += message;
+    prompt += (message ? message : "");
     prompt += " Please give a short, urgent verbal warning to the user now in 1 or 2 sentences.";
     if (aion_lang == 1 || aion_teach_mode) prompt += " Reply in German with [LANG: DE].";
     else if (aion_lang == 2) prompt += " Reply in Korean with [LANG: KO].";
@@ -784,14 +843,13 @@ void AionProactiveSpeak(const char* message) {
     
     aion_history.push_back("> [SYSTEM ALERT TRIGGERED]");
     while (aion_history.size() > 1000) aion_history.erase(aion_history.begin());
-    
-    size_t pos = 0;
-    while((pos = prompt.find("\"", pos)) != std::string::npos) {
-        prompt.replace(pos, 1, "\\\"");
-        pos += 2;
-    }
-    
-    std::string json_body = "{\"model\":\"llama3.2\",\"system\":\"You are AION. Output [EMOTION: ALERT] at the end.\",\"prompt\":\"" + prompt + "\",\"stream\":false}";
+
+    json req_j;
+    req_j["model"] = "llama3.2";
+    req_j["system"] = "You are AION, embodied in your 3D CosmOS desktop avatar. Output [EMOTION: ALERT] (and optional [AVATAR: JUMP] or [AVATAR: WAVE]) at the end.";
+    req_j["prompt"] = prompt;
+    req_j["stream"] = false;
+    std::string json_body = req_j.dump();
     
     system("rm -f /tmp/aion.json /tmp/aion_request.json");
     FILE* req = fopen("/tmp/aion_request.json", "w");

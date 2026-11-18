@@ -16,6 +16,10 @@ extern "C" {
     extern bool aion_wants_foreground;
     extern bool aion_wants_background;
     void AionCopyLastResponseToClipboard();
+    void AionTriggerAvatarAction(const char* cmd);
+    const char* AionGetAvatarStatusText();
+    const char* AionGetAvatarModelName(int idx);
+    bool AionIsAvatarDancing();
 #ifdef __cplusplus
 }
 #endif

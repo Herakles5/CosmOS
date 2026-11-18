@@ -9134,15 +9134,17 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                         aion_switch_avatar = 1;
                         input_cooldown = 20;
                     }
-
-                    // Model ID + Zoom display
-                    char model_txt[64];
-                    snprintf(model_txt, 64, "MODEL %d/%d  ZOOM:%.1f", aion_current_avatar_idx + 1, aion_total_models, aion_avatar_zoom);
-                    TextC(wx + ww - 280, wy + 8, model_txt, 0xCCCCCC, _128);
-
                 }
 
                 UpdateAionApp(wx, wy, ww, wh, !blocked);
+
+                if (aion_use_3d_avatar && aion_total_models > 0) {
+                    char model_txt[96];
+                    snprintf(model_txt, sizeof(model_txt), "AVATAR %d/%d: %s  (Z:%.1f)",
+                             aion_current_avatar_idx + 1, aion_total_models,
+                             AionGetAvatarModelName(aion_current_avatar_idx), aion_avatar_zoom);
+                    Text(wx + 12, wy + 34, model_txt, 0x88DDFF, _128);
+                }
                 
                 if (!blocked && mouse_just_pressed) {
                     aion_input_focus = is_over_rect(mouse_x, mouse_y, wx+10, wy+wh-35, ww-100, 25);
@@ -9166,13 +9168,13 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 extern bool aion_teach_mode;
                 
                 // LANG Button
-                bool lang_hover = is_over_rect(mouse_x, mouse_y, wx+10, wy+wh-65, 80, 25);
-                DrawRoundedRect(wx+10, wy+wh-65, 80, 25, 4, lang_hover ? 0x666666 : 0x444444);
+                bool lang_hover = is_over_rect(mouse_x, mouse_y, wx+10, wy+wh-65, 72, 25);
+                DrawRoundedRect(wx+10, wy+wh-65, 72, 25, 4, lang_hover ? 0x666666 : 0x444444);
                 char lang_str[32];
-                if (aion_lang == 0) str_cpy(lang_str, "LANG: EN");
-                else if (aion_lang == 1) str_cpy(lang_str, "LANG: DE");
-                else if (aion_lang == 2) str_cpy(lang_str, "LANG: KO");
-                TextC(wx+50, wy+wh-60, lang_str, 0xFFFFFF, _128);
+                if (aion_lang == 0) str_cpy(lang_str, "LANG:EN");
+                else if (aion_lang == 1) str_cpy(lang_str, "LANG:DE");
+                else if (aion_lang == 2) str_cpy(lang_str, "LANG:KO");
+                TextC(wx+46, wy+wh-60, lang_str, 0xFFFFFF, _128);
                 
                 static bool lang_clicked_last = false;
                 bool lang_clicked_now = (lang_hover && mouse_down);
@@ -9187,14 +9189,14 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 lang_clicked_last = lang_clicked_now;
                 
                 // TEACH Button
-                bool teach_hover = is_over_rect(mouse_x, mouse_y, wx+100, wy+wh-65, 120, 25);
+                bool teach_hover = is_over_rect(mouse_x, mouse_y, wx+86, wy+wh-65, 82, 25);
                 uint32_t teach_color = aion_teach_mode ? 0x338833 : 0x662222;
                 if (teach_hover) teach_color = aion_teach_mode ? 0x55AA55 : 0x883333;
-                DrawRoundedRect(wx+100, wy+wh-65, 120, 25, 4, teach_color);
+                DrawRoundedRect(wx+86, wy+wh-65, 82, 25, 4, teach_color);
                 char teach_str[32];
-                if (aion_teach_mode) str_cpy(teach_str, "TEACH: ON");
-                else str_cpy(teach_str, "TEACH: OFF");
-                TextC(wx+160, wy+wh-60, teach_str, 0xFFFFFF, _128);
+                if (aion_teach_mode) str_cpy(teach_str, "TEACH:ON");
+                else str_cpy(teach_str, "TEACH:OFF");
+                TextC(wx+127, wy+wh-60, teach_str, 0xFFFFFF, _128);
                 
                 static bool teach_clicked_last = false;
                 bool teach_clicked_now = (teach_hover && mouse_down);
@@ -9206,10 +9208,10 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 // COPY Button
                 extern void AionCopyLastResponseToClipboard();
                 static int aion_copy_timer = 0;
-                bool copy_hover = is_over_rect(mouse_x, mouse_y, wx+230, wy+wh-65, 75, 25);
+                bool copy_hover = is_over_rect(mouse_x, mouse_y, wx+172, wy+wh-65, 56, 25);
                 uint32_t copy_col = (aion_copy_timer > 0) ? 0x228844 : (copy_hover ? 0x555577 : 0x333355);
-                DrawRoundedRect(wx+230, wy+wh-65, 75, 25, 4, copy_col);
-                TextC(wx+267, wy+wh-60, (aion_copy_timer > 0) ? "COPIED" : "COPY", 0xFFFFFF, _128);
+                DrawRoundedRect(wx+172, wy+wh-65, 56, 25, 4, copy_col);
+                TextC(wx+200, wy+wh-60, (aion_copy_timer > 0) ? "OK" : "COPY", 0xFFFFFF, _128);
                 if (aion_copy_timer > 0) aion_copy_timer--;
                 
                 static bool copy_clicked_last = false;
@@ -9220,11 +9222,11 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                 }
                 copy_clicked_last = copy_clicked_now;
 
-                // AION 2 GAMING Button (Right next to COPY)
-                bool aion2_hover = is_over_rect(mouse_x, mouse_y, wx+315, wy+wh-65, 110, 25);
+                // AION 2 GAMING Button
+                bool aion2_hover = is_over_rect(mouse_x, mouse_y, wx+232, wy+wh-65, 92, 25);
                 uint32_t aion2_col = aion2_hover ? 0xaa5522 : 0x773311;
-                DrawRoundedRect(wx+315, wy+wh-65, 110, 25, 4, aion2_col);
-                TextC(wx+370, wy+wh-60, "AION2 Gaming", 0xFFFFFF, _128);
+                DrawRoundedRect(wx+232, wy+wh-65, 92, 25, 4, aion2_col);
+                TextC(wx+278, wy+wh-60, "AION2 Game", 0xFFFFFF, _128);
 
                 static bool aion2_clicked_last = false;
                 bool aion2_clicked_now = (aion2_hover && mouse_down);
@@ -9232,6 +9234,32 @@ extern "C" void kernel_main64(BootInfo* boot_info) {
                     system("python3 /root/coding/MeinOS/aion2_gaming_gui.py &");
                 }
                 aion2_clicked_last = aion2_clicked_now;
+
+                // DANCE Toggle Button
+                bool dancing_now = AionIsAvatarDancing();
+                bool dance_hover = is_over_rect(mouse_x, mouse_y, wx+328, wy+wh-65, 58, 25);
+                uint32_t dance_col = dancing_now ? (dance_hover ? 0xBB44EE : 0x8822BB) : (dance_hover ? 0x446699 : 0x2A4466);
+                DrawRoundedRect(wx+328, wy+wh-65, 58, 25, 4, dance_col);
+                TextC(wx+357, wy+wh-60, dancing_now ? "STOP" : "DANCE", 0xFFFFFF, _128);
+
+                static bool dance_clicked_last = false;
+                bool dance_clicked_now = (!blocked && dance_hover && mouse_down);
+                if (dance_clicked_now && !dance_clicked_last) {
+                    AionTriggerAvatarAction(dancing_now ? "STOP" : "DANCE");
+                }
+                dance_clicked_last = dance_clicked_now;
+
+                // RESET Position/Stance Button
+                bool reset_hover = is_over_rect(mouse_x, mouse_y, wx+390, wy+wh-65, 50, 25);
+                DrawRoundedRect(wx+390, wy+wh-65, 50, 25, 4, reset_hover ? 0x447766 : 0x2A5544);
+                TextC(wx+415, wy+wh-60, "HOME", 0xFFFFFF, _128);
+
+                static bool reset_clicked_last = false;
+                bool reset_clicked_now = (!blocked && reset_hover && mouse_down);
+                if (reset_clicked_now && !reset_clicked_last) {
+                    AionTriggerAvatarAction("RESET");
+                }
+                reset_clicked_last = reset_clicked_now;
 
                 DrawRoundedRect(wx+10, wy+wh-35, ww-120, 25, 4, aion_input_focus ? 0x444444 : 0x222222);
                 Text(wx+15, wy+wh-30, os_text_input_buf[0] == 0 ? "Ask AION something..." : os_text_input_buf, os_text_input_buf[0] == 0 ? 0x555555 : 0xFFFFFF, _128);

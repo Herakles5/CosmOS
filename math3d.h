@@ -67,6 +67,20 @@ inline vec3 vec3_lerp(vec3 v1, vec3 v2, float t) {
     );
 }
 
+inline vec3 vec3_normalize(const vec3& v) {
+    float len = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+    if (len > 1e-6f) return vec3(v.x / len, v.y / len, v.z / len);
+    return vec3(0.0f, 1.0f, 0.0f);
+}
+
+inline vec3 mat4_mul_dir(const mat4& m, const vec3& v) {
+    return vec3(
+        m.m[0]*v.x + m.m[4]*v.y + m.m[8]*v.z,
+        m.m[1]*v.x + m.m[5]*v.y + m.m[9]*v.z,
+        m.m[2]*v.x + m.m[6]*v.y + m.m[10]*v.z
+    );
+}
+
 inline mat4 mat4_mul(const mat4& a, const mat4& b) {
     mat4 res;
     for (int c = 0; c < 4; ++c) {

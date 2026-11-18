@@ -33,6 +33,7 @@ struct Bone {
     std::string name;
     int parent_index;
     mat4 inverse_bind_matrix;
+    mat4 parent_world_matrix; // World transform of non-joint parent in glTF node tree
     
     // Local transform state (current)
     vec3 local_t;
@@ -61,6 +62,7 @@ public:
     float auto_scale;
     vec3 center_offset;
     mat4 root_transform;
+    vec3 model_size; // Upright Y-up glTF extents (width X, height Y, depth Z)
 
     // Procedural animation states
     bool is_waving_left = false;
@@ -68,6 +70,20 @@ public:
     float wave_time = 0.0f;
     bool is_peace_sign = false;
     float peace_sign_weight = 0.0f;
+
+    // Multi-clip & pose blend controls
+    int get_animation_count() const;
+    const char* get_animation_name(int idx) const;
+    int get_active_clip() const { return active_anim_idx; }
+    void set_animation_clip(int idx, bool reset_time = false);
+    int find_animation_clip(const char* keyword) const;
+    void set_anim_blend(float w) { anim_blend_weight = (w < 0.0f) ? 0.0f : (w > 1.0f ? 1.0f : w); }
+    float get_anim_blend() const { return anim_blend_weight; }
+    float get_max_time() const { return max_time; }
+    float get_current_time() const { return current_time; }
+    void set_current_time(float t);
+    void reset_to_bind_pose();
+    int get_bone_count() const { return (int)bones.size(); }
 
     void apply_procedural_animations(float delta_time);
     void add_procedural_rotation(int bone_idx, float ax, float ay, float az, float angle);
@@ -88,11 +104,13 @@ private:
     
     std::vector<Primitive> primitives;
     std::vector<Material> materials;
-    std::vector<vec2> uvs; // Temporary for rendering if we use client state, but we can also interleave or just pass base_vertices pointer
+    std::vector<vec2> uvs;
     
     std::vector<Bone> bones;
     
     // Animation data
+    int active_anim_idx;
+    float anim_blend_weight;
     float current_time;
     float max_time;
     

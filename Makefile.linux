@@ -6,6 +6,11 @@ OBJS = linux_main.o kernel_linux.o kernel_main_linux.o app.o arcade.o surreal_gl
 
 all: meinos_v2.elf
 
+linux_main.o: linux_main.cpp avatar_renderer.h avatar_anim.h math3d.h
+avatar_anim.o: avatar_anim.cpp avatar_anim.h math3d.h
+aion_app.o: aion_app.cpp aion_app.h
+kernel_main_linux.o: kernel_main_linux.cpp aion_app.h
+
 %.o: %.cpp
 	$(CC) $(CFLAGS) -c $< -o $@
 
